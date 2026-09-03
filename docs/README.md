@@ -12,6 +12,12 @@
 
 코드 구조에 중요한 변경이 생기면 이 문서도 현재 코드 상태에 맞게 수정합니다.
 
+### Riot API
+
+[`riot-api-integration.md`](riot-api-integration.md)
+
+Riot API endpoint별 routing host와 용도를 빠르게 확인하는 참고 문서입니다.
+
 ### Architecture Decision Records
 
 [`adr/`](adr/)
@@ -32,3 +38,4 @@ ADR은 "현재 구조가 무엇인가"보다 다음 질문에 답하는 기록�
 ## Current Decisions
 
 - [`ADR-001: Use Modular Monolith for Initial Architecture`](adr/001-use-modular-monolith.md)
+- [`ADR-002: Define a Shared Riot API Client Boundary`](adr/002-define-riot-api-client-boundary.md)

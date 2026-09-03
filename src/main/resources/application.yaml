@@ -1,9 +1,13 @@
 spring:
   application:
-    name: lol-stats
+    name: lol-insight
 
 # 실제 Riot API 연동을 추가할 때 환경변수로 주입한다.
 # API 키는 이 파일이나 Git에 저장하지 않는다.
 riot:
   api:
     key: ${RIOT_API_KEY:}
+    platform-base-url: ${RIOT_PLATFORM_BASE_URL:https://kr.api.riotgames.com}
+    regional-base-url: ${RIOT_REGIONAL_BASE_URL:https://asia.api.riotgames.com}
+    connect-timeout: ${RIOT_CONNECT_TIMEOUT:2s}
+    read-timeout: ${RIOT_READ_TIMEOUT:5s}

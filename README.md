@@ -1,4 +1,4 @@
-# LOL Stats & AI
+# LOL Insight
 
 League of Legends 데이터를 활용하여 플레이어 전적/통계를 제공하고,
 가공된 플레이 데이터를 기반으로 AI 피드백을 생성하는 Backend 중심 웹 서비스 프로젝트입니다.
@@ -105,15 +105,16 @@ LLM은 구조화된 feature를 바탕으로 설명과 피드백을 생성하는 
 
 ## Development Status
 
-현재는 **프로젝트 기반 구성 및 Riot Games API 연동 구조를 설계하는 단계**입니다.
+현재는 **Riot Games API 공통 Client 기반을 구현한 단계**입니다.
 
-현재 애플리케이션 코드는 Spring Boot 진입점과 컨텍스트 로드 테스트만 포함합니다.
-Riot API 호출, Controller, Service, DTO, Entity는 아직 구현하지 않습니다.
+공통 Client는 환경 변수로 주입한 API Key를 `X-Riot-Token` 헤더에 적용하고,
+platform/regional routing host를 구분합니다. 개별 Account, Summoner, League, Match endpoint Client와
+각 endpoint DTO, Controller, Service, Entity는 아직 구현하지 않았습니다.
 
 기능 구현을 시작하면 최상위 패키지는 다음과 같이 package-by-feature로 구성합니다.
 
 ```text
-io.github.Nekke0409.lol_stats
+io.github.nekke0409.lolinsight
 ├── player/
 ├── match/
 ├── analysis/

@@ -1,6 +1,6 @@
 # Architecture
 
-이 문서는 LOL Stats & AI 프로젝트의 **현재 아키텍처 방향을 설명하는 기준 문서**다.
+이 문서는 LOL Insight 프로젝트의 **현재 아키텍처 방향을 설명하는 기준 문서**다.
 
 구현 세부사항을 모두 고정하는 설계서가 아니라,
 코드가 성장하더라도 유지해야 할 주요 경계와 의존 방향을 기록하는 living document로 사용한다.
@@ -221,6 +221,28 @@ Riot API JSON
 - 외부 필드 변경이 내부 모델 전체 변경으로 이어지지 않도록 한다.
 - 필요한 데이터만 내부 모델 또는 통계 feature로 변환한다.
 - API Key는 환경 설정을 통해 주입하고 저장소에 커밋하지 않는다.
+
+### Current Client Structure
+
+공통 Riot API 통신은 `global/riot`에 둔다. 이 패키지는 여러 기능에서 공유하는
+외부 시스템 설정과 HTTP 통신 책임만 가지며, Player나 Match 도메인 로직을 포함하지 않는다.
+
+```text
+RiotAccountClient / RiotSummonerClient / RiotLeagueClient / RiotMatchClient
+    -> RiotApiHttpClient
+        -> RestClient
+        -> Riot Games API
+```
+
+- `RiotApiProperties`는 `RIOT_API_KEY`와 platform/regional base URL을 설정으로 바인딩한다.
+- `RiotApiRouting`은 endpoint가 요구하는 platform 또는 regional host를 명시한다.
+- `RiotApiHttpClient`는 모든 Riot 요청에 `X-Riot-Token`을 적용하고, URI 변수와 query parameter를 안전하게 조합한다.
+- `RestClient`에는 설정 가능한 connect/read timeout을 적용한다. timeout을 포함한 통신 실패는 `RiotApiTransportException`으로 변환한다.
+- Riot의 HTTP 오류는 상태 코드와 응답 본문을 보존하는 외부 API 예외로 변환한다. 서비스의 HTTP 오류 응답으로 변환하는 정책은 실제 API endpoint를 추가할 때 결정한다.
+
+현재는 blocking Spring MVC 구조에 맞춰 Spring `RestClient`를 사용한다. endpoint별 Client는
+필요해지는 시점에 해당 기능 패키지의 infrastructure 경계에 추가하고,
+공통 전송기에는 endpoint DTO나 도메인 판단을 넣지 않는다.
 
 ### Operational Concerns
 
