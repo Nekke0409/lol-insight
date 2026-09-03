@@ -107,6 +107,33 @@ LLM은 구조화된 feature를 바탕으로 설명과 피드백을 생성하는 
 
 현재는 **프로젝트 기반 구성 및 Riot Games API 연동 구조를 설계하는 단계**입니다.
 
+현재 애플리케이션 코드는 Spring Boot 진입점과 컨텍스트 로드 테스트만 포함합니다.
+Riot API 호출, Controller, Service, DTO, Entity는 아직 구현하지 않습니다.
+
+기능 구현을 시작하면 최상위 패키지는 다음과 같이 package-by-feature로 구성합니다.
+
+```text
+io.github.Nekke0409.lol_stats
+├── player/
+├── match/
+├── analysis/
+├── community/
+└── global/
+```
+
+각 기능 내부의 `api`, `application`, `domain`, `persistence`, `infrastructure` 같은 하위 패키지는
+실제 코드와 책임 분리가 필요해지는 시점에만 추가합니다. 현재는 빈 패키지를 미리 만들지 않습니다.
+
+## Local Environment
+
+Riot API 키는 환경변수로만 주입합니다. 로컬에서는 [`.env.example`](.env.example)를 참고해
+IDE 실행 구성이나 셸 환경변수에 설정합니다. 실제 값이 들어 있는 `.env` 파일은 Git에 추가하지 않습니다.
+현재 프로젝트는 `.env` 파일을 자동으로 읽는 라이브러리를 포함하지 않으므로, `.env`는 로컬 값 보관용 참고 파일입니다.
+
+```text
+RIOT_API_KEY=your-riot-api-key
+```
+
 구체적인 실행 방법, 환경 변수, Docker 구성, API 목록은
 실제 구현이 추가되는 시점에 이 README에 업데이트합니다.
 

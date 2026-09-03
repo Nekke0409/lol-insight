@@ -43,6 +43,7 @@ AI 기능은 단순한 API 호출 데모가 아니라 사용자에게 실질적�
 
 - Kotlin
 - Spring Boot
+- JDK 21
 - Spring Security
 - JPA / Hibernate
 - PostgreSQL
