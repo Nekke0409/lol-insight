@@ -1,11 +1,11 @@
-package io.github.Nekke0409.lol_stats
+package io.github.nekke0409.lolinsight
 
 import org.springframework.boot.autoconfigure.SpringBootApplication
 import org.springframework.boot.runApplication
 
 @SpringBootApplication
-class LolStatsApplication
+class LolInsightApplication
 
 fun main(args: Array<String>) {
-	runApplication<LolStatsApplication>(*args)
+	runApplication<LolInsightApplication>(*args)
 }
