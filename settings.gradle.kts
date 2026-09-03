@@ -1,1 +1,1 @@
-rootProject.name = "lol-stats"
+rootProject.name = "lol-insight"

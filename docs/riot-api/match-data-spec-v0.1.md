@@ -1,6 +1,6 @@
 # Riot Match Data Specification v0.1
 
-> 대상 프로젝트: LOL Stats & AI Platform  
+> 대상 프로젝트: LOL Insight Platform
 > 대상 API: `GET /lol/match/v5/matches/{matchId}`  
 > 기준 샘플: `match-by-match-id.json` (`KR_8361620721`)  
 > 문서 버전: `v0.1`  
