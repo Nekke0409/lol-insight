@@ -7,5 +7,5 @@ import org.springframework.boot.runApplication
 class LolInsightApplication
 
 fun main(args: Array<String>) {
-	runApplication<LolInsightApplication>(*args)
+    runApplication<LolInsightApplication>(*args)
 }

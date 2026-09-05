@@ -12,7 +12,6 @@ class RiotApiHttpClient(
     private val restClient: RestClient,
     private val properties: RiotApiProperties,
 ) {
-
     fun <T : Any> get(
         routing: RiotApiRouting,
         path: String,
@@ -27,13 +26,15 @@ class RiotApiHttpClient(
             .filterValues { it != null }
             .forEach { (name, value) -> uriBuilder.queryParam(name, value) }
 
-        val uri = uriBuilder
-            .buildAndExpand(uriVariables)
-            .encode()
-            .toUri()
+        val uri =
+            uriBuilder
+                .buildAndExpand(uriVariables)
+                .encode()
+                .toUri()
 
         return try {
-            restClient.get()
+            restClient
+                .get()
                 .uri(uri)
                 .retrieve()
                 .onStatus(HttpStatusCode::isError) { _, response ->
@@ -41,8 +42,7 @@ class RiotApiHttpClient(
                         statusCode = response.statusCode,
                         responseBody = response.body.readAllBytes().toString(StandardCharsets.UTF_8),
                     )
-                }
-                .body(responseType)
+                }.body(responseType)
                 ?: throw RiotApiEmptyResponseException()
         } catch (exception: RiotApiException) {
             throw exception

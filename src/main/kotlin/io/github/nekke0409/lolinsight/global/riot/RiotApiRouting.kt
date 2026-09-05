@@ -7,8 +7,9 @@ enum class RiotApiRouting {
     REGIONAL,
     ;
 
-    fun baseUrl(properties: RiotApiProperties): URI = when (this) {
-        PLATFORM -> properties.platformBaseUrl
-        REGIONAL -> properties.regionalBaseUrl
-    }
+    fun baseUrl(properties: RiotApiProperties): URI =
+        when (this) {
+            PLATFORM -> properties.platformBaseUrl
+            REGIONAL -> properties.regionalBaseUrl
+        }
 }
