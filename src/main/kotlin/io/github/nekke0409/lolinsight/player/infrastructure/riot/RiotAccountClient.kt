@@ -1,5 +1,7 @@
-package io.github.nekke0409.lolinsight.global.riot
+package io.github.nekke0409.lolinsight.player.infrastructure.riot
 
+import io.github.nekke0409.lolinsight.global.riot.RiotApiHttpClient
+import io.github.nekke0409.lolinsight.global.riot.RiotApiRouting
 import org.springframework.stereotype.Component
 
 @Component

@@ -1,5 +1,8 @@
-package io.github.nekke0409.lolinsight.global.riot
+package io.github.nekke0409.lolinsight.player.infrastructure.riot
 
+import io.github.nekke0409.lolinsight.global.riot.RiotApiHttpClient
+import io.github.nekke0409.lolinsight.global.riot.RiotApiProperties
+import io.github.nekke0409.lolinsight.global.riot.RiotApiResponseException
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.springframework.http.HttpStatus

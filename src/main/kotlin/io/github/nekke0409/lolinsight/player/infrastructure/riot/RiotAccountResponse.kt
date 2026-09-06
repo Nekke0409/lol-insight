@@ -1,4 +1,4 @@
-package io.github.nekke0409.lolinsight.global.riot
+package io.github.nekke0409.lolinsight.player.infrastructure.riot
 
 data class RiotAccountResponse(
     val puuid: String,
