@@ -68,4 +68,43 @@ class RiotMatchClientTest {
         assertEquals(emptyList(), matchIds)
         server.verify()
     }
+
+    @Test
+    fun `finds Match Detail with Asia regional routing and deserializes selected Riot fields`() {
+        server
+            .expect(
+                requestTo("https://asia.api.riotgames.com/lol/match/v5/matches/KR_1234567890"),
+            ).andRespond(
+                withStatus(HttpStatus.OK)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(loadFixture("riot/match/match-detail.json")),
+            )
+
+        val match = client.findMatchById("KR_1234567890")
+
+        assertEquals("KR_1234567890", match.metadata.matchId)
+        assertEquals(2, match.info.participants.size)
+        assertEquals(2, match.info.teams.size)
+
+        val participant = match.info.participants.first()
+        assertEquals("test-puuid-blue-top", participant.puuid)
+        assertEquals(266, participant.championId)
+        assertEquals("Aatrox", participant.championName)
+        assertEquals(100, participant.teamId)
+        assertEquals("TOP", participant.teamPosition)
+        assertEquals(8, participant.kills)
+        assertEquals(2, participant.deaths)
+        assertEquals(5, participant.assists)
+        assertEquals(12_345, participant.goldEarned)
+        assertEquals(180, participant.totalMinionsKilled)
+        assertEquals(12, participant.neutralMinionsKilled)
+        assertEquals(24_680, participant.totalDamageDealtToChampions)
+        assertEquals(28, participant.visionScore)
+        assertEquals(3_073, participant.item0)
+        assertEquals(3_364, participant.item6)
+        assertEquals(4.5, participant.challenges?.kda)
+        server.verify()
+    }
+
+    private fun loadFixture(path: String): String = requireNotNull(javaClass.classLoader.getResource(path)).readText()
 }

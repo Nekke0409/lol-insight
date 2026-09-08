@@ -1,0 +1,141 @@
+{
+  "metadata": {
+    "matchId": "KR_1234567890",
+    "dataVersion": "2",
+    "participants": ["test-puuid-blue-top", "test-puuid-red-top"]
+  },
+  "info": {
+    "gameStartTimestamp": 1760000000000,
+    "gameEndTimestamp": 1760001800000,
+    "gameDuration": 1800,
+    "gameMode": "CLASSIC",
+    "gameVersion": "16.17.810.4348",
+    "mapId": 11,
+    "platformId": "KR",
+    "queueId": 420,
+    "unusedInfoField": "ignored",
+    "participants": [
+      {
+        "participantId": 1,
+        "puuid": "test-puuid-blue-top",
+        "riotIdGameName": "BlueTop",
+        "riotIdTagline": "TEST1",
+        "teamId": 100,
+        "win": true,
+        "teamPosition": "TOP",
+        "championId": 266,
+        "championName": "Aatrox",
+        "champLevel": 18,
+        "kills": 8,
+        "deaths": 2,
+        "assists": 5,
+        "pentaKills": 0,
+        "totalMinionsKilled": 180,
+        "neutralMinionsKilled": 12,
+        "goldEarned": 12345,
+        "totalDamageDealtToChampions": 24680,
+        "totalDamageTaken": 17890,
+        "visionScore": 28,
+        "wardsPlaced": 9,
+        "wardsKilled": 3,
+        "turretKills": 2,
+        "item0": 3073,
+        "item1": 3065,
+        "item2": 6333,
+        "item3": 3053,
+        "item4": 1031,
+        "item5": 0,
+        "item6": 3364,
+        "summoner1Id": 4,
+        "summoner2Id": 12,
+        "perks": {
+          "statPerks": { "defense": 5011, "flex": 5010, "offense": 5008 },
+          "styles": [
+            { "style": 8010, "selections": [{ "perk": 8005, "var1": 0 }] }
+          ]
+        },
+        "challenges": {
+          "kda": 4.5,
+          "killParticipation": 0.65,
+          "damagePerMinute": 822.67,
+          "teamDamagePercentage": 0.31,
+          "unknownChallenge": "ignored"
+        },
+        "unusedParticipantField": "ignored"
+      },
+      {
+        "participantId": 6,
+        "puuid": "test-puuid-red-top",
+        "riotIdGameName": "RedTop",
+        "riotIdTagline": "TEST2",
+        "teamId": 200,
+        "win": false,
+        "teamPosition": "TOP",
+        "championId": 122,
+        "championName": "Darius",
+        "champLevel": 16,
+        "kills": 2,
+        "deaths": 8,
+        "assists": 3,
+        "pentaKills": 0,
+        "totalMinionsKilled": 165,
+        "neutralMinionsKilled": 8,
+        "goldEarned": 10120,
+        "totalDamageDealtToChampions": 17420,
+        "totalDamageTaken": 21330,
+        "visionScore": 17,
+        "wardsPlaced": 7,
+        "wardsKilled": 1,
+        "turretKills": 0,
+        "item0": 6630,
+        "item1": 3111,
+        "item2": 3053,
+        "item3": 3071,
+        "item4": 1033,
+        "item5": 0,
+        "item6": 3340,
+        "summoner1Id": 4,
+        "summoner2Id": 12,
+        "perks": {
+          "statPerks": { "defense": 5013, "flex": 5010, "offense": 5008 },
+          "styles": [
+            { "style": 8400, "selections": [{ "perk": 8437 }] }
+          ]
+        }
+      }
+    ],
+    "teams": [
+      {
+        "teamId": 100,
+        "win": true,
+        "bans": [{ "championId": 238 }],
+        "objectives": {
+          "atakhan": { "first": true, "kills": 1 },
+          "baron": { "first": true, "kills": 1 },
+          "champion": { "first": true, "kills": 20 },
+          "dragon": { "first": true, "kills": 3 },
+          "horde": { "first": true, "kills": 1 },
+          "inhibitor": { "first": true, "kills": 1 },
+          "riftHerald": { "first": true, "kills": 1 },
+          "tower": { "first": true, "kills": 8 }
+        }
+      },
+      {
+        "teamId": 200,
+        "win": false,
+        "bans": [{ "championId": -1 }],
+        "objectives": {
+          "atakhan": { "first": false, "kills": 0 },
+          "baron": { "first": false, "kills": 0 },
+          "champion": { "first": false, "kills": 5 },
+          "dragon": { "first": false, "kills": 1 },
+          "horde": { "first": false, "kills": 0 },
+          "inhibitor": { "first": false, "kills": 0 },
+          "riftHerald": { "first": false, "kills": 0 },
+          "tower": { "first": false, "kills": 1 }
+        }
+      }
+    ]
+  },
+  "futureTopLevelField": "ignored"
+}

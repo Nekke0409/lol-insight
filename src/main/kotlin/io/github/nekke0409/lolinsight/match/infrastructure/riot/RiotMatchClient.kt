@@ -8,6 +8,14 @@ import org.springframework.stereotype.Component
 class RiotMatchClient(
     private val riotApiHttpClient: RiotApiHttpClient,
 ) {
+    fun findMatchById(matchId: String): RiotMatchResponseDto =
+        riotApiHttpClient.get(
+            routing = RiotApiRouting.REGIONAL,
+            path = "/lol/match/v5/matches/{matchId}",
+            uriVariables = mapOf("matchId" to matchId),
+            responseType = RiotMatchResponseDto::class.java,
+        )
+
     fun findMatchIdsByPuuid(
         puuid: String,
         start: Int = DEFAULT_START,
