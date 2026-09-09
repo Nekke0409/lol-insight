@@ -1,6 +1,7 @@
 package io.github.nekke0409.lolinsight.player.web
 
 import io.github.nekke0409.lolinsight.global.web.GlobalExceptionHandler
+import io.github.nekke0409.lolinsight.player.application.PlayerNotFoundException
 import io.github.nekke0409.lolinsight.player.application.PlayerResponse
 import io.github.nekke0409.lolinsight.player.application.PlayerService
 import org.junit.jupiter.api.Test
@@ -40,5 +41,15 @@ class PlayerControllerTest {
             .andExpect(jsonPath("$.puuid").value("test-puuid"))
             .andExpect(jsonPath("$.gameName").value("Hide on bush"))
             .andExpect(jsonPath("$.tagLine").value("KR1"))
+    }
+
+    @Test
+    fun `returns not found when Player lookup does not find an Account`() {
+        `when`(playerService.findByRiotId("unknown", "KR1")).thenThrow(PlayerNotFoundException())
+
+        mockMvc
+            .perform(get("/api/v1/players/{gameName}/{tagLine}", "unknown", "KR1"))
+            .andExpect(status().isNotFound)
+            .andExpect(jsonPath("$.detail").value("Player not found."))
     }
 }

@@ -2,6 +2,8 @@ package io.github.nekke0409.lolinsight.match.infrastructure.riot
 
 import io.github.nekke0409.lolinsight.global.riot.RiotApiHttpClient
 import io.github.nekke0409.lolinsight.global.riot.RiotApiProperties
+import io.github.nekke0409.lolinsight.global.riot.RiotApiResponseException
+import io.github.nekke0409.lolinsight.match.application.MatchNotFoundException
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.springframework.http.HttpStatus
@@ -12,6 +14,8 @@ import org.springframework.test.web.client.response.MockRestResponseCreators.wit
 import org.springframework.web.client.RestClient
 import java.net.URI
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+import kotlin.test.assertIs
 
 class RiotMatchClientTest {
     private lateinit var server: MockRestServiceServer
@@ -103,6 +107,26 @@ class RiotMatchClientTest {
         assertEquals(3_073, participant.itemIdsBySlot.first())
         assertEquals(3_364, participant.itemIdsBySlot.last())
         assertEquals(4.5, participant.reportedChallenges?.kda)
+        server.verify()
+    }
+
+    @Test
+    fun `converts a Match Detail API 404 response to Match not found`() {
+        server
+            .expect(requestTo("https://asia.api.riotgames.com/lol/match/v5/matches/KR_404"))
+            .andRespond(
+                withStatus(HttpStatus.NOT_FOUND)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body("{\"status\":{\"message\":\"Data not found\",\"status_code\":404}}"),
+            )
+
+        val exception =
+            assertFailsWith<MatchNotFoundException> {
+                client.findMatchById("KR_404")
+            }
+
+        val responseException = assertIs<RiotApiResponseException>(exception.cause)
+        assertEquals(404, responseException.statusCode.value())
         server.verify()
     }
 

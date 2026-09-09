@@ -18,6 +18,7 @@ import java.time.Duration
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
+import kotlin.test.assertNull
 
 class RiotApiHttpClientTest {
     private lateinit var server: MockRestServiceServer
@@ -87,6 +88,36 @@ class RiotApiHttpClientTest {
 
         assertEquals(429, exception.statusCode.value())
         assertEquals("{\"status\":{\"message\":\"Rate limit exceeded\",\"status_code\":429}}", exception.responseBody)
+        assertEquals(1, exception.retryAfterSeconds)
+        server.verify()
+    }
+
+    @Test
+    fun `missing or invalid Retry-After is ignored without replacing the Riot response exception`() {
+        server
+            .expect(requestTo("https://platform.test/missing-retry-after"))
+            .andRespond(withStatus(HttpStatus.TOO_MANY_REQUESTS))
+        server
+            .expect(requestTo("https://platform.test/invalid-retry-after"))
+            .andRespond(
+                withStatus(HttpStatus.TOO_MANY_REQUESTS)
+                    .header(HttpHeaders.RETRY_AFTER, "not-a-number"),
+            )
+
+        listOf("/missing-retry-after", "/invalid-retry-after").forEach { path ->
+            val exception =
+                assertFailsWith<RiotApiResponseException> {
+                    client.get(
+                        routing = RiotApiRouting.PLATFORM,
+                        path = path,
+                        responseType = String::class.java,
+                    )
+                }
+
+            assertEquals(HttpStatus.TOO_MANY_REQUESTS, exception.statusCode)
+            assertNull(exception.retryAfterSeconds)
+        }
+
         server.verify()
     }
 

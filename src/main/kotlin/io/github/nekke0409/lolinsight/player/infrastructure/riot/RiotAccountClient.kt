@@ -1,7 +1,10 @@
 package io.github.nekke0409.lolinsight.player.infrastructure.riot
 
 import io.github.nekke0409.lolinsight.global.riot.RiotApiHttpClient
+import io.github.nekke0409.lolinsight.global.riot.RiotApiResponseException
 import io.github.nekke0409.lolinsight.global.riot.RiotApiRouting
+import io.github.nekke0409.lolinsight.player.application.PlayerNotFoundException
+import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Component
 
 @Component
@@ -12,10 +15,17 @@ class RiotAccountClient(
         gameName: String,
         tagLine: String,
     ): RiotAccountResponse =
-        riotApiHttpClient.get(
-            routing = RiotApiRouting.REGIONAL,
-            path = "/riot/account/v1/accounts/by-riot-id/{gameName}/{tagLine}",
-            uriVariables = mapOf("gameName" to gameName, "tagLine" to tagLine),
-            responseType = RiotAccountResponse::class.java,
-        )
+        try {
+            riotApiHttpClient.get(
+                routing = RiotApiRouting.REGIONAL,
+                path = "/riot/account/v1/accounts/by-riot-id/{gameName}/{tagLine}",
+                uriVariables = mapOf("gameName" to gameName, "tagLine" to tagLine),
+                responseType = RiotAccountResponse::class.java,
+            )
+        } catch (exception: RiotApiResponseException) {
+            if (exception.statusCode.value() == HttpStatus.NOT_FOUND.value()) {
+                throw PlayerNotFoundException(exception)
+            }
+            throw exception
+        }
 }

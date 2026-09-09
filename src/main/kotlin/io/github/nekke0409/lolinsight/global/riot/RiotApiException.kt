@@ -10,6 +10,7 @@ sealed class RiotApiException(
 class RiotApiResponseException(
     val statusCode: HttpStatusCode,
     val responseBody: String,
+    val retryAfterSeconds: Long? = null,
 ) : RiotApiException("Riot API responded with HTTP ${statusCode.value()}")
 
 class RiotApiTransportException(
@@ -17,3 +18,7 @@ class RiotApiTransportException(
 ) : RiotApiException("Riot API request failed before receiving a response", cause)
 
 class RiotApiEmptyResponseException : RiotApiException("Riot API returned an empty response body")
+
+class RiotApiInvalidResponseException(
+    cause: Throwable,
+) : RiotApiException("Riot API returned an invalid response", cause)

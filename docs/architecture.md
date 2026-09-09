@@ -244,6 +244,25 @@ RiotAccountClient / RiotSummonerClient / RiotLeagueClient / RiotMatchClient
 필요해지는 시점에 해당 기능 패키지의 infrastructure 경계에 추가하고,
 공통 전송기에는 endpoint DTO나 도메인 판단을 넣지 않는다.
 
+### Error Boundary
+
+Riot HTTP 오류는 공통 `RiotApiHttpClient`에서 status code와 response body를 보존하는
+`RiotApiResponseException`으로 변환한다. 429 응답에서는 `Retry-After` header의 유효한
+정수 초 값만 `retryAfterSeconds`로 추가 보존하며, 원본 response header 전체를 외부 계층에
+전달하지 않는다.
+
+endpoint의 의미가 필요한 404는 endpoint별 Client가 feature의 내부 예외로 변환한다.
+
+- `RiotAccountClient`의 Account-V1 404는 `PlayerNotFoundException`으로 변환한다.
+- `RiotMatchClient.findMatchById`의 Match-V5 Detail 404는 `MatchNotFoundException`으로 변환한다.
+- Match ID 목록 조회 등 다른 endpoint의 404는 일반 Riot HTTP 오류로 유지한다.
+
+`GlobalExceptionHandler`는 Riot endpoint나 원본 response body를 해석하지 않는다. 내부의
+not-found 예외는 404로, Riot 429는 유효한 경우에만 `Retry-After` header를 포함한 429로,
+인증/권한 및 5xx를 포함한 기타 Riot HTTP 오류와 빈/잘못된 응답은 502로 변환한다.
+connect/read timeout 등의 transport failure는 503으로 변환한다. 자동 retry와 process-wide
+rate-limit cooldown은 이 경계에 포함하지 않으며 별도 정책으로 결정한다.
+
 ### Operational Concerns
 
 Riot API 호출에서는 다음 상황을 고려한다.

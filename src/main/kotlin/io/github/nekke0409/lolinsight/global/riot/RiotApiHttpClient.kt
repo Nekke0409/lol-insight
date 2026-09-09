@@ -2,6 +2,7 @@ package io.github.nekke0409.lolinsight.global.riot
 
 import org.springframework.http.HttpStatusCode
 import org.springframework.stereotype.Component
+import org.springframework.web.client.ResourceAccessException
 import org.springframework.web.client.RestClient
 import org.springframework.web.client.RestClientException
 import org.springframework.web.util.UriComponentsBuilder
@@ -41,13 +42,22 @@ class RiotApiHttpClient(
                     throw RiotApiResponseException(
                         statusCode = response.statusCode,
                         responseBody = response.body.readAllBytes().toString(StandardCharsets.UTF_8),
+                        retryAfterSeconds = parseRetryAfterSeconds(response.headers.getFirst("Retry-After")),
                     )
                 }.body(responseType)
                 ?: throw RiotApiEmptyResponseException()
         } catch (exception: RiotApiException) {
             throw exception
-        } catch (exception: RestClientException) {
+        } catch (exception: ResourceAccessException) {
             throw RiotApiTransportException(exception)
+        } catch (exception: RestClientException) {
+            throw RiotApiInvalidResponseException(exception)
         }
     }
+
+    private fun parseRetryAfterSeconds(retryAfter: String?): Long? =
+        retryAfter
+            ?.trim()
+            ?.toLongOrNull()
+            ?.takeIf { it >= 0 }
 }
