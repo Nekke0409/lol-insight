@@ -14,7 +14,7 @@ class GlobalExceptionHandler {
     fun handleRiotApiResponseException(): ProblemDetail =
         ProblemDetail.forStatusAndDetail(
             HttpStatus.BAD_GATEWAY,
-            "Unable to retrieve player information from Riot Games.",
+            "Unable to retrieve data from Riot Games.",
         )
 
     @ExceptionHandler(RiotApiTransportException::class)
