@@ -2,18 +2,21 @@ package io.github.nekke0409.lolinsight.match.infrastructure.riot
 
 import io.github.nekke0409.lolinsight.global.riot.RiotApiHttpClient
 import io.github.nekke0409.lolinsight.global.riot.RiotApiRouting
+import io.github.nekke0409.lolinsight.match.domain.Match
 import org.springframework.stereotype.Component
 
 @Component
 class RiotMatchClient(
     private val riotApiHttpClient: RiotApiHttpClient,
 ) {
-    fun findMatchById(matchId: String): RiotMatchResponseDto =
-        riotApiHttpClient.get(
-            routing = RiotApiRouting.REGIONAL,
-            path = "/lol/match/v5/matches/{matchId}",
-            uriVariables = mapOf("matchId" to matchId),
-            responseType = RiotMatchResponseDto::class.java,
+    fun findMatchById(matchId: String): Match =
+        RiotMatchMapper.toMatch(
+            riotApiHttpClient.get(
+                routing = RiotApiRouting.REGIONAL,
+                path = "/lol/match/v5/matches/{matchId}",
+                uriVariables = mapOf("matchId" to matchId),
+                responseType = RiotMatchResponseDto::class.java,
+            ),
         )
 
     fun findMatchIdsByPuuid(
