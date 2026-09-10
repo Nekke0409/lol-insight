@@ -18,6 +18,13 @@
 
 Riot API endpoint별 routing host와 용도를 빠르게 확인하는 참고 문서입니다.
 
+### Performance Baselines
+
+[`performance/recent-matches-latency-baseline.md`](performance/recent-matches-latency-baseline.md)
+
+실제 Riot API를 사용하는 local development 환경에서 최근 경기 endpoint의 순차 구현 latency를
+반복 측정하고 기록하는 절차입니다.
+
 ### Architecture Decision Records
 
 [`adr/`](adr/)
