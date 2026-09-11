@@ -244,6 +244,22 @@ RiotAccountClient / RiotSummonerClient / RiotLeagueClient / RiotMatchClient
 필요해지는 시점에 해당 기능 패키지의 infrastructure 경계에 추가하고,
 공통 전송기에는 endpoint DTO나 도메인 판단을 넣지 않는다.
 
+### Recent Match Detail Fan-Out
+
+최근 경기 조회는 Account-V1 Riot ID 조회와 Match-V5 Match ID 목록 조회를 요청 thread에서 순차로
+수행한다. 그 뒤의 Match Detail 조회만 `recentMatchDetailExecutor`로 fan-out 한다. 이 executor는
+Spring application lifecycle이 관리하는 고정 4-thread pool이며, 서비스도 한 요청에서 최대 4개의
+Detail 작업만 제출하는 sliding window를 사용한다.
+
+작업 완료 순서는 응답 순서가 아니다. 각 Detail 결과는 원래 Match ID 목록의 index에 저장한 뒤 index
+순서로 response를 조립하므로 API 사용자는 Riot Match ID 목록의 순서를 그대로 받는다.
+
+이 4는 동시에 실행 중인 Match Detail HTTP 호출 수의 상한이다. token bucket이나 요청/초 제한기는
+아니며, process-wide cooldown도 제공하지 않는다. 429를 포함해 전체 요청을 실패시켜야 하는 Detail
+오류를 수집하면 아직 제출하지 않은 작업은 더 제출하지 않고, 이미 제출됐지만 실행 전인 작업은
+`cancel(false)`로 취소한다. 실행 중인 blocking HTTP 호출은 강제로 interrupt하거나 취소하지 않는다.
+Match Detail 404와 target PUUID가 없는 Detail만 unavailable 결과로 수집하여 partial response를 만든다.
+
 ### Error Boundary
 
 Riot HTTP 오류는 공통 `RiotApiHttpClient`에서 status code와 response body를 보존하는

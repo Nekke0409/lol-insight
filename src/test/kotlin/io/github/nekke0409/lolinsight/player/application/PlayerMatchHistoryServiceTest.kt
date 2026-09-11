@@ -15,9 +15,12 @@ import io.github.nekke0409.lolinsight.match.domain.RiotIdSnapshot
 import io.github.nekke0409.lolinsight.match.infrastructure.riot.RiotMatchClient
 import io.github.nekke0409.lolinsight.player.infrastructure.riot.RiotAccountClient
 import io.github.nekke0409.lolinsight.player.infrastructure.riot.RiotAccountResponse
+import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Test
+import org.mockito.ArgumentMatchers.anyString
 import org.mockito.Mockito.inOrder
 import org.mockito.Mockito.mock
+import org.mockito.Mockito.never
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.verifyNoInteractions
 import org.mockito.Mockito.verifyNoMoreInteractions
@@ -26,6 +29,11 @@ import org.springframework.http.HttpStatus
 import org.springframework.web.client.RestClientException
 import java.time.Duration
 import java.time.Instant
+import java.util.concurrent.CompletableFuture
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
@@ -34,10 +42,16 @@ import kotlin.test.assertTrue
 class PlayerMatchHistoryServiceTest {
     private val riotAccountClient = mock(RiotAccountClient::class.java)
     private val riotMatchClient = mock(RiotMatchClient::class.java)
-    private val service = PlayerMatchHistoryService(riotAccountClient, riotMatchClient)
+    private val matchDetailExecutor = Executors.newFixedThreadPool(MAX_CONCURRENT_MATCH_DETAIL_REQUESTS)
+    private val service = PlayerMatchHistoryService(riotAccountClient, riotMatchClient, matchDetailExecutor)
+
+    @AfterEach
+    fun shutDownMatchDetailExecutor() {
+        matchDetailExecutor.shutdownNow()
+    }
 
     @Test
-    fun `retrieves Match IDs and details in order and summarizes the target participant`() {
+    fun `retrieves Match IDs and details and summarizes the target participant`() {
         accountLookupReturns()
         `when`(riotMatchClient.findMatchIdsByPuuid("target-puuid", 5, 2)).thenReturn(listOf("KR_2", "KR_1"))
         `when`(riotMatchClient.findMatchById("KR_2"))
@@ -64,8 +78,8 @@ class PlayerMatchHistoryServiceTest {
         val calls = inOrder(riotAccountClient, riotMatchClient)
         calls.verify(riotAccountClient).findByRiotId("Hide on bush", "KR1")
         calls.verify(riotMatchClient).findMatchIdsByPuuid("target-puuid", 5, 2)
-        calls.verify(riotMatchClient).findMatchById("KR_2")
-        calls.verify(riotMatchClient).findMatchById("KR_1")
+        verify(riotMatchClient).findMatchById("KR_2")
+        verify(riotMatchClient).findMatchById("KR_1")
 
         assertEquals("Hide on bush", response.player.gameName)
         assertEquals("KR1", response.player.tagLine)
@@ -83,6 +97,43 @@ class PlayerMatchHistoryServiceTest {
         assertEquals(8, targetSummary.kills)
         assertEquals(162, targetSummary.totalCs)
         assertEquals(listOf(3_073, 0, 3_364), targetSummary.itemIds)
+    }
+
+    @Test
+    fun `preserves source Match ID order when Detail requests finish out of order`() {
+        accountLookupReturns()
+        `when`(riotMatchClient.findMatchIdsByPuuid("target-puuid", 0, 2)).thenReturn(listOf("KR_slow", "KR_fast"))
+        val fastDetailCompleted = CountDownLatch(1)
+        val releaseSlowDetail = CountDownLatch(1)
+        `when`(riotMatchClient.findMatchById("KR_slow"))
+            .thenAnswer {
+                try {
+                    assertTrue(releaseSlowDetail.await(2, TimeUnit.SECONDS))
+                    match("KR_slow", listOf(participant(puuid = "target-puuid")))
+                } finally {
+                    releaseSlowDetail.countDown()
+                }
+            }
+        `when`(riotMatchClient.findMatchById("KR_fast"))
+            .thenAnswer {
+                fastDetailCompleted.countDown()
+                match("KR_fast", listOf(participant(puuid = "target-puuid")))
+            }
+
+        val responseFuture =
+            CompletableFuture.supplyAsync {
+                service.findRecentMatches("Hide on bush", "KR1", start = 0, count = 2)
+            }
+
+        try {
+            assertTrue(fastDetailCompleted.await(2, TimeUnit.SECONDS))
+        } finally {
+            releaseSlowDetail.countDown()
+        }
+
+        val response = responseFuture.get(2, TimeUnit.SECONDS)
+
+        assertEquals(listOf("KR_slow", "KR_fast"), response.matches.map { it.matchId })
     }
 
     @Test
@@ -165,6 +216,90 @@ class PlayerMatchHistoryServiceTest {
                 service.findRecentMatches("Hide on bush", "KR1", start = 0, count = 1)
             },
         )
+    }
+
+    @Test
+    fun `does not schedule new Detail requests after a Riot rate limit response`() {
+        accountLookupReturns()
+        `when`(riotMatchClient.findMatchIdsByPuuid("target-puuid", 0, 5))
+            .thenReturn(listOf("KR_429", "KR_2", "KR_3", "KR_4", "KR_5"))
+        val otherInitialDetailsStarted = CountDownLatch(3)
+        val releaseOtherInitialDetails = CountDownLatch(1)
+        val exception = RiotApiResponseException(HttpStatus.TOO_MANY_REQUESTS, "rate limited", retryAfterSeconds = 7)
+        `when`(riotMatchClient.findMatchById(anyString()))
+            .thenAnswer { invocation ->
+                when (val matchId = invocation.getArgument<String>(0)) {
+                    "KR_429" -> {
+                        assertTrue(otherInitialDetailsStarted.await(2, TimeUnit.SECONDS))
+                        throw exception
+                    }
+
+                    else -> {
+                        otherInitialDetailsStarted.countDown()
+                        try {
+                            assertTrue(releaseOtherInitialDetails.await(2, TimeUnit.SECONDS))
+                            match(matchId, listOf(participant(puuid = "target-puuid")))
+                        } finally {
+                            releaseOtherInitialDetails.countDown()
+                        }
+                    }
+                }
+            }
+
+        try {
+            assertEquals(
+                exception,
+                assertFailsWith<RiotApiResponseException> {
+                    service.findRecentMatches("Hide on bush", "KR1", start = 0, count = 5)
+                },
+            )
+            verify(riotMatchClient, never()).findMatchById("KR_5")
+        } finally {
+            releaseOtherInitialDetails.countDown()
+        }
+    }
+
+    @Test
+    fun `does not exceed four concurrent Detail requests`() {
+        accountLookupReturns()
+        val matchIds = (1..8).map { "KR_$it" }
+        `when`(riotMatchClient.findMatchIdsByPuuid("target-puuid", 0, 8)).thenReturn(matchIds)
+        val activeRequests = AtomicInteger()
+        val maximumActiveRequests = AtomicInteger()
+        val initialDetailsStarted = CountDownLatch(MAX_CONCURRENT_MATCH_DETAIL_REQUESTS)
+        val releaseDetails = CountDownLatch(1)
+        `when`(riotMatchClient.findMatchById(anyString()))
+            .thenAnswer { invocation ->
+                val activeRequestCount = activeRequests.incrementAndGet()
+                maximumActiveRequests.updateAndGet { maxOf(it, activeRequestCount) }
+                initialDetailsStarted.countDown()
+                try {
+                    assertTrue(releaseDetails.await(2, TimeUnit.SECONDS))
+                    match(invocation.getArgument<String>(0), listOf(participant(puuid = "target-puuid")))
+                } finally {
+                    activeRequests.decrementAndGet()
+                }
+            }
+        val widerExecutor = Executors.newFixedThreadPool(8)
+        val concurrencyLimitedService = PlayerMatchHistoryService(riotAccountClient, riotMatchClient, widerExecutor)
+        val responseFuture =
+            CompletableFuture.supplyAsync {
+                concurrencyLimitedService.findRecentMatches("Hide on bush", "KR1", start = 0, count = 8)
+            }
+
+        try {
+            assertTrue(initialDetailsStarted.await(2, TimeUnit.SECONDS))
+            assertEquals(MAX_CONCURRENT_MATCH_DETAIL_REQUESTS, maximumActiveRequests.get())
+        } finally {
+            releaseDetails.countDown()
+        }
+
+        try {
+            assertEquals(8, responseFuture.get(2, TimeUnit.SECONDS).matches.size)
+            assertTrue(maximumActiveRequests.get() <= MAX_CONCURRENT_MATCH_DETAIL_REQUESTS)
+        } finally {
+            widerExecutor.shutdownNow()
+        }
     }
 
     @Test

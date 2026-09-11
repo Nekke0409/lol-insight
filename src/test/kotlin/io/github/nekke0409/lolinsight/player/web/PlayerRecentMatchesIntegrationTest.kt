@@ -194,6 +194,6 @@ class PlayerRecentMatchesIntegrationTest {
 
     class RiotApiMockTransport {
         val restClientBuilder: RestClient.Builder = RestClient.builder()
-        val server: MockRestServiceServer = MockRestServiceServer.bindTo(restClientBuilder).build()
+        val server: MockRestServiceServer = MockRestServiceServer.bindTo(restClientBuilder).ignoreExpectOrder(true).build()
     }
 }

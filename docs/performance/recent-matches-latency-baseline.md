@@ -1,6 +1,6 @@
 # Recent Matches Latency Baseline
 
-이 문서는 최근 경기 endpoint의 순차 Match Detail 조회 구현을 기준으로 latency baseline을
+이 문서는 최근 경기 endpoint의 Match Detail fan-out 구현 전후 latency를 같은 조건으로
 측정하고 기록하는 방법을 정의한다. 이 측정은 성능 테스트 프레임워크가 아니라, 실제 Riot API를
 사용하는 local development 환경에서 같은 HTTP 요청을 반복하는 간단한 재현 절차다.
 
@@ -12,15 +12,18 @@
 GET /api/v1/players/{gameName}/{tagLine}/matches?start=0&count={count}
 ```
 
-각 요청은 현재 구현에서 다음 순서로 실행된다.
+각 요청은 다음 순서로 실행된다.
 
 ```text
 HTTP endpoint
     -> Account-V1 Riot ID lookup (PUUID)
     -> Match-V5 match ID list lookup (start, count)
-    -> Match-V5 Match Detail lookup, one ID at a time and in list order
+    -> Match-V5 Match Detail lookup, at most four active calls
     -> target participant summary response
 ```
+
+Account-V1과 Match ID 목록 조회는 순차 호출이다. Match Detail만 application-managed executor의
+sliding window로 처리한다. Detail 완료 순서와 관계없이 응답은 Match ID 목록 순서를 유지한다.
 
 Match Detail 404는 해당 경기를 제외한 partial 200 response가 될 수 있다. 그 외 Riot 4xx/5xx와
 transport failure는 endpoint 오류 응답으로 전파될 수 있다. 따라서 response body의 `page` 정보와
@@ -92,7 +95,26 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\benchmark-rece
 
 JVM startup, class loading, local DNS/TLS 초기화 같은 cold-start 영향을 제외하려면, 측정 전에 같은
 local backend에 `count=1` 요청을 한 번 수동으로 수행하고 그 결과는 기록하지 않는다. benchmark
-script는 동시 요청을 만들지 않으며, 현재 순차 구현의 endpoint latency를 한 요청씩 측정한다.
+script는 동시 endpoint 요청을 만들지 않으며, 각 endpoint 요청 내부의 구현을 포함한 latency를 한 요청씩
+측정한다.
+
+## Sequential Baseline Before Bounded Concurrency
+
+bounded concurrency 적용 전 실제 Riot API 환경에서 기본 설정(각 count당 2회)으로 다음 결과를
+측정했다. 모든 요청은 HTTP 200으로 성공했고 benchmark 실패는 없었다. 표본이 작으므로 절대적인 성능
+수치가 아니라 동일 script·count·iterations 조건의 before/after 비교 기준으로만 사용한다.
+
+| Count | Attempts | Successful | Failed | Average latency (ms) | Minimum latency (ms) | Maximum latency (ms) |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | 2 | 2 | 0 | 351.9 | 253.7 | 450.1 |
+| 5 | 2 | 2 | 0 | 1,050.8 | 1,047.2 | 1,054.4 |
+| 10 | 2 | 2 | 0 | 1,531.3 | 1,432.0 | 1,630.6 |
+| 20 | 2 | 2 | 0 | 3,358.4 | 2,944.4 | 3,772.3 |
+
+- count=1: 450.1 ms, 253.7 ms
+- count=5: 1,054.4 ms, 1,047.2 ms
+- count=10: 1,630.6 ms, 1,432.0 ms
+- count=20: 3,772.3 ms, 2,944.4 ms
 
 ## Record Template
 
@@ -110,10 +132,10 @@ script는 동시 요청을 만들지 않으며, 현재 순차 구현의 endpoint
 | 10 |  |  |  |  |  |  |  |  |
 | 20 |  |  |  |  |  |  |  |  |
 
-실제 결과는 환경 의존적이므로 이 문서에는 예시 측정값을 넣지 않는다. 필요하면 팀 내부에서
-민감정보를 제외한 CSV 경로 또는 결과 요약을 별도 기록한다.
+실제 결과는 환경 의존적이다. 위 sequential baseline과 이후 bounded-concurrency 결과에는
+민감정보를 제외한 CSV 경로 또는 결과 요약을 함께 기록한다.
 
-## Comparing a Future Bounded-Concurrency Change
+## Comparing the Bounded-Concurrency Change
 
 bounded concurrency를 적용한 뒤에도 아래 조건을 고정한다.
 
@@ -123,6 +145,6 @@ bounded concurrency를 적용한 뒤에도 아래 조건을 고정한다.
 - 동일하거나 최대한 가까운 시점의 Riot API 상태; 429나 partial response는 성공 latency와 분리해 기록
 
 변경 전후의 각 count에서 성공/실패 수와 HTTP status 분포를 먼저 비교한 뒤, 성공한 응답의
-평균·최소·최대 latency를 비교한다. count가 커질수록 현재 순차 Detail 호출의 누적 latency가 보이는지와,
-변경 후 그 기울기가 낮아지는지를 확인한다. baseline보다 실패율이나 429가 늘어난다면 latency 개선만으로
-성능 개선으로 판단하지 않는다.
+평균·최소·최대 latency를 비교한다. count가 커질수록 sequential baseline의 누적 latency가 보이는지와,
+bounded concurrency 적용 후 그 기울기가 낮아지는지를 확인한다. baseline보다 실패율이나 429가
+늘어난다면 latency 개선만으로 성능 개선으로 판단하지 않는다.
