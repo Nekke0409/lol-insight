@@ -1,0 +1,2 @@
+﻿"Count","Attempt","LatencyMs","HttpStatus","Success","CurlExitCode","FailureReason","RetryAfterSeconds"
+"10","1","677.8","200","True","0",,

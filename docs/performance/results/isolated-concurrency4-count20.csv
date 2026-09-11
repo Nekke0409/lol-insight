@@ -1,0 +1,2 @@
+﻿"Count","Attempt","LatencyMs","HttpStatus","Success","CurlExitCode","FailureReason","RetryAfterSeconds"
+"20","1","1051.4","429","False","0","HTTP status 429.","1"

@@ -70,6 +70,7 @@ script는 `count=1`, `5`, `10`, `20`을 차례로, 기본 2회씩 직렬 호출�
 - `HttpStatus`
 - `Success`: `curl.exe`가 성공했고 HTTP 2xx인 경우에만 `True`
 - `CurlExitCode`, `FailureReason`
+- `RetryAfterSeconds`: HTTP 429 응답에 정수 초 단위 `Retry-After` header가 있을 때만 기록하며, 그 외에는 비어 있다.
 
 summary의 평균·최소·최대 latency는 성공한 HTTP 2xx 요청만 사용한다. 실패 요청도 개별 결과와
 status 집계에 남기므로, 429·5xx·transport failure를 정상 응답 시간에 섞지 않는다.
@@ -79,6 +80,15 @@ rate limit을 피하기 위해 기본값은 2회다. 더 많은 표본이 필요
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\benchmark-recent-matches.ps1 -Iterations 5
+```
+
+특정 count만 독립적으로 실행하려면 `-Count`를 지정한다. 지정하지 않으면 기존과 같이
+`count=1, 5, 10, 20` 전체를 순서대로 실행한다.
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\benchmark-recent-matches.ps1 -Count 5 -Iterations 1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\benchmark-recent-matches.ps1 -Count 10 -Iterations 1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\benchmark-recent-matches.ps1 -Count 20 -Iterations 1
 ```
 
 개별 결과를 CSV로 남기려면 명시적으로 output path를 전달한다. 지정한 파일은 덮어쓴다.
@@ -115,6 +125,62 @@ bounded concurrency 적용 전 실제 Riot API 환경에서 기본 설정(각 co
 - count=5: 1,054.4 ms, 1,047.2 ms
 - count=10: 1,630.6 ms, 1,432.0 ms
 - count=20: 3,772.3 ms, 2,944.4 ms
+
+개별 attempt 원본값은 이 repository에 보존되어 있지 않다. 따라서 이 baseline의 summary 값과
+문서에 이미 기록된 attempt 값만 비교 기준으로 사용하며, 이를 바탕으로 raw CSV를 추정 생성하지 않는다.
+
+## Bounded Concurrency=4 Result
+
+ADR-004의 bounded concurrency=4 적용 후 실제로 수행한 benchmark 결과는
+[`results/recent-matches-concurrency-4.csv`](results/recent-matches-concurrency-4.csv)에 보존한다.
+이 결과는 `count=1` 2회, `count=5` 2회, `count=10` 2회, `count=20` 2회를 **이 순서대로 연속 실행**한
+측정이다. 순차 baseline의 raw attempt CSV는 없으므로 `results/recent-matches-sequential.csv`는 만들지 않았다.
+
+| Count | Attempts | Successful | Failed | HTTP status distribution | Average latency (ms) | Minimum latency (ms) | Maximum latency (ms) |
+| ---: | ---: | ---: | ---: | --- | ---: | ---: | ---: |
+| 1 | 2 | 2 | 0 | 200x2 | 686.5 | 313.3 | 1,059.6 |
+| 5 | 2 | 2 | 0 | 200x2 | 424.7 | 411.2 | 438.1 |
+| 10 | 2 | 1 | 1 | 200x1, 429x1 | 560.9 | 560.9 | 560.9 |
+| 20 | 2 | 0 | 2 | 429x2 | N/A | N/A | N/A |
+
+- count=10에서 HTTP 429가 1회 발생했다.
+- count=20에서 HTTP 429가 2회 발생했다.
+- count=20에는 성공 HTTP 2xx 응답이 없으므로 성공 응답 latency 및 latency 개선율을 계산할 수 없다.
+- CSV의 `RetryAfterSeconds`는 당시 제공된 측정값에 포함되어 있지 않아 비어 있다. 이후 실행에서는 script가
+  429의 정수 초 단위 `Retry-After` header를 기록한다.
+
+이 연속 benchmark만으로 429의 원인을 concurrency=4 자체로 확정할 수 없다. 앞선 count의 Riot API 호출이
+누적 quota에 영향을 주었을 수 있고, count가 클수록 짧은 시간에 Detail 요청이 집중되는 fan-out burst도 함께
+영향을 줄 수 있다. ADR-004의 동시성 4는 in-flight Detail 호출 상한이지 request-per-second 제한이나
+process-wide cooldown이 아니다. 따라서 위 성공 응답 latency는 관측값으로만 보존하며, 순차 baseline과의
+개선율 또는 429의 단일 원인으로 해석하지 않는다.
+
+### Next Isolated Experiments
+
+각 experiment는 rate-limit 영향이 없는 상태에서 별도 PowerShell process로 한 번만 실행한다.
+고정 sleep이나 Riot rate-limit window의 시간값을 script에 추가하지 않는다.
+
+```powershell
+# Experiment A
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\benchmark-recent-matches.ps1 -Count 5 -Iterations 1
+
+# Experiment B
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\benchmark-recent-matches.ps1 -Count 10 -Iterations 1
+
+# Experiment C
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\benchmark-recent-matches.ps1 -Count 20 -Iterations 1
+```
+
+가능하면 동일 count에서 sequential 구현과 concurrency=4 구현을 각각 fresh 조건으로 독립 실행해 비교한다.
+순차 구현 확인이 필요하면 git history에서 ADR-004 적용 직전 commit을 확인하거나, 별도 git worktree에서
+그 revision을 실행한다. 현재 branch의 checkout/reset이나 git history를 변경하지 않는다.
+
+다음 결과를 기준으로 후속 결정을 내린다.
+
+- isolated concurrency=4는 성공하지만 연속 benchmark에서만 429가 나면, 누적 quota 영향의 증거다.
+- 같은 fresh 조건에서 sequential은 성공하지만 concurrency=4가 반복적으로 429이면, Detail request burst 영향의 증거다.
+- 같은 count의 isolated run에서 두 구현 모두 429이면, 이 recent-matches use case의 upstream 호출량이 현재 Riot key 제한과 충돌할 가능성이 있다.
+- 어느 조건도 반복적으로 재현되지 않으면, 현재 데이터만으로 하나의 원인을 확정할 수 없다고 기록한다.
 
 ## Record Template
 

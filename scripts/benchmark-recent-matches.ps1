@@ -5,6 +5,8 @@ param(
     [string]$GameName = $env:BENCHMARK_GAME_NAME,
     [string]$TagLine = $env:BENCHMARK_TAG_LINE,
     [string]$BaseUrl = $(if ($env:BENCHMARK_BASE_URL) { $env:BENCHMARK_BASE_URL } else { "http://localhost:8080" }),
+    [ValidateSet(1, 5, 10, 20)]
+    [int]$Count = 0,
     [ValidateRange(1, 100)]
     [int]$Iterations = 2,
     [string]$OutputPath
@@ -33,7 +35,12 @@ function Format-Milliseconds {
     return ("{0:N1}" -f [double]$Value)
 }
 
-$counts = @(1, 5, 10, 20)
+$counts =
+    if ($PSBoundParameters.ContainsKey("Count")) {
+        @($Count)
+    } else {
+        @(1, 5, 10, 20)
+    }
 $normalizedBaseUrl = $BaseUrl.TrimEnd("/")
 $encodedGameName = [Uri]::EscapeDataString($GameName)
 $encodedTagLine = [Uri]::EscapeDataString($TagLine)
@@ -42,7 +49,7 @@ $results = @()
 foreach ($count in $counts) {
     for ($attempt = 1; $attempt -le $Iterations; $attempt += 1) {
         $url = "$normalizedBaseUrl/api/v1/players/$encodedGameName/$encodedTagLine/matches?start=0&count=$count"
-        $curlOutput = & $curl.Source --silent --show-error --output NUL --write-out "`n__BENCHMARK__%{http_code};%{time_total}" $url 2>&1
+        $curlOutput = & $curl.Source --silent --show-error --dump-header - --output NUL --write-out "`n__BENCHMARK__%{http_code};%{time_total}" $url 2>&1
         $curlExitCode = $LASTEXITCODE
         $rawOutput = $curlOutput | Out-String
         $measurement = [regex]::Match($rawOutput, "__BENCHMARK__(?<status>\d{3});(?<seconds>\d+(?:\.\d+)?)")
@@ -56,6 +63,14 @@ foreach ($count in $counts) {
                 [Globalization.CultureInfo]::InvariantCulture
             )
             $latencyMs = [math]::Round($latencySeconds * 1000, 1)
+        }
+
+        $retryAfterSeconds = $null
+        if ($statusCode -eq 429) {
+            $retryAfterHeaders = [regex]::Matches($rawOutput, "(?im)^Retry-After:\s*(?<seconds>\d+)\s*$")
+            if ($retryAfterHeaders.Count -gt 0) {
+                $retryAfterSeconds = [int]$retryAfterHeaders[$retryAfterHeaders.Count - 1].Groups["seconds"].Value
+            }
         }
 
         $success = $curlExitCode -eq 0 -and $null -ne $statusCode -and $statusCode -ge 200 -and $statusCode -lt 300
@@ -79,6 +94,7 @@ foreach ($count in $counts) {
                 Success       = $success
                 CurlExitCode  = $curlExitCode
                 FailureReason = $failureReason
+                RetryAfterSeconds = $retryAfterSeconds
             }
     }
 }
@@ -108,7 +124,7 @@ $summary =
     }
 
 Write-Host "Per-request results"
-$results | Format-Table Count, Attempt, LatencyMs, HttpStatus, Success, CurlExitCode, FailureReason -AutoSize
+$results | Format-Table Count, Attempt, LatencyMs, HttpStatus, Success, CurlExitCode, FailureReason, RetryAfterSeconds -AutoSize
 
 Write-Host "Summary (latency statistics include successful HTTP 2xx responses only)"
 $summary | Format-Table Count, Attempts, Successful, Failed, AverageLatencyMs, MinimumLatencyMs, MaximumLatencyMs, HttpStatuses -AutoSize
