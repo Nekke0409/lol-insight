@@ -45,7 +45,7 @@ class PlayerMatchStatisticsCalculator {
             kills = participant.kills,
             deaths = participant.deaths,
             assists = participant.assists,
-            kda = (participant.kills.toDouble() + participant.assists) / maxOf(1, participant.deaths),
+            kda = participant.kda(),
             csPerMinute = totalCs.perMinute(durationMinutes),
             goldPerMinute = participant.goldEarned.toDouble().perMinute(durationMinutes),
             damagePerMinute = participant.championDamageDealt.toDouble().perMinute(durationMinutes),
