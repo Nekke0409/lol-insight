@@ -1,11 +1,14 @@
 package io.github.nekke0409.lolinsight.player.web
 
+import io.github.nekke0409.lolinsight.match.infrastructure.cache.MATCH_DETAIL_CACHE
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.boot.test.context.TestConfiguration
+import org.springframework.cache.CacheManager
+import org.springframework.cache.concurrent.ConcurrentMapCacheManager
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Import
 import org.springframework.context.annotation.Primary
@@ -38,11 +41,15 @@ class PlayerRecentMatchesIntegrationTest {
     @Autowired
     private lateinit var riotApiMockServer: MockRestServiceServer
 
+    @Autowired
+    private lateinit var cacheManager: CacheManager
+
     private lateinit var mockMvc: MockMvc
 
     @BeforeEach
     fun setUp() {
         riotApiMockServer.reset()
+        cacheManager.getCache(MATCH_DETAIL_CACHE)?.clear()
         mockMvc = MockMvcBuilders.webAppContextSetup(webApplicationContext).build()
     }
 
@@ -178,6 +185,10 @@ class PlayerRecentMatchesIntegrationTest {
 
     @TestConfiguration(proxyBeanMethods = false)
     class RiotApiMockServerConfiguration {
+        @Bean
+        @Primary
+        fun testCacheManager(): CacheManager = ConcurrentMapCacheManager(MATCH_DETAIL_CACHE)
+
         @Bean
         fun riotApiMockTransport(): RiotApiMockTransport = RiotApiMockTransport()
 

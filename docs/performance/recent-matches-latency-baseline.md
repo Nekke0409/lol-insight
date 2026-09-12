@@ -52,6 +52,50 @@ $env:RIOT_API_KEY = "your-riot-api-key"
 target URL은 `http://localhost:8080`이며, 다른 local port를 사용하면 `BENCHMARK_BASE_URL` 또는
 `-BaseUrl`로 변경한다.
 
+## Redis Match Detail Cache Smoke Test
+
+Start the local Redis service before starting the backend.
+
+```powershell
+docker compose up -d redis
+```
+
+Use the existing `RIOT_API_KEY` setup and leave `REDIS_HOST=localhost` and `REDIS_PORT=6379` at
+their local defaults unless Redis runs elsewhere. Make the same single-Match request twice, or make
+the same recent-Matches request twice with the same player and pagination values.
+
+- On the first request, each previously uncached Match Detail is a cache miss and calls Riot.
+- On the second request, cached Match Detail values are returned from Redis without a Match-V5
+  Detail HTTP request. Account lookup and Match ID list lookup are intentionally still uncached.
+
+Without adding application DEBUG logging, inspect the keys from the Redis container when needed:
+
+```powershell
+docker compose exec redis redis-cli --scan --pattern "match:detail:*"
+```
+
+The expected key form is `match:detail:{matchId}`. This is a local smoke test only; it does not
+prove that cold-cache traffic will avoid Riot 429 responses.
+
+## Redis Cache Experiment Template
+
+No Redis-cache latency values are recorded in this document yet. Do not insert estimated values.
+For a later comparison, run separate experiments with the same target, count, iterations, local
+backend, JDK, shard, and API key scope:
+
+- **Cold cache:** use a Redis instance that does not already contain the target Match Detail keys,
+  then run the benchmark once.
+- **Warm cache:** repeat the identical benchmark while the target Match Detail keys remain valid.
+
+Record the resulting CSV path and the relevant Redis state in the template below. Whole endpoint
+latency still includes the uncached Account-V1 and Match-ID-list calls, so report HTTP status and
+success counts alongside latency.
+
+| Cache state | Measured at | Commit | Count | Iterations | Result file | Notes |
+| --- | --- | --- | ---: | ---: | --- | --- |
+| Cold |  |  |  |  |  |  |
+| Warm |  |  |  |  |  |  |
+
 ## Run
 
 서버가 기동된 뒤, 별도 PowerShell terminal에서 다음처럼 실행한다.

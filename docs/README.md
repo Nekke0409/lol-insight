@@ -46,3 +46,6 @@ ADR은 "현재 구조가 무엇인가"보다 다음 질문에 답하는 기록�
 
 - [`ADR-001: Use Modular Monolith for Initial Architecture`](adr/001-use-modular-monolith.md)
 - [`ADR-002: Define a Shared Riot API Client Boundary`](adr/002-define-riot-api-client-boundary.md)
+- [`ADR-003: Preserve Riot Rate-Limit Metadata and Translate Endpoint-Specific Not Found Errors`](adr/003-preserve-riot-rate-limit-and-not-found-errors.md)
+- [`ADR-004: Bound Recent Match Detail Fan-Out with an Application-Managed Executor`](adr/004-bound-match-detail-fan-out.md)
+- [`ADR-005: Cache Completed Match Details in Redis`](adr/005-cache-completed-match-details-in-redis.md)

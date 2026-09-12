@@ -394,6 +394,27 @@ Redis는 **필요성이 확인된 데이터에 선택적으로 도입**한다.
 복잡한 캐시 무효화가 필요한 데이터는
 캐시 자체가 적절한지 먼저 검토한다.
 
+### Match Detail Cache
+
+`RiotMatchClient.findMatchById` is cached through the Spring Cache abstraction. The application
+service remains unaware of Redis; both the single Match endpoint and the recent-Matches detail
+fan-out reach the same client method and therefore use the same cache path.
+
+- Cache name: `match:detail`
+- Redis key: `match:detail:{matchId}`
+- Cache value: the internal `Match` domain model, serialized as JSON with the Spring Boot
+  `ObjectMapper`
+- TTL: seven days from a successful write
+- Stored values: only successfully mapped Match Detail results; null values are disabled
+
+The Redis cache manager predefines this cache only. It does not create caches for account lookup,
+Match ID lists, complete player responses, complete recent-Matches responses, or upstream errors.
+`MatchNotFoundException`, Riot 429/5xx responses, transport failures, and invalid or empty upstream
+responses leave no cache entry because the cached method does not complete successfully.
+
+Cache hits bypass Match-V5 Detail HTTP calls. Cache misses still call Riot and can still receive a
+429 response; caching is not a distributed rate limiter, cooldown, retry, or token-bucket policy.
+
 ## 12. Error Handling
 
 오류는 최소한 다음 범주를 구분할 수 있어야 한다.

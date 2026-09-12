@@ -5,6 +5,8 @@ import io.github.nekke0409.lolinsight.global.riot.RiotApiResponseException
 import io.github.nekke0409.lolinsight.global.riot.RiotApiRouting
 import io.github.nekke0409.lolinsight.match.application.MatchNotFoundException
 import io.github.nekke0409.lolinsight.match.domain.Match
+import io.github.nekke0409.lolinsight.match.infrastructure.cache.MATCH_DETAIL_CACHE
+import org.springframework.cache.annotation.Cacheable
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Component
 
@@ -12,6 +14,7 @@ import org.springframework.stereotype.Component
 class RiotMatchClient(
     private val riotApiHttpClient: RiotApiHttpClient,
 ) {
+    @Cacheable(cacheNames = [MATCH_DETAIL_CACHE], key = "#matchId")
     fun findMatchById(matchId: String): Match {
         val response =
             try {
