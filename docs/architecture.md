@@ -307,6 +307,12 @@ Riot Match DTO
     -> API response or analysis feature
 ```
 
+The Player recent-Matches and player statistics endpoints share an application-level loader for
+`Riot ID -> PUUID -> Match IDs -> domain Match` orchestration. The loader preserves the bounded
+Detail fan-out and partial-result policy; each endpoint maps the resulting normalized Match list to
+its own response. Statistics calculation is a separate application component and does not call
+Riot or Redis directly.
+
 원본 데이터를 DB에 얼마나 저장할지,
 정규화된 데이터를 저장할지,
 필요할 때 Riot API에서 다시 가져올지는

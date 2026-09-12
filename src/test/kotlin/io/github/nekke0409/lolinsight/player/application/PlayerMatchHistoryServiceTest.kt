@@ -43,7 +43,7 @@ class PlayerMatchHistoryServiceTest {
     private val riotAccountClient = mock(RiotAccountClient::class.java)
     private val riotMatchClient = mock(RiotMatchClient::class.java)
     private val matchDetailExecutor = Executors.newFixedThreadPool(MAX_CONCURRENT_MATCH_DETAIL_REQUESTS)
-    private val service = PlayerMatchHistoryService(riotAccountClient, riotMatchClient, matchDetailExecutor)
+    private val service = PlayerMatchHistoryService(PlayerMatchHistoryLoader(riotAccountClient, riotMatchClient, matchDetailExecutor))
 
     @AfterEach
     fun shutDownMatchDetailExecutor() {
@@ -281,7 +281,8 @@ class PlayerMatchHistoryServiceTest {
                 }
             }
         val widerExecutor = Executors.newFixedThreadPool(8)
-        val concurrencyLimitedService = PlayerMatchHistoryService(riotAccountClient, riotMatchClient, widerExecutor)
+        val concurrencyLimitedService =
+            PlayerMatchHistoryService(PlayerMatchHistoryLoader(riotAccountClient, riotMatchClient, widerExecutor))
         val responseFuture =
             CompletableFuture.supplyAsync {
                 concurrencyLimitedService.findRecentMatches("Hide on bush", "KR1", start = 0, count = 8)

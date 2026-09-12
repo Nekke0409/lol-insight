@@ -6,6 +6,11 @@ import io.github.nekke0409.lolinsight.global.web.GlobalExceptionHandler
 import io.github.nekke0409.lolinsight.player.application.MatchParticipantSummaryResponse
 import io.github.nekke0409.lolinsight.player.application.MatchSummaryResponse
 import io.github.nekke0409.lolinsight.player.application.PlayerMatchHistoryService
+import io.github.nekke0409.lolinsight.player.application.PlayerMatchStatistics
+import io.github.nekke0409.lolinsight.player.application.PlayerMatchStatisticsPlayerResponse
+import io.github.nekke0409.lolinsight.player.application.PlayerMatchStatisticsResponse
+import io.github.nekke0409.lolinsight.player.application.PlayerMatchStatisticsSampleResponse
+import io.github.nekke0409.lolinsight.player.application.PlayerMatchStatisticsService
 import io.github.nekke0409.lolinsight.player.application.PlayerNotFoundException
 import io.github.nekke0409.lolinsight.player.application.PlayerResponse
 import io.github.nekke0409.lolinsight.player.application.PlayerService
@@ -31,9 +36,10 @@ import java.time.Instant
 class PlayerControllerTest {
     private val playerService = mock(PlayerService::class.java)
     private val playerMatchHistoryService = mock(PlayerMatchHistoryService::class.java)
+    private val playerMatchStatisticsService = mock(PlayerMatchStatisticsService::class.java)
     private val mockMvc: MockMvc =
         MockMvcBuilders
-            .standaloneSetup(PlayerController(playerService, playerMatchHistoryService))
+            .standaloneSetup(PlayerController(playerService, playerMatchHistoryService, playerMatchStatisticsService))
             .setControllerAdvice(GlobalExceptionHandler())
             .build()
 
@@ -113,6 +119,48 @@ class PlayerControllerTest {
     }
 
     @Test
+    fun `returns aggregate Match statistics without Match or Riot DTO data`() {
+        `when`(playerMatchStatisticsService.findStatistics("Hide on bush", "KR1", 0, 20))
+            .thenReturn(playerMatchStatisticsResponse())
+
+        mockMvc
+            .perform(get("/api/v1/players/{gameName}/{tagLine}/stats", "Hide on bush", "KR1"))
+            .andExpect(status().isOk)
+            .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+            .andExpect(jsonPath("$.player.gameName").value("Hide on bush"))
+            .andExpect(jsonPath("$.player.tagLine").value("KR1"))
+            .andExpect(jsonPath("$.sample.start").value(0))
+            .andExpect(jsonPath("$.sample.requestedCount").value(20))
+            .andExpect(jsonPath("$.sample.analyzedCount").value(2))
+            .andExpect(jsonPath("$.statistics.games").value(2))
+            .andExpect(jsonPath("$.statistics.winRate").value(0.5))
+            .andExpect(jsonPath("$.statistics.averageCsPerMinute").value(7.5))
+            .andExpect(jsonPath("$.matches").doesNotExist())
+            .andExpect(jsonPath("$.puuid").doesNotExist())
+    }
+
+    @Test
+    fun `rejects invalid Match statistics pagination parameters`() {
+        mockMvc
+            .perform(
+                get("/api/v1/players/{gameName}/{tagLine}/stats", "Hide on bush", "KR1")
+                    .param("count", "0"),
+            ).andExpect(status().isBadRequest)
+
+        mockMvc
+            .perform(
+                get("/api/v1/players/{gameName}/{tagLine}/stats", "Hide on bush", "KR1")
+                    .param("count", "21"),
+            ).andExpect(status().isBadRequest)
+
+        mockMvc
+            .perform(
+                get("/api/v1/players/{gameName}/{tagLine}/stats", "Hide on bush", "KR1")
+                    .param("start", "-1"),
+            ).andExpect(status().isBadRequest)
+    }
+
+    @Test
     fun `preserves Riot rate limit response for recent Match lookups`() {
         `when`(playerMatchHistoryService.findRecentMatches("Hide on bush", "KR1", 0, 20))
             .thenThrow(
@@ -185,6 +233,29 @@ class PlayerControllerTest {
                                 itemIds = listOf(3_073, 0, 3_364),
                             ),
                     ),
+                ),
+        )
+
+    private fun playerMatchStatisticsResponse(): PlayerMatchStatisticsResponse =
+        PlayerMatchStatisticsResponse(
+            player = PlayerMatchStatisticsPlayerResponse(gameName = "Hide on bush", tagLine = "KR1"),
+            sample = PlayerMatchStatisticsSampleResponse(start = 0, requestedCount = 20, analyzedCount = 2),
+            statistics =
+                PlayerMatchStatistics(
+                    games = 2,
+                    wins = 1,
+                    losses = 1,
+                    winRate = 0.5,
+                    averageKills = 5.0,
+                    averageDeaths = 3.0,
+                    averageAssists = 7.0,
+                    averageKda = 4.0,
+                    averageCsPerMinute = 7.5,
+                    averageGoldPerMinute = 400.0,
+                    averageDamagePerMinute = 900.0,
+                    averageVisionPerMinute = 1.2,
+                    averageKillParticipation = 0.6,
+                    averageDamageShare = 0.3,
                 ),
         )
 }

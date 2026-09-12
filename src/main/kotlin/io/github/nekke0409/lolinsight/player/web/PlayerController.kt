@@ -1,6 +1,8 @@
 package io.github.nekke0409.lolinsight.player.web
 
 import io.github.nekke0409.lolinsight.player.application.PlayerMatchHistoryService
+import io.github.nekke0409.lolinsight.player.application.PlayerMatchStatisticsResponse
+import io.github.nekke0409.lolinsight.player.application.PlayerMatchStatisticsService
 import io.github.nekke0409.lolinsight.player.application.PlayerResponse
 import io.github.nekke0409.lolinsight.player.application.PlayerService
 import io.github.nekke0409.lolinsight.player.application.RecentMatchesResponse
@@ -18,6 +20,7 @@ import org.springframework.web.bind.annotation.RestController
 class PlayerController(
     private val playerService: PlayerService,
     private val playerMatchHistoryService: PlayerMatchHistoryService,
+    private val playerMatchStatisticsService: PlayerMatchStatisticsService,
 ) {
     @GetMapping("/{gameName}/{tagLine}")
     fun findByRiotId(
@@ -32,4 +35,12 @@ class PlayerController(
         @RequestParam(defaultValue = "0") @Min(0) start: Int,
         @RequestParam(defaultValue = "20") @Min(1) @Max(20) count: Int,
     ): RecentMatchesResponse = playerMatchHistoryService.findRecentMatches(gameName, tagLine, start, count)
+
+    @GetMapping("/{gameName}/{tagLine}/stats")
+    fun findMatchStatistics(
+        @PathVariable @NotBlank gameName: String,
+        @PathVariable @NotBlank tagLine: String,
+        @RequestParam(defaultValue = "0") @Min(0) start: Int,
+        @RequestParam(defaultValue = "20") @Min(1) @Max(20) count: Int,
+    ): PlayerMatchStatisticsResponse = playerMatchStatisticsService.findStatistics(gameName, tagLine, start, count)
 }
