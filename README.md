@@ -1,156 +1,114 @@
 # LOL Insight
 
-League of Legends 데이터를 활용하여 플레이어 전적/통계를 제공하고,
-가공된 플레이 데이터를 기반으로 AI 피드백을 생성하는 Backend 중심 웹 서비스 프로젝트입니다.
+League of Legends 데이터를 바탕으로 플레이어의 최근 경기와 통계를 조회하고, 같은 조건의 플레이어 집단과 비교한 분석으로 확장하는 Backend 중심 서비스입니다.
 
-단순한 클론 코딩보다 **API 설계, 데이터 모델링, 외부 API 연동, 테스트, 캐싱,
-성능과 장애 대응, AI 활용 구조**를 직접 설계하고 구현하는 것을 목표로 합니다.
+단순 기능 구현보다 외부 API 연동, 데이터 정규화, Rate Limit, 캐싱, 통계 계산, 실패 처리와 테스트를 실제 서비스 관점에서 다룹니다.
 
-## Goals
+## Service Direction
 
-기능은 다음 순서로 확장합니다.
+서비스는 다음 흐름으로 확장합니다.
 
-1. **Player Search & Match Statistics**
-   - Riot Games API 기반 플레이어 검색
-   - Match 조회
-   - 전적 및 통계 제공
+1. Riot Games API 기반 플레이어 검색, 최근 경기 및 개인 통계 조회
+2. 정규화된 Match와 개인 통계를 바탕으로 한 Peer Benchmark 데이터셋 수집
+3. 동일 region, queue, tier, position, champion cohort와의 상대 비교
+4. Backend가 계산한 비교 feature를 설명하는 LLM 기반 자연어 피드백
+5. 사용자 계정, 게시글, 댓글 등의 커뮤니티
 
-2. **AI Play Analysis**
-   - Match 데이터 정제
-   - 통계 및 분석용 feature 계산
-   - 구조화된 데이터를 LLM에 전달
-   - 플레이 분석 및 자연어 피드백 제공
+Riot의 공식 Ranked Ladder를 대체하는 MMR, ELO 또는 자체 Skill Rating을 만들지 않습니다.
 
-3. **Community**
-   - 사용자 계정
-   - 게시글
-   - 댓글
-   - 일반적인 커뮤니티 기능
+## Current Implementation and Planned Work
 
-## Architecture Direction
+| Area | Current implementation | Planned / future work |
+| --- | --- | --- |
+| Riot integration | Account-V1 기반 Riot ID 조회, Match-V5 Match ID 및 Detail 조회 | ranked player discovery와 benchmark collection |
+| Match processing | Riot Match DTO를 내부 `Match` 모델로 정규화 | benchmark용 participant-level observation 추출 |
+| Player statistics | 최근 Match 표본의 KDA, CS/min, DPM, 골드/비전, 킬 관여율, 피해 비중 계산 | cohort와의 차이 및 percentile 계산 |
+| Analysis feature | `PlayerAnalysisFeature` 생성 | `PeerBenchmark`, `PlayerComparisonFeature` 생성 |
+| Redis | 성공한 Match Detail을 7일 TTL로 캐시 | benchmark 전용 Redis 기능은 도입하지 않음 |
+| Persistence | 구현되지 않음 — PostgreSQL, JPA, Flyway 의존성·schema·Entity 없음 | `BenchmarkSample` 저장 정책과 migration을 별도 작업에서 결정 |
+| LLM | 구현되지 않음 — OpenAI/다른 Provider client, prompt, endpoint 없음 | Backend가 만든 comparison feature의 자연어 설명 |
 
-초기 버전은 Backend 중심의 **Modular Monolith**로 시작합니다.
+## Current Architecture
 
-복잡한 분산 시스템을 미리 도입하지 않고,
-서비스가 성장하면서 실제 문제가 확인되는 시점에 필요한 구조를 추가합니다.
-
-기본적인 의존 흐름은 다음과 같습니다.
+초기 구조는 하나의 Spring Boot 애플리케이션 안에서 기능별 경계를 나누는 Modular Monolith입니다.
 
 ```text
 HTTP Request
     -> Controller
-    -> Application/Service
-    -> Repository / External Client
-    -> PostgreSQL / Redis / Riot API / LLM API
+    -> Application / Service
+    -> Riot Client / Cache
+    -> Riot Games API / Redis
 ```
 
-Riot API와 LLM 같은 외부 시스템은 애플리케이션 로직과 분리된 Client/Adapter 경계를 둡니다.
+현재 Player의 최근 Match와 통계는 아래 흐름을 공유합니다.
 
-자세한 내용은 [`docs/architecture.md`](docs/architecture.md)를 참고하세요.
+```text
+Riot ID -> Account-V1 -> PUUID -> Match IDs -> normalized Match
+                                              -> player statistics
+                                              -> PlayerAnalysisFeature
+```
+
+Match Detail은 `RiotMatchClient` 경계에서 Redis를 사용합니다. 최근 경기 Detail fan-out은 application lifecycle이 관리하는 고정 4-thread executor와 sliding window로 제한됩니다. cache hit은 Riot Match-V5 Detail 호출을 생략하지만, cache는 rate limiter나 retry 정책이 아닙니다.
+
+Peer Benchmark는 아직 구현되지 않았습니다. 합의된 향후 데이터 흐름은 다음과 같습니다.
+
+```text
+ranked player source
+    -> sampled players
+    -> recent Ranked Solo Match IDs
+    -> Match ID deduplication
+    -> normalized Match
+    -> BenchmarkSample (sampled player, matchId)
+    -> Benchmark Aggregate
+    -> PeerBenchmark
+    -> PlayerComparisonFeature
+    -> LLM feedback
+```
+
+`BenchmarkSample`은 여러 경기를 평균 낸 값이 아니라, 표본 플레이어 한 명의 한 경기 participant-level observation입니다. 해당 플레이어의 수집 시점 rank만 sample에 귀속하며, 같은 Match의 다른 participant에게 tier를 추정하거나 부여하지 않습니다.
+
+자세한 설계와 현재 구현 경계는 [architecture.md](docs/architecture.md), Peer Benchmark 선택의 근거는 [ADR-006](docs/adr/006-use-sampled-peer-benchmark.md)에서 확인할 수 있습니다.
 
 ## AI Analysis Principle
 
-LLM이 원본 게임 데이터를 직접 해석하고 모든 계산을 수행한다고 가정하지 않습니다.
+계산과 설명을 분리합니다.
 
 ```text
-Riot API data
-    -> data normalization
-    -> statistics calculation
-    -> feature generation
-    -> LLM
-    -> feedback
+Riot data
+    -> normalization
+    -> statistics and cohort comparison in Backend
+    -> deterministic feature
+    -> LLM explanation
 ```
 
-통계, 비율, 비교값과 같은 결정적인 계산은 Backend에서 수행하고,
-LLM은 구조화된 feature를 바탕으로 설명과 피드백을 생성하는 역할에 집중합니다.
+Backend는 metric, cohort, sample size, 평균·중앙값·percentile, 차이와 비교 feature를 계산합니다. LLM은 계산된 결과를 사용자가 이해하기 쉬운 강점·개선점·피드백으로 설명합니다. 원본 Riot Match JSON 분석, percentile 계산, benchmark 생성, MMR 추정은 LLM의 역할이 아닙니다.
 
-## Technology Direction
+## Technology
 
-현재 우선 고려하는 기술은 다음과 같습니다.
+현재 사용 중인 기술은 Kotlin, Spring Boot, Spring MVC `RestClient`, Redis, Docker입니다. JDK 21을 사용합니다.
 
-| Area | Technology |
-| --- | --- |
-| Language | Kotlin |
-| Framework | Spring Boot |
-| Security | Spring Security |
-| ORM | JPA / Hibernate |
-| Database | PostgreSQL |
-| Cache | Redis |
-| Container | Docker |
-| Cloud | AWS |
-| Game Data | Riot Games API |
-| AI | OpenAI API 또는 기타 LLM API |
-
-기술 스택은 프로젝트 요구사항에 따라 변경할 수 있으며,
-중요한 기술적 결정은 ADR로 기록합니다.
+PostgreSQL, JPA/Hibernate, Flyway, Spring Security, AWS 및 OpenAI API 또는 다른 LLM Provider는 서비스 요구가 구체화될 때 도입을 검토하는 기술 방향이며, 현재 구현된 구성은 아닙니다.
 
 ## Documentation
 
-```text
-.
-├── AGENTS.md
-├── README.md
-└── docs
-    ├── README.md
-    ├── architecture.md
-    └── adr
-        ├── README.md
-        ├── 000-template.md
-        └── 001-use-modular-monolith.md
-```
-
-- [`AGENTS.md`](AGENTS.md): Codex 등 코딩 에이전트가 따라야 할 작업 규칙
-- [`docs/architecture.md`](docs/architecture.md): 현재 시스템 아키텍처의 기준 문서
-- [`docs/adr/`](docs/adr/): 중요한 기술적 의사결정 기록
-
-## Development Status
-
-현재는 **Riot Games API 공통 Client 기반을 구현한 단계**입니다.
-
-공통 Client는 환경 변수로 주입한 API Key를 `X-Riot-Token` 헤더에 적용하고,
-platform/regional routing host를 구분합니다. 개별 Account, Summoner, League, Match endpoint Client와
-각 endpoint DTO, Controller, Service, Entity는 아직 구현하지 않았습니다.
-
-기능 구현을 시작하면 최상위 패키지는 다음과 같이 package-by-feature로 구성합니다.
-
-```text
-io.github.nekke0409.lolinsight
-├── player/
-├── match/
-├── analysis/
-├── community/
-└── global/
-```
-
-각 기능 내부의 `api`, `application`, `domain`, `persistence`, `infrastructure` 같은 하위 패키지는
-실제 코드와 책임 분리가 필요해지는 시점에만 추가합니다. 현재는 빈 패키지를 미리 만들지 않습니다.
+- [AGENTS.md](AGENTS.md): 작업 원칙과 구현 가이드
+- [Architecture](docs/architecture.md): 현재 구현과 향후 설계 경계
+- [ADRs](docs/adr/): 장기적인 기술 의사결정
+- [Player Match Statistics v0.1](docs/statistics/player-match-statistics-v0.1.md): 현재 통계의 계산 기준
+- [Player Analysis Feature v0.1](docs/ai/player-analysis-feature-v0.1.md): 현재 provider 독립 feature의 범위
 
 ## Local Environment
 
-Riot API 키는 환경변수로만 주입합니다. 로컬에서는 [`.env.example`](.env.example)를 참고해
-IDE 실행 구성이나 셸 환경변수에 설정합니다. 실제 값이 들어 있는 `.env` 파일은 Git에 추가하지 않습니다.
-현재 프로젝트는 `.env` 파일을 자동으로 읽는 라이브러리를 포함하지 않으므로, `.env`는 로컬 값 보관용 참고 파일입니다.
+Riot API key는 환경 변수로만 주입합니다. 실제 값을 저장소에 커밋하지 않습니다.
 
 ```text
 RIOT_API_KEY=your-riot-api-key
 ```
 
-구체적인 실행 방법, 환경 변수, Docker 구성, API 목록은
-실제 구현이 추가되는 시점에 이 README에 업데이트합니다.
+Match Detail cache를 사용하려면 로컬 Redis를 실행합니다.
 
-문서가 미래 구현을 미리 가정하여 실제 코드와 달라지는 것을 피하기 위해,
-아직 구현되지 않은 세부 설정은 의도적으로 확정하지 않습니다.
+```text
+docker compose up -d redis
+```
 
-## Working Principles
-
-- 동작만 하는 코드보다 변경하기 쉬운 구조를 지향합니다.
-- 외부 API와 핵심 비즈니스 로직의 결합을 줄입니다.
-- Rate Limit, Timeout, 장애 상황을 정상적인 운영 조건으로 다룹니다.
-- 테스트하기 어려운 구조는 설계 신호로 간주합니다.
-- MVP에서 필요하지 않은 과도한 추상화를 피합니다.
-- 중요한 구조 변경은 코드와 아키텍처 문서를 함께 변경합니다.
-- 중요한 기술적 선택은 ADR로 남깁니다.
-
-## License
-
-라이선스는 배포 정책이 정해진 후 추가합니다.
+현재 설정의 기본 Redis 주소는 `localhost:6379`입니다. 실행 및 측정 방법은 [recent match latency baseline](docs/performance/recent-matches-latency-baseline.md)을 참고합니다.

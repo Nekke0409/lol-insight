@@ -46,18 +46,21 @@ flowchart LR
     User[User / Frontend]
     App[Spring Boot Backend]
     Riot[Riot Games API]
-    DB[(PostgreSQL)]
     Cache[(Redis)]
-    LLM[LLM API]
+    DB[(PostgreSQL<br/>planned)]
+    LLM[LLM API<br/>planned]
 
     User --> App
     App --> Riot
-    App --> DB
     App --> Cache
-    App --> LLM
+    App -. planned .-> DB
+    App -. planned .-> LLM
 ```
 
-Backend가 서비스의 중심이며 Frontend가 Riot API나 LLM API를 직접 호출하지 않는다.
+Backend가 서비스의 중심이며 Frontend가 Riot API나 향후 LLM API를 직접 호출하지 않는다.
+
+현재 구현은 Riot Games API와 Redis Match Detail cache를 사용한다. PostgreSQL/JPA/Flyway와 LLM
+Provider 연동은 아직 구현하거나 설정하지 않았으며, 다이어그램의 해당 연결은 기술 방향을 나타내는 계획이다.
 
 이를 통해 다음을 Backend에서 통제한다.
 
@@ -79,7 +82,8 @@ Backend가 서비스의 중심이며 Frontend가 Riot API나 LLM API를 직접 �
 
 플레이어 식별 및 검색과 관련된 기능을 담당한다.
 
-구체적인 Riot 식별자 처리 방식과 저장 정책은 구현 단계에서 결정한다.
+현재 Account-V1 기반 Riot ID 조회와 최근 Match 조회·통계 계산이 구현되어 있다. 저장 정책은 아직 결정하거나
+구현하지 않았다.
 
 ### Match
 
@@ -89,10 +93,18 @@ Riot API의 원본 Match DTO와 서비스 내부에서 사용하는 모델을 �
 
 ### Analysis
 
-가공된 Match/통계 데이터를 이용해 분석 feature를 만들고
-LLM을 통해 자연어 피드백을 생성한다.
+가공된 Match/통계 데이터를 이용해 분석 feature를 만든다. 현재는 `PlayerAnalysisFeature`를 만드는
+provider 독립 application service까지만 구현되어 있다. LLM 호출, prompt, 자연어 피드백 endpoint는
+향후 작업이다.
 
 LLM Provider의 요청/응답 형식이 Match나 Player의 핵심 로직에 직접 퍼지지 않도록 한다.
+
+### Benchmark
+
+Peer Benchmark는 샘플링한 ranked player의 Ranked Solo Match participant 관측치를 수집하고, cohort별로
+집계해 상대 비교에 사용하는 기능 영역이다. `BenchmarkSample` 영속화, 수집 Client, collector, scheduler,
+aggregate, percentile 및 comparison feature는 아직 구현되지 않았다. 확정된 데이터 모델 원칙은
+[ADR-006](adr/006-use-sampled-peer-benchmark.md)을 따른다.
 
 ### Community
 
@@ -228,7 +240,7 @@ Riot API JSON
 외부 시스템 설정과 HTTP 통신 책임만 가지며, Player나 Match 도메인 로직을 포함하지 않는다.
 
 ```text
-RiotAccountClient / RiotSummonerClient / RiotLeagueClient / RiotMatchClient
+RiotAccountClient / RiotMatchClient
     -> RiotApiHttpClient
         -> RestClient
         -> Riot Games API
@@ -240,9 +252,10 @@ RiotAccountClient / RiotSummonerClient / RiotLeagueClient / RiotMatchClient
 - `RestClient`에는 설정 가능한 connect/read timeout을 적용한다. timeout을 포함한 통신 실패는 `RiotApiTransportException`으로 변환한다.
 - Riot의 HTTP 오류는 상태 코드와 응답 본문을 보존하는 외부 API 예외로 변환한다. 서비스의 HTTP 오류 응답으로 변환하는 정책은 실제 API endpoint를 추가할 때 결정한다.
 
-현재는 blocking Spring MVC 구조에 맞춰 Spring `RestClient`를 사용한다. endpoint별 Client는
-필요해지는 시점에 해당 기능 패키지의 infrastructure 경계에 추가하고,
-공통 전송기에는 endpoint DTO나 도메인 판단을 넣지 않는다.
+현재는 blocking Spring MVC 구조에 맞춰 Spring `RestClient`를 사용한다. 구현된 endpoint별 Client는
+Account-V1의 `RiotAccountClient`와 Match-V5의 `RiotMatchClient`다. ranked player discovery에 필요한
+League API Client 등은 실제 수집 기능 작업에서 해당 feature의 infrastructure 경계에 추가한다. 공통 전송기에는
+endpoint DTO나 도메인 판단을 넣지 않는다.
 
 ### Recent Match Detail Fan-Out
 
@@ -320,6 +333,65 @@ Riot or Redis directly.
 
 이 결정이 서비스 전체의 저장 비용과 데이터 모델에 큰 영향을 주게 되면 ADR로 기록한다.
 
+### Planned Peer Benchmark Flow
+
+현재의 플레이어 흐름과 향후 benchmark 흐름은 목적과 집계 단위가 다르므로 독립적으로 존재한다.
+
+```text
+Player flow (implemented)
+Riot API
+    -> normalized Match
+    -> PlayerMatchStatistics
+    -> PlayerAnalysisFeature
+
+Benchmark flow (planned)
+ranked player source
+    -> sampled players
+    -> recent Ranked Solo Match IDs
+    -> Match ID deduplication
+    -> normalized Match
+    -> BenchmarkSample
+    -> Benchmark Aggregate
+    -> PeerBenchmark
+```
+
+이후 `PlayerAnalysisFeature`와 `PeerBenchmark`를 결합해 `PlayerComparisonFeature`를 만들고 LLM에
+전달한다. `BenchmarkSample`, aggregate, `PeerBenchmark`, `PlayerComparisonFeature`, LLM adapter는 모두
+계획 상태이며 현재 production Kotlin 코드에는 없다.
+
+#### BenchmarkSample
+
+`BenchmarkSample` 한 건은 여러 경기 평균이 아니라 `(sampled player PUUID, matchId)`로 식별되는 한 경기의
+participant-level observation이다. 즉 sampled player가 해당 Ranked Solo Match에서 기록한 KDA, CS/min,
+gold/min, damage/min, vision/min, kill participation, damage share 등의 per-match metric이 한 sample을 이룬다.
+
+여러 sample의 average, median, percentile은 별도의 aggregate 단계에서 계산한다. 이때 metric 공식과 source of
+truth는 기존 `PlayerMatchStatisticsCalculator`의 per-match 계산을 재사용하거나 같은 기준으로 추출한다. aggregate
+객체를 `BenchmarkSample`으로 재사용하지 않는다.
+
+수집 구현 시 sample은 최소한 tier, division, rank 관측 시각과 Match의 `startedAt`을 함께 보존할 수 있어야 한다.
+이는 구현될 Entity나 schema를 지금 확정하는 요구가 아니다. 별도 rank history가 필요해지면 `RankSnapshot` 같은
+모델은 향후 정책과 함께 결정한다.
+
+#### Tier Attribution and Cohort
+
+League API로 rank를 확인해 sampled player A가 GOLD I인 경우, A의 participant만 GOLD I `BenchmarkSample`을
+만든다. A와 같은 Match에 있었다는 사실만으로 다른 9명에게 GOLD I을 부여하거나 tier를 추정하지 않는다. 다른
+participant B의 rank가 별도로 확인돼 B도 sampled player라면, B의 sample은 B의 관측 rank로 별도 생성할 수 있다.
+
+MVP의 rank는 일반적으로 **수집 시점의 rank**다. 이를 과거 Match 시점의 정확한 rank라고 가정하지 않는다.
+따라서 "현재 GOLD인 sampled player의 최근 Ranked Solo Match"라는 시간 해석을 명시한다.
+
+`PeerBenchmark`의 우선 cohort dimension은 region, queue, tier, position, champion이다. 서로 다른 position을
+같은 기준선으로 직접 비교하지 않는다. patch/gameVersion, division 및 기타 맥락은 필요성이 확인되면 추가한다.
+
+#### Initial Vertical Slice
+
+예를 들어 `tier=GOLD`, `division=I`, `playerLimit=10`, `matchesPerPlayer=5` 수집은 ranked player discovery부터
+sample persistence까지의 end-to-end 흐름을 검증하기 위한 작은 vertical slice다. 이를 GOLD 전체 population의
+대표 평균이나 production-quality benchmark로 표현하지 않는다. 여러 division/page와 sampling policy는 실제
+benchmark 품질을 높이는 별도 결정이다.
+
 ## 9. AI Analysis Architecture
 
 AI 기능의 기본 원칙은 **계산과 설명을 분리하는 것**이다.
@@ -328,9 +400,10 @@ AI 기능의 기본 원칙은 **계산과 설명을 분리하는 것**이다.
 Riot API data
     -> Backend normalization
     -> Backend statistics calculation
-    -> Analysis feature generation
-    -> LLM request
-    -> Natural-language feedback
+    -> Peer Benchmark comparison (planned)
+    -> Analysis / comparison feature generation
+    -> LLM request (planned)
+    -> Natural-language feedback (planned)
 ```
 
 ### Backend Responsibility
@@ -343,6 +416,8 @@ Riot API data
 - 집계값
 - 분석 기준에 필요한 파생 feature
 - LLM에게 전달할 구조화된 입력
+- cohort 선택과 sample size 검증
+- average, median, percentile 및 player와 benchmark의 차이 계산
 
 ### LLM Responsibility
 
@@ -354,6 +429,8 @@ LLM은 주로 다음 역할을 담당한다.
 - 개선 포인트의 자연어 표현
 
 LLM이 정확한 산술 계산이나 원본 Match JSON의 전체 구조 이해를 담당한다고 가정하지 않는다.
+LLM은 percentile을 직접 계산하거나 임의 benchmark·MMR을 만들지 않는다. 현재 LLM Provider 연동은 구현되어
+있지 않으며, `PlayerAnalysisFeature`까지만 구현되어 있다.
 
 ### Provider Boundary
 
@@ -365,17 +442,12 @@ Provider 교체 가능성을 이유로 과도한 추상화를 미리 만들지�
 
 ## 10. Persistence
 
-기본 영속 저장소는 PostgreSQL을 사용한다.
+PostgreSQL, JPA/Hibernate, Flyway는 기본 기술 방향이지만 현재 의존성, datasource 설정, Entity, Repository,
+migration은 구현되어 있지 않다. 현재 application의 영속 데이터 저장소는 없고, Redis는 Match Detail cache로만
+사용한다.
 
-JPA/Hibernate를 우선 사용하되,
-조회 성능이나 쿼리 표현력이 실제 문제가 되는 부분에서는
-JPQL, QueryDSL, native query 등 다른 접근을 검토할 수 있다.
-
-Entity를 Controller의 API 응답으로 직접 반환하지 않는다.
-
-DB schema와 Entity 변경은 migration 전략이 도입되면 함께 관리한다.
-
-구체적인 테이블과 관계는 기능 구현에 따라 별도 설계한다.
+향후 `BenchmarkSample`을 저장하는 작업에서는 저장 기간, 중복 제거 key, sample과 aggregate의 관계, schema와
+migration을 함께 결정한다. Entity를 Controller의 API 응답으로 직접 반환하지 않는다.
 
 ## 11. Cache
 
@@ -420,6 +492,10 @@ responses leave no cache entry because the cached method does not complete succe
 
 Cache hits bypass Match-V5 Detail HTTP calls. Cache misses still call Riot and can still receive a
 429 response; caching is not a distributed rate limiter, cooldown, retry, or token-bucket policy.
+
+향후 benchmark collection도 기존 `RiotMatchClient.findMatchById`를 호출하면 이 Match Detail cache 경로를
+재사용할 수 있다. 이 결정은 benchmark 전용 Redis cache, collector state cache 또는 aggregate cache를 새로
+도입하는 것이 아니다.
 
 ## 12. Error Handling
 
@@ -471,26 +547,32 @@ Riot API 오류를 서비스 관점의 오류로 변환한 뒤
 
 ### MVP
 
-우선순위:
+현재 구현:
 
 - 단일 Spring Boot Backend
-- Riot API 연동
-- 플레이어/Match 조회
-- 필요한 통계 계산
-- 기본 DB 저장
+- Account-V1과 Match-V5 Riot API 연동
+- 플레이어/Match 조회와 normalized Match 생성
+- 최근 Match 기반 통계 계산과 `PlayerAnalysisFeature` 생성
 - 명확한 오류 처리
 - 핵심 테스트
-- 필요성이 확인된 범위의 캐시
-- 구조화된 feature 기반 AI 분석
+- Match Detail Redis cache와 bounded detail fan-out
+
+다음 우선순위:
+
+- sampled Peer Benchmark dataset과 `BenchmarkSample` persistence
+- cohort aggregate, percentile, `PlayerComparisonFeature`
+- 구조화된 comparison feature 기반 LLM 연동
 
 ### Future Considerations
 
 실제 필요가 생겼을 때 검토한다.
 
 - 비동기 Job 처리
+- scheduled benchmark collection
 - 메시지 큐
 - 분석 결과 사전 계산
 - 대규모 Match 데이터 파이프라인
+- rank snapshot, larger/stratified sampling, patch-aware benchmark
 - Read Model 분리
 - 검색 엔진
 - 서비스 모듈 분리 또는 마이크로서비스

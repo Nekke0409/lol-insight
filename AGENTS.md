@@ -9,7 +9,7 @@
 주요 기능은 다음 순서로 확장한다.
 
 1. Riot Games API를 이용한 플레이어 검색 및 전적/통계 조회
-2. 플레이 데이터를 기반으로 한 AI 플레이 분석 및 피드백
+2. Peer Benchmark 기반 상대 분석과 AI 플레이 피드백
 3. 사용자 계정, 게시글, 댓글 등을 포함한 League of Legends 커뮤니티
 
 이 프로젝트는 단순한 기능 구현보다 실제 운영 가능한 서비스 수준의 설계와 구현을 목표로 한다.
@@ -145,6 +145,10 @@ LLM은 원본 Match JSON 전체를 그대로 받아 핵심 통계를 임의로 �
 - 분석에 필요한 파생 feature
 
 LLM Provider에 종속된 요청/응답 형식이 핵심 도메인 로직으로 퍼지지 않도록 경계를 둔다.
+
+Peer Benchmark를 도입할 때는 `(sampled player PUUID, matchId)` 한 건을 participant-level
+`BenchmarkSample`로 다룬다. 수집 시점에 확인한 sampled player의 rank만 sample에 귀속하며,
+같은 Match의 다른 participant에게 tier를 추정하거나 부여하지 않는다.
 
 ## Testing
 

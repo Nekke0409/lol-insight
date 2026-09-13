@@ -52,9 +52,21 @@ rank 평균 CS, 특정 tier보다 뛰어나다는 비교 결과를 제공하지 
 Timeline 의존 지표도 제외한다. 10분 CS, 15분 골드 차이, 초반 데스 비율, 첫 오브젝트 참여율은
 Timeline 또는 추가 데이터가 필요하다.
 
+## Peer Benchmark와의 관계 (Planned)
+
+이 문서의 `PlayerAnalysisFeature`는 현재 구현된 개인 통계 feature이며, benchmark나 상대 비교 결과를
+포함하지 않는다. 향후 sampled `BenchmarkSample`을 cohort별로 집계한 `PeerBenchmark`와 이 feature를 결합해
+`PlayerComparisonFeature`를 만든다.
+
+`BenchmarkSample`은 여러 경기의 평균이 아닌 `(sampled player PUUID, matchId)` 한 건의 participant-level
+관측치다. tier는 rank가 독립적으로 확인된 sampled player에게만 귀속한다. cohort 선택, sample size,
+average·median·percentile 및 차이는 Backend가 계산하며, LLM은 해당 비교 결과를 설명만 한다. 상세 결정은
+[ADR-006](../adr/006-use-sampled-peer-benchmark.md)을 따른다.
+
 ## 향후 진입점
 
 `PlayerAnalysisFeatureService.buildFeature(gameName, tagLine, start, count)`는
 `PlayerMatchHistoryLoader`를 통해 기존 계정 조회, Match Detail cache, 제한된 detail fan-out,
 partial result 정책을 재사용한다. 향후 LLM application flow는 이 service를 호출하고 반환된
-Feature만 provider adapter에 전달하면 된다.
+Feature와 `PlayerComparisonFeature`를 provider adapter에 전달하면 된다. LLM provider adapter와 comparison
+feature는 아직 구현되어 있지 않다.

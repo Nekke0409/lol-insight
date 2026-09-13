@@ -49,3 +49,4 @@ ADR은 "현재 구조가 무엇인가"보다 다음 질문에 답하는 기록�
 - [`ADR-003: Preserve Riot Rate-Limit Metadata and Translate Endpoint-Specific Not Found Errors`](adr/003-preserve-riot-rate-limit-and-not-found-errors.md)
 - [`ADR-004: Bound Recent Match Detail Fan-Out with an Application-Managed Executor`](adr/004-bound-match-detail-fan-out.md)
 - [`ADR-005: Cache Completed Match Details in Redis`](adr/005-cache-completed-match-details-in-redis.md)
+- [`ADR-006: Use a Sampled Peer Benchmark for Relative Player Analysis`](adr/006-use-sampled-peer-benchmark.md)
