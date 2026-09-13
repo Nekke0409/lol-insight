@@ -25,7 +25,7 @@ Riot의 공식 Ranked Ladder를 대체하는 MMR, ELO 또는 자체 Skill Rating
 | Player statistics | 최근 Match 표본의 KDA, CS/min, DPM, 골드/비전, 킬 관여율, 피해 비중 계산 | cohort와의 차이 및 percentile 계산 |
 | Analysis feature | `PlayerAnalysisFeature` 생성 | `PeerBenchmark`, `PlayerComparisonFeature` 생성 |
 | Redis | 성공한 Match Detail을 7일 TTL로 캐시 | benchmark 전용 Redis 기능은 도입하지 않음 |
-| Persistence | 구현되지 않음 — PostgreSQL, JPA, Flyway 의존성·schema·Entity 없음 | `BenchmarkSample` 저장 정책과 migration을 별도 작업에서 결정 |
+| Persistence | PostgreSQL, JPA, Flyway 기반 `BenchmarkSample` schema와 idempotent 저장 진입점 구현 | benchmark collector, aggregate, retention 정책 |
 | LLM | 구현되지 않음 — OpenAI/다른 Provider client, prompt, endpoint 없음 | Backend가 만든 comparison feature의 자연어 설명 |
 
 ## Current Architecture
@@ -85,9 +85,11 @@ Backend는 metric, cohort, sample size, 평균·중앙값·percentile, 차이와
 
 ## Technology
 
-현재 사용 중인 기술은 Kotlin, Spring Boot, Spring MVC `RestClient`, Redis, Docker입니다. JDK 21을 사용합니다.
+현재 사용 중인 기술은 Kotlin, Spring Boot, Spring MVC `RestClient`, PostgreSQL, Spring Data JPA,
+Flyway, Redis, Docker입니다. JDK 21을 사용합니다.
 
-PostgreSQL, JPA/Hibernate, Flyway, Spring Security, AWS 및 OpenAI API 또는 다른 LLM Provider는 서비스 요구가 구체화될 때 도입을 검토하는 기술 방향이며, 현재 구현된 구성은 아닙니다.
+Spring Security, AWS 및 OpenAI API 또는 다른 LLM Provider는 서비스 요구가 구체화될 때 도입을 검토하는
+기술 방향이며, 현재 구현된 구성은 아닙니다.
 
 ## Documentation
 
@@ -105,10 +107,21 @@ Riot API key는 환경 변수로만 주입합니다. 실제 값을 저장소에 
 RIOT_API_KEY=your-riot-api-key
 ```
 
-Match Detail cache를 사용하려면 로컬 Redis를 실행합니다.
+로컬 개발에서 PostgreSQL과 Match Detail cache용 Redis를 함께 실행합니다.
 
 ```text
-docker compose up -d redis
+docker compose up -d
 ```
 
-현재 설정의 기본 Redis 주소는 `localhost:6379`입니다. 실행 및 측정 방법은 [recent match latency baseline](docs/performance/recent-matches-latency-baseline.md)을 참고합니다.
+`local` profile은 PostgreSQL의 로컬 기본값(`localhost:5432`, database/user `lol_insight`)을 사용합니다.
+`POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`로 값을 덮어쓸 수
+있으며 production에서는 모든 값을 환경변수로 제공해야 합니다. Compose의 `lol-insight-local` password는
+로컬 개발 기본값일 뿐 production secret이 아닙니다.
+
+`BenchmarkSample` persistence는 migration으로 관리되며 JPA는 schema validation만 수행합니다. collector,
+aggregate, percentile, 비교 및 LLM 기능은 아직 구현되지 않았습니다. 현재 설정의 기본 Redis 주소는
+`localhost:6379`입니다. 실행 및 측정 방법은
+[recent match latency baseline](docs/performance/recent-matches-latency-baseline.md)을 참고합니다.
+
+`BenchmarkSample` persistence integration test는 Testcontainers PostgreSQL을 사용하므로 Docker daemon이
+실행 중이어야 합니다.

@@ -1,5 +1,6 @@
 package io.github.nekke0409.lolinsight.player.web
 
+import io.github.nekke0409.lolinsight.benchmark.persistence.NoDataSourceBenchmarkPersistenceTestConfiguration
 import io.github.nekke0409.lolinsight.match.infrastructure.cache.MATCH_DETAIL_CACHE
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
@@ -31,9 +32,13 @@ import org.springframework.web.context.WebApplicationContext
     properties = [
         "riot.api.key=integration-test-api-key",
         "riot.api.regional-base-url=https://riot.integration.test",
+        "spring.autoconfigure.exclude=org.springframework.boot.jdbc.autoconfigure.DataSourceAutoConfiguration",
     ],
 )
-@Import(PlayerRecentMatchesIntegrationTest.RiotApiMockServerConfiguration::class)
+@Import(
+    PlayerRecentMatchesIntegrationTest.RiotApiMockServerConfiguration::class,
+    NoDataSourceBenchmarkPersistenceTestConfiguration::class,
+)
 class PlayerRecentMatchesIntegrationTest {
     @Autowired
     private lateinit var webApplicationContext: WebApplicationContext

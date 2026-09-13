@@ -9,8 +9,9 @@ damage/min, vision/min 같은 수치가 같은 조건의 다른 플레이어와 
 강점과 개선 지점을 만들려면 비교 기준이 되는 Peer Benchmark가 필요하다.
 
 Riot 전체 Ranked Ladder나 모든 Match를 수집하면 더 넓은 population을 표현할 수 있지만, Rate Limit, storage,
-collection 시간, freshness, 운영 비용이 크게 증가한다. 현재 application에는 PostgreSQL/JPA/Flyway, League API
-Client, collector, scheduler, benchmark persistence나 LLM 연동도 구현되어 있지 않다.
+collection 시간, freshness, 운영 비용이 크게 증가한다. 이 ADR을 수립할 당시 application에는
+PostgreSQL/JPA/Flyway, League API Client, collector, scheduler, benchmark persistence나 LLM 연동도 구현되어
+있지 않았다.
 
 따라서 구현을 시작하기 전에 비교 데이터의 관측 단위, tier attribution, 시간 해석과 표본의 한계를 먼저
 명확히 한다.
@@ -103,6 +104,13 @@ PlayerAnalysisFeature + PeerBenchmark
 `PeerBenchmark`는 participant-level `BenchmarkSample`의 aggregate이며, 전체 ladder의 공식 순위나 MMR을
 대체하지 않는다.
 
+## Implementation Status
+
+`BenchmarkSample` persistence foundation은 구현됐다. PostgreSQL Flyway migration, domain model과 JPA Entity의
+분리, `(match_id, puuid)` unique constraint, 그리고 `saveIfAbsent`의 idempotent write가 포함된다. 이는 sample을
+수집하거나 aggregate를 계산하는 구현이 아니다. League API Client, collector, scheduler, aggregate,
+`PlayerComparisonFeature`, LLM integration은 계속 계획 상태다.
+
 ## Reason
 
 - 비교 기준을 제공하면서도 전수 수집의 Rate Limit·storage·운영 비용을 피할 수 있다.
@@ -145,7 +153,8 @@ Backend의 결정적 책임으로 유지한다.
 ## Future
 
 - League API Client와 ranked player discovery 구현
-- `BenchmarkSample` Entity, Flyway migration, deduplication과 retention 정책
+- collector에서 `BenchmarkSample` 생성 및 persistence 진입점 호출
+- deduplication policy와 retention 정책
 - scheduled collection과 failure/rate-limit handling
 - larger/stratified sampling 및 sampling policy 문서화
 - patch-aware benchmark와 rank snapshot history

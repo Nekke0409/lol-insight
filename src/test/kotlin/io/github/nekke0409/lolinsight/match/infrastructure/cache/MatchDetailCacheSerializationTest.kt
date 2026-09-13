@@ -1,17 +1,25 @@
 package io.github.nekke0409.lolinsight.match.infrastructure.cache
 
+import io.github.nekke0409.lolinsight.benchmark.persistence.NoDataSourceBenchmarkPersistenceTestConfiguration
 import io.github.nekke0409.lolinsight.match.infrastructure.riot.RiotMatchMapper
 import io.github.nekke0409.lolinsight.match.infrastructure.riot.RiotMatchResponseDto
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
+import org.springframework.context.annotation.Import
 import tools.jackson.databind.ObjectMapper
 import tools.jackson.databind.json.JsonMapper
 import tools.jackson.module.kotlin.KotlinModule
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
-@SpringBootTest(properties = ["riot.api.key=test-api-key"])
+@SpringBootTest(
+    properties = [
+        "riot.api.key=test-api-key",
+        "spring.autoconfigure.exclude=org.springframework.boot.jdbc.autoconfigure.DataSourceAutoConfiguration",
+    ],
+)
+@Import(NoDataSourceBenchmarkPersistenceTestConfiguration::class)
 class MatchDetailCacheSerializationTest {
     @Autowired
     private lateinit var objectMapper: ObjectMapper

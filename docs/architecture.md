@@ -47,20 +47,21 @@ flowchart LR
     App[Spring Boot Backend]
     Riot[Riot Games API]
     Cache[(Redis)]
-    DB[(PostgreSQL<br/>planned)]
+    DB[(PostgreSQL)]
     LLM[LLM API<br/>planned]
 
     User --> App
     App --> Riot
     App --> Cache
-    App -. planned .-> DB
+    App --> DB
     App -. planned .-> LLM
 ```
 
 Backend가 서비스의 중심이며 Frontend가 Riot API나 향후 LLM API를 직접 호출하지 않는다.
 
-현재 구현은 Riot Games API와 Redis Match Detail cache를 사용한다. PostgreSQL/JPA/Flyway와 LLM
-Provider 연동은 아직 구현하거나 설정하지 않았으며, 다이어그램의 해당 연결은 기술 방향을 나타내는 계획이다.
+현재 구현은 Riot Games API, Redis Match Detail cache 및 `BenchmarkSample`용 PostgreSQL/JPA/Flyway
+persistence를 사용한다. LLM Provider 연동은 아직 구현하거나 설정하지 않았으며, 다이어그램의 해당 연결은
+기술 방향을 나타내는 계획이다.
 
 이를 통해 다음을 Backend에서 통제한다.
 
@@ -102,9 +103,9 @@ LLM Provider의 요청/응답 형식이 Match나 Player의 핵심 로직에 직�
 ### Benchmark
 
 Peer Benchmark는 샘플링한 ranked player의 Ranked Solo Match participant 관측치를 수집하고, cohort별로
-집계해 상대 비교에 사용하는 기능 영역이다. `BenchmarkSample` 영속화, 수집 Client, collector, scheduler,
-aggregate, percentile 및 comparison feature는 아직 구현되지 않았다. 확정된 데이터 모델 원칙은
-[ADR-006](adr/006-use-sampled-peer-benchmark.md)을 따른다.
+집계해 상대 비교에 사용하는 기능 영역이다. `BenchmarkSample` domain/entity, Flyway schema 및 idempotent
+persistence 진입점은 구현됐다. 수집 Client, collector, scheduler, aggregate, percentile 및 comparison feature는
+아직 구현되지 않았다. 확정된 데이터 모델 원칙은 [ADR-006](adr/006-use-sampled-peer-benchmark.md)을 따른다.
 
 ### Community
 
@@ -344,20 +345,21 @@ Riot API
     -> PlayerMatchStatistics
     -> PlayerAnalysisFeature
 
-Benchmark flow (planned)
+Benchmark flow (collector and aggregation planned)
 ranked player source
     -> sampled players
     -> recent Ranked Solo Match IDs
     -> Match ID deduplication
     -> normalized Match
     -> BenchmarkSample
+    -> saveIfAbsent persistence (implemented)
     -> Benchmark Aggregate
     -> PeerBenchmark
 ```
 
 이후 `PlayerAnalysisFeature`와 `PeerBenchmark`를 결합해 `PlayerComparisonFeature`를 만들고 LLM에
-전달한다. `BenchmarkSample`, aggregate, `PeerBenchmark`, `PlayerComparisonFeature`, LLM adapter는 모두
-계획 상태이며 현재 production Kotlin 코드에는 없다.
+전달한다. `BenchmarkSample`의 domain/entity와 저장은 production Kotlin 코드에 구현됐지만, sample 생성,
+aggregate, `PeerBenchmark`, `PlayerComparisonFeature`, LLM adapter는 계획 상태다.
 
 #### BenchmarkSample
 
@@ -369,9 +371,11 @@ gold/min, damage/min, vision/min, kill participation, damage share 등의 per-ma
 truth는 기존 `PlayerMatchStatisticsCalculator`의 per-match 계산을 재사용하거나 같은 기준으로 추출한다. aggregate
 객체를 `BenchmarkSample`으로 재사용하지 않는다.
 
-수집 구현 시 sample은 최소한 tier, division, rank 관측 시각과 Match의 `startedAt`을 함께 보존할 수 있어야 한다.
-이는 구현될 Entity나 schema를 지금 확정하는 요구가 아니다. 별도 rank history가 필요해지면 `RankSnapshot` 같은
-모델은 향후 정책과 함께 결정한다.
+`BenchmarkSample` persistence는 `benchmark_sample` table에 `matchId`, `puuid`, cohort context, participant
+context와 per-match metric을 저장한다. `championName`은 display용 중복 데이터이므로 저장하지 않고 안정적인
+`championId`만 사용한다. tier, division, position은 ordinal이 아닌 문자열로 보존한다. `rankCapturedAt`,
+`gameStartTimestamp`, `collectedAt`은 각각 rank 확인 시각, 실제 Match 시작 시각, 우리 시스템의 저장 시각이며
+서로 대체하지 않는다. 별도 rank history가 필요해지면 `RankSnapshot` 같은 모델은 향후 정책과 함께 결정한다.
 
 #### Tier Attribution and Cohort
 
@@ -442,12 +446,25 @@ Provider 교체 가능성을 이유로 과도한 추상화를 미리 만들지�
 
 ## 10. Persistence
 
-PostgreSQL, JPA/Hibernate, Flyway는 기본 기술 방향이지만 현재 의존성, datasource 설정, Entity, Repository,
-migration은 구현되어 있지 않다. 현재 application의 영속 데이터 저장소는 없고, Redis는 Match Detail cache로만
-사용한다.
+PostgreSQL, JPA/Hibernate, Flyway는 `BenchmarkSample` persistence에 도입됐다. schema source of truth는
+Flyway migration이며, JPA는 `ddl-auto=validate`로 mapping만 검증한다. datasource의 production credentials는
+`POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD` 환경변수로 제공한다.
+`local` profile에만 Compose와 일치하는 개발 기본값이 있다. Redis는 여전히 Match Detail cache로만 사용한다.
 
-향후 `BenchmarkSample`을 저장하는 작업에서는 저장 기간, 중복 제거 key, sample과 aggregate의 관계, schema와
-migration을 함께 결정한다. Entity를 Controller의 API 응답으로 직접 반환하지 않는다.
+`BenchmarkSample`은 analytics/application에서 의미 있는 domain model이고 `BenchmarkSampleEntity`는 PostgreSQL
+표현이다. Entity를 Controller 응답이나 향후 aggregate model로 직접 반환하지 않는다. `(match_id, puuid)` unique
+constraint가 데이터 정합성의 최종 방어선이며, `BenchmarkSamplePersistenceService.saveIfAbsent`는 짧은
+transaction 안에서 PostgreSQL `INSERT ... ON CONFLICT DO NOTHING`을 실행한다. duplicate는 기존 row를 갱신하지
+않고 `ALREADY_EXISTS`로 처리한다. 미래 collector는 Riot HTTP 호출과 sample 생성을 transaction 밖에서 마친 뒤
+이 진입점을 호출해야 한다.
+
+aggregate query가 구현되지 않았으므로 unique constraint 외의 cohort 복합 index는 추가하지 않았다. 저장 기간,
+aggregate materialization 및 retention 정책은 실제 사용 패턴과 함께 별도 결정한다.
+
+이 persistence는 PostgreSQL Testcontainers `@DataJpaTest`로 migration, JPA mapping validation, round trip,
+unique constraint와 idempotent write를 검증한다. 따라서 해당 integration test에는 Docker daemon이 필요하다.
+기존 Riot/Redis Spring context test는 datasource auto-configuration을 test scope에서만 제외하고 persistence
+repository mock을 주입해 실제 PostgreSQL 없이도 기존 검증 범위를 유지한다.
 
 ## 11. Cache
 

@@ -1,0 +1,8 @@
+spring:
+  config:
+    activate:
+      on-profile: local
+  datasource:
+    url: jdbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5432}/${POSTGRES_DB:lol_insight}
+    username: ${POSTGRES_USER:lol_insight}
+    password: ${POSTGRES_PASSWORD:lol-insight-local}
