@@ -25,3 +25,8 @@ riot:
     regional-base-url: ${RIOT_REGIONAL_BASE_URL:https://asia.api.riotgames.com}
     connect-timeout: ${RIOT_CONNECT_TIMEOUT:2s}
     read-timeout: ${RIOT_READ_TIMEOUT:5s}
+
+openai:
+  api-key: ${OPENAI_API_KEY:}
+  model: ${OPENAI_MODEL:gpt-5-mini}
+  timeout: ${OPENAI_TIMEOUT:20s}

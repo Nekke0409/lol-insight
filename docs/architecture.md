@@ -48,20 +48,20 @@ flowchart LR
     Riot[Riot Games API]
     Cache[(Redis)]
     DB[(PostgreSQL)]
-    LLM[LLM API<br/>planned]
+    LLM[OpenAI Responses API<br/>Structured Outputs]
 
     User --> App
     App --> Riot
     App --> Cache
     App --> DB
-    App -. planned .-> LLM
+    App --> LLM
 ```
 
 Backend가 서비스의 중심이며 Frontend가 Riot API나 향후 LLM API를 직접 호출하지 않는다.
 
-현재 구현은 Riot Games API, Redis Match Detail cache 및 `BenchmarkSample`용 PostgreSQL/JPA/Flyway
-persistence를 사용한다. LLM Provider 연동은 아직 구현하거나 설정하지 않았으며, 다이어그램의 해당 연결은
-기술 방향을 나타내는 계획이다.
+현재 구현은 Riot Games API, Redis Match Detail cache, `BenchmarkSample`용 PostgreSQL/JPA/Flyway
+persistence 및 OpenAI Responses API Structured Outputs 분석 경계를 사용한다. OpenAI API key가 없는 상태에서도
+애플리케이션은 시작하며, 분석 endpoint를 실제 호출할 때만 명시적인 configuration error를 반환한다.
 
 이를 통해 다음을 Backend에서 통제한다.
 
@@ -97,8 +97,9 @@ Riot API의 원본 Match DTO와 서비스 내부에서 사용하는 모델을 �
 가공된 Match/통계 데이터를 이용해 분석 feature를 만든다. 현재는 개인 요약용 `PlayerAnalysisFeature`, peer
 comparison의 사용자 측 입력인 `PlayerComparisonContext`, 그리고 exact cohort benchmark와 결합한
 `PlayerComparisonFeature`가 구현되어 있다. `PlayerComparisonFeature`는 현재 Ranked Solo rank와 대상 사용자의
-`(championId, position)`별 통계를 기준으로 benchmark availability와 numeric difference를 결정한다. LLM 호출,
-prompt, 자연어 피드백 endpoint는 향후 작업이다.
+`(championId, position)`별 통계를 기준으로 benchmark availability와 numeric difference를 결정한다.
+`PlayerAnalysisService`는 AVAILABLE comparison이 하나라도 있을 때만 `PlayerAnalysisGenerator`를 정확히 한 번 호출해
+`PlayerAnalysisResult`를 만든다. OpenAI prompt와 SDK DTO는 infrastructure에만 둔다.
 
 LLM Provider의 요청/응답 형식이 Match나 Player의 핵심 로직에 직접 퍼지지 않도록 한다.
 
@@ -111,7 +112,7 @@ domain/entity, Flyway schema 및 idempotent persistence 진입점은 구현됐�
 filter와 Detail 검증을 함께 사용하고, Match ID deduplication·sampled player 관계 보존·participant metric 계산·sample
 저장까지 수행한다. raw `benchmark_sample`을 PostgreSQL에서 on-demand 집계하는 `PeerBenchmarkQueryService`와
 match-level percentile threshold, 이를 사용자 context와 결합하는 `PlayerComparisonFeature`는 구현됐다. scheduler,
-player percentile rank 및 LLM integration은 아직 구현되지 않았다. 확정된 데이터 모델 원칙은
+player percentile rank는 아직 구현되지 않았고, LLM integration은 ADR-007의 범위에서 구현됐다. 확정된 데이터 모델 원칙은
 [ADR-006](adr/006-use-sampled-peer-benchmark.md)을 따른다.
 
 ### Community
@@ -377,7 +378,8 @@ CS/min, gold/min, damage/min, vision/min, kill participation, damage share 공�
 `PlayerComparisonFeatureService`는 `PlayerComparisonContextService`와 `PeerBenchmarkQueryService`를 조합한다.
 rank가 있으면 KR Ranked Solo의 `region / queueId / tier / division / position / championId` exact cohort만 만들고,
 각 cohort의 사용자 표본·benchmark availability를 판정한 뒤 `AVAILABLE`일 때만 7개 metric의 numeric difference를
-계산한다. rank가 없으면 query 없이 `UNRANKED` comparison을 만든다. player percentile rank와 LLM adapter는 계획
+계산한다. rank가 없으면 query 없이 `UNRANKED` comparison을 만든다. `PlayerAnalysisService`는 이 feature의
+AVAILABLE 항목만 OpenAI adapter로 전달하고, 다른 status는 최소 요약만 전달한다. player percentile rank는 계획
 상태다. 상세 contract와 statistical limit은 [Player Comparison Feature v0.1](ai/player-comparison-feature-v0.1.md)을
 따른다.
 
@@ -444,8 +446,9 @@ Riot API data
     -> Backend statistics calculation
     -> Peer Benchmark comparison
     -> Analysis / comparison feature generation
-    -> LLM request (planned)
-    -> Natural-language feedback (planned)
+    -> AVAILABLE comparison gate
+    -> OpenAI Responses API Structured Outputs
+    -> Natural-language feedback
 ```
 
 ### Backend Responsibility
@@ -472,8 +475,7 @@ LLM은 주로 다음 역할을 담당한다.
 
 LLM이 정확한 산술 계산이나 원본 Match JSON의 전체 구조 이해를 담당한다고 가정하지 않는다.
 LLM은 cohort를 선택하거나 sample availability·subtraction·player percentile을 계산하거나 임의 benchmark·MMR을
-만들지 않는다. 현재 LLM Provider 연동은 구현되어 있지 않다. `PlayerComparisonFeature`가 LLM에 전달할 구조화된
-comparison input의 source of truth다.
+만들지 않는다. `PlayerComparisonFeature`가 LLM에 전달할 구조화된 comparison input의 source of truth다.
 
 ### Provider Boundary
 
@@ -482,6 +484,22 @@ Analysis 핵심 모델 전체로 전파되지 않도록 Client/Adapter 경계를
 
 Provider 교체 가능성을 이유로 과도한 추상화를 미리 만들지는 않지만,
 최소한 외부 SDK 타입과 핵심 애플리케이션 로직은 분리한다.
+
+### Implemented v0.1 LLM Analysis
+
+`POST /api/v1/players/{gameName}/{tagLine}/analysis`는 기존 `PlayerComparisonFeatureService`를 그대로 사용한다.
+rank가 없으면 `UNRANKED`, AVAILABLE comparison이 없으면 `INSUFFICIENT_COMPARISON_DATA`를 반환하며, 두 경우 모두
+provider를 호출하지 않는다. AVAILABLE comparison이 있으면 `PlayerAnalysisGenerator`를 정확히 한 번 호출한다.
+
+입력은 exact cohort, 사용자 경기 수, benchmark sample/unique player 수, Backend가 계산한 7개 metric의 값·평균·중앙값·
+percentile threshold·difference뿐이다. PUUID, Riot ID, Match ID, raw Riot JSON, DB/Redis 데이터, API key와 raw provider
+error는 제외한다. v0.1은 OpenAI Responses API Structured Outputs를 사용하되, OpenAI SDK와 schema DTO는
+`analysis/infrastructure/openai`에만 두고 application 결과로 즉시 변환한다.
+
+Prompt는 모든 사용자 노출 문장을 한국어로 제한하며, player percentile/top X%, player-level aggregate, 보편적인
+good/bad·지표 방향성, cross-position/champion ranking, LLM의 표본 적격성 판단, patch/freshness/timeline 추론을 금지한다.
+결과 cache, DB persistence, retry/backoff 및 비용 관측은 v0.1 범위 밖이다. 상세 contract는
+[Player Analysis v0.1](ai/player-analysis-v0.1.md), 결정 근거는 [ADR-007](adr/007-use-structured-llm-analysis-boundary.md)을 따른다.
 
 ## 10. Persistence
 
@@ -622,7 +640,7 @@ Riot API 오류를 서비스 관점의 오류로 변환한 뒤
 
 - representative sampling과 scheduled benchmark collection
 - player percentile rank
-- 구조화된 comparison feature 기반 LLM 연동
+- player percentile rank
 
 ### Future Considerations
 

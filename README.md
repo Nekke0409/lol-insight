@@ -23,10 +23,10 @@ Riot의 공식 Ranked Ladder를 대체하는 MMR, ELO 또는 자체 Skill Rating
 | Riot integration | Account-V1 기반 Riot ID 조회, Match-V5 Match ID/Detail 조회와 queue filter, League-V4 기반 KR Ranked Solo player discovery | representative sampling, scheduled collection |
 | Match processing | Riot Match DTO를 내부 `Match` 모델로 정규화하고 sampled player의 participant-level observation 추출 | aggregate용 추가 feature |
 | Player statistics | 최근 Match 표본의 KDA, CS/min, DPM, 골드/비전, 킬 관여율, 피해 비중 계산 | player-level benchmark |
-| Analysis feature | 개인 요약용 `PlayerAnalysisFeature`, 현재 Solo rank와 champion/position별 사용자 지표를 담는 `PlayerComparisonContext`, exact cohort·availability·metric difference를 담는 `PlayerComparisonFeature` | comparison feature의 LLM 설명 |
+| Analysis feature | 개인 요약용 `PlayerAnalysisFeature`, comparison-ready `PlayerComparisonContext`, deterministic `PlayerComparisonFeature`, 그리고 AVAILABLE cohort만 설명하는 `PlayerAnalysisResult` | locale, result quality evaluation |
 | Redis | 성공한 Match Detail을 7일 TTL로 캐시 | benchmark 전용 Redis 기능은 도입하지 않음 |
 | Persistence | PostgreSQL, JPA, Flyway 기반 `BenchmarkSample` schema, idempotent 저장 진입점, 소규모 collector와 on-demand aggregate query | retention 정책 |
-| LLM | 구현되지 않음 — OpenAI/다른 Provider client, prompt, endpoint 없음 | Backend가 만든 comparison feature의 자연어 설명 |
+| LLM | OpenAI Responses API + Structured Outputs, `POST /api/v1/players/{gameName}/{tagLine}/analysis`, provider-independent `PlayerAnalysisGenerator` | result cache/persistence, per-user rate limit, cost observability, multi-provider |
 
 ## Current Architecture
 
@@ -66,7 +66,8 @@ ranked player source
     -> Benchmark Aggregate (implemented)
     -> PeerBenchmark (implemented)
     -> PlayerComparisonFeature
-    -> LLM feedback
+    -> AVAILABLE comparison gate
+    -> OpenAI LLM feedback
 ```
 
 `BenchmarkSample`은 여러 경기를 평균 낸 값이 아니라, 표본 플레이어 한 명의 한 경기 participant-level observation입니다. 해당 플레이어의 수집 시점 rank만 sample에 귀속하며, 같은 Match의 다른 participant에게 tier를 추정하거나 부여하지 않습니다.
@@ -85,23 +86,25 @@ Riot data
     -> LLM explanation
 ```
 
-Backend는 metric, exact cohort, sample size, 평균·중앙값·match-level percentile threshold, 차이와 비교 feature를 계산합니다. LLM은 계산된 결과를 자연어로 설명할 미래 역할입니다. 원본 Riot Match JSON 분석, cohort 선택, subtraction, player percentile 계산, benchmark 생성, MMR 추정은 LLM의 역할이 아닙니다.
+Backend는 metric, exact cohort, sample size, 평균·중앙값·match-level percentile threshold, 차이와 비교 feature를 계산합니다. AVAILABLE comparison이 하나라도 있을 때만 LLM을 정확히 한 번 호출해 이 결과를 한국어로 설명합니다. 원본 Riot Match JSON 분석, cohort 선택, subtraction, player percentile 계산, benchmark 생성, MMR 추정은 LLM의 역할이 아닙니다.
 
 ## Technology
 
 현재 사용 중인 기술은 Kotlin, Spring Boot, Spring MVC `RestClient`, PostgreSQL, Spring Data JPA,
-Flyway, Redis, Docker입니다. JDK 21을 사용합니다.
+Flyway, Redis, Docker, OpenAI Java SDK입니다. JDK 21을 사용합니다.
 
-Spring Security, AWS 및 OpenAI API 또는 다른 LLM Provider는 서비스 요구가 구체화될 때 도입을 검토하는
-기술 방향이며, 현재 구현된 구성은 아닙니다.
+OpenAI 연동은 Responses API Structured Outputs를 사용하는 v0.1 analysis 경계로만 구현되어 있습니다.
+Spring Security, AWS, 다중 LLM Provider, 결과 cache/persistence, 사용자별 AI rate limit과 비용 관측은 후속 기술 방향입니다.
 
 ## Documentation
 
 - [AGENTS.md](AGENTS.md): 작업 원칙과 구현 가이드
 - [Architecture](docs/architecture.md): 현재 구현과 향후 설계 경계
 - [ADRs](docs/adr/): 장기적인 기술 의사결정
+- [ADR-007](docs/adr/007-use-structured-llm-analysis-boundary.md): Structured LLM analysis 경계 결정
 - [Player Match Statistics v0.1](docs/statistics/player-match-statistics-v0.1.md): 현재 통계의 계산 기준
 - [Player Analysis Feature v0.1](docs/ai/player-analysis-feature-v0.1.md): 현재 provider 독립 feature의 범위
+- [Player Analysis v0.1](docs/ai/player-analysis-v0.1.md): OpenAI analysis pipeline, gate, input/output 및 운영 제약
 - [Player Comparison Context v0.1](docs/ai/player-comparison-context-v0.1.md): peer comparison 사용자 입력의 범위
 - [Player Comparison Feature v0.1](docs/ai/player-comparison-feature-v0.1.md): exact benchmark comparison의 범위와 한계
 
@@ -127,7 +130,7 @@ docker compose up -d
 `BenchmarkSample` persistence는 migration으로 관리되며 JPA는 schema validation만 수행합니다. collector는 public REST
 endpoint, startup runner, scheduler 없이 application service로만 제공됩니다. `PeerBenchmarkQueryService`는 raw
 `benchmark_sample`을 PostgreSQL에서 on-demand 집계하며, percentile threshold와 availability만 제공합니다.
-`PlayerComparisonFeature`는 이 aggregate와 사용자 context를 deterministic하게 결합합니다. player percentile rank와 LLM 기능은 아직 구현되지 않았습니다. 현재 설정의 기본 Redis 주소는
+`PlayerComparisonFeature`는 이 aggregate와 사용자 context를 deterministic하게 결합합니다. player percentile rank는 구현되지 않았으며, LLM analysis는 AVAILABLE cohort가 있을 때만 이 feature를 설명합니다. 현재 설정의 기본 Redis 주소는
 `localhost:6379`입니다. 실행 및 측정 방법은
 [recent match latency baseline](docs/performance/recent-matches-latency-baseline.md)을 참고합니다.
 

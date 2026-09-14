@@ -1,5 +1,11 @@
 package io.github.nekke0409.lolinsight.player.web
 
+import io.github.nekke0409.lolinsight.analysis.application.AnalysisInsight
+import io.github.nekke0409.lolinsight.analysis.application.PlayerAnalysisProviderException
+import io.github.nekke0409.lolinsight.analysis.application.PlayerAnalysisResponse
+import io.github.nekke0409.lolinsight.analysis.application.PlayerAnalysisResponseStatus
+import io.github.nekke0409.lolinsight.analysis.application.PlayerAnalysisResult
+import io.github.nekke0409.lolinsight.analysis.application.PlayerAnalysisService
 import io.github.nekke0409.lolinsight.global.riot.RiotApiResponseException
 import io.github.nekke0409.lolinsight.global.riot.RiotApiTransportException
 import io.github.nekke0409.lolinsight.global.web.GlobalExceptionHandler
@@ -25,6 +31,7 @@ import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.content
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.header
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
@@ -37,10 +44,12 @@ class PlayerControllerTest {
     private val playerService = mock(PlayerService::class.java)
     private val playerMatchHistoryService = mock(PlayerMatchHistoryService::class.java)
     private val playerMatchStatisticsService = mock(PlayerMatchStatisticsService::class.java)
+    private val playerAnalysisService = mock(PlayerAnalysisService::class.java)
     private val mockMvc: MockMvc =
         MockMvcBuilders
-            .standaloneSetup(PlayerController(playerService, playerMatchHistoryService, playerMatchStatisticsService))
-            .setControllerAdvice(GlobalExceptionHandler())
+            .standaloneSetup(
+                PlayerController(playerService, playerMatchHistoryService, playerMatchStatisticsService, playerAnalysisService),
+            ).setControllerAdvice(GlobalExceptionHandler())
             .build()
 
     @Test
@@ -158,6 +167,62 @@ class PlayerControllerTest {
                 get("/api/v1/players/{gameName}/{tagLine}/stats", "Hide on bush", "KR1")
                     .param("start", "-1"),
             ).andExpect(status().isBadRequest)
+    }
+
+    @Test
+    fun `returns structured Korean AI analysis through the analysis endpoint`() {
+        `when`(playerAnalysisService.analyze("Hide on bush", "KR1", 0, 20))
+            .thenReturn(
+                PlayerAnalysisResponse(
+                    PlayerAnalysisResponseStatus.ANALYZED,
+                    PlayerAnalysisResult(
+                        summary = "Ahri MID 비교 결과입니다.",
+                        observations = listOf(AnalysisInsight("CS/min 비교", "중앙값보다 높습니다.", "player=7.2")),
+                        strengths = emptyList(),
+                        focusAreas = emptyList(),
+                        caveats = listOf("Benchmark v0.1은 match-level 관측치입니다."),
+                    ),
+                ),
+            )
+
+        mockMvc
+            .perform(post("/api/v1/players/{gameName}/{tagLine}/analysis", "Hide on bush", "KR1"))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.status").value("ANALYZED"))
+            .andExpect(jsonPath("$.analysis.summary").value("Ahri MID 비교 결과입니다."))
+            .andExpect(jsonPath("$.analysis.observations[0].evidence").value("player=7.2"))
+    }
+
+    @Test
+    fun `returns deterministic unavailable analysis without a result`() {
+        `when`(playerAnalysisService.analyze("Hide on bush", "KR1", 0, 20))
+            .thenReturn(PlayerAnalysisResponse(PlayerAnalysisResponseStatus.INSUFFICIENT_COMPARISON_DATA, null))
+
+        mockMvc
+            .perform(post("/api/v1/players/{gameName}/{tagLine}/analysis", "Hide on bush", "KR1"))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.status").value("INSUFFICIENT_COMPARISON_DATA"))
+            .andExpect(jsonPath("$.analysis").doesNotExist())
+    }
+
+    @Test
+    fun `rejects invalid analysis pagination parameters`() {
+        mockMvc
+            .perform(
+                post("/api/v1/players/{gameName}/{tagLine}/analysis", "Hide on bush", "KR1")
+                    .param("count", "21"),
+            ).andExpect(status().isBadRequest)
+    }
+
+    @Test
+    fun `maps AI provider failure without exposing provider detail`() {
+        `when`(playerAnalysisService.analyze("Hide on bush", "KR1", 0, 20))
+            .thenThrow(PlayerAnalysisProviderException(IllegalStateException("provider raw body")))
+
+        mockMvc
+            .perform(post("/api/v1/players/{gameName}/{tagLine}/analysis", "Hide on bush", "KR1"))
+            .andExpect(status().isBadGateway)
+            .andExpect(jsonPath("$.detail").value("Unable to generate AI analysis."))
     }
 
     @Test

@@ -114,7 +114,8 @@ collector는 Match-V5 `queue=420` filter, Match ID deduplication과 sampled-play
 participant metric 계산 및 `BenchmarkSample` 저장을 구현한다. 429는 이후 Riot 요청 scheduling을 중단하고, collector 전체는
 transaction을 열지 않는다. raw `benchmark_sample`의 PostgreSQL on-demand aggregate, match-level percentile threshold,
 `PeerBenchmarkQueryService`와 availability policy, exact cohort·availability·numeric difference를 결합하는
-`PlayerComparisonFeature`는 구현됐다. scheduler, player percentile rank, LLM integration은 계속 계획 상태다.
+`PlayerComparisonFeature`는 구현됐다. scheduler와 player percentile rank는 계속 계획 상태다.
+LLM integration은 이후 [ADR-007](007-use-structured-llm-analysis-boundary.md) 범위에서 구현됐다.
 
 ## Reason
 

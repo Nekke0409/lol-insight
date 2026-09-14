@@ -1,5 +1,7 @@
 package io.github.nekke0409.lolinsight.player.web
 
+import io.github.nekke0409.lolinsight.analysis.application.PlayerAnalysisResponse
+import io.github.nekke0409.lolinsight.analysis.application.PlayerAnalysisService
 import io.github.nekke0409.lolinsight.player.application.PlayerMatchHistoryService
 import io.github.nekke0409.lolinsight.player.application.PlayerMatchStatisticsResponse
 import io.github.nekke0409.lolinsight.player.application.PlayerMatchStatisticsService
@@ -11,6 +13,7 @@ import jakarta.validation.constraints.Min
 import jakarta.validation.constraints.NotBlank
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
+import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
@@ -21,6 +24,7 @@ class PlayerController(
     private val playerService: PlayerService,
     private val playerMatchHistoryService: PlayerMatchHistoryService,
     private val playerMatchStatisticsService: PlayerMatchStatisticsService,
+    private val playerAnalysisService: PlayerAnalysisService,
 ) {
     @GetMapping("/{gameName}/{tagLine}")
     fun findByRiotId(
@@ -43,4 +47,12 @@ class PlayerController(
         @RequestParam(defaultValue = "0") @Min(0) start: Int,
         @RequestParam(defaultValue = "20") @Min(1) @Max(20) count: Int,
     ): PlayerMatchStatisticsResponse = playerMatchStatisticsService.findStatistics(gameName, tagLine, start, count)
+
+    @PostMapping("/{gameName}/{tagLine}/analysis")
+    fun analyzePlayer(
+        @PathVariable @NotBlank gameName: String,
+        @PathVariable @NotBlank tagLine: String,
+        @RequestParam(defaultValue = "0") @Min(0) start: Int,
+        @RequestParam(defaultValue = "20") @Min(1) @Max(20) count: Int,
+    ): PlayerAnalysisResponse = playerAnalysisService.analyze(gameName, tagLine, start, count)
 }
