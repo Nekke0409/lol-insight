@@ -3,6 +3,7 @@ package io.github.nekke0409.lolinsight.benchmark.infrastructure.riot
 import io.github.nekke0409.lolinsight.global.riot.RiotApiHttpClient
 import io.github.nekke0409.lolinsight.global.riot.RiotApiProperties
 import io.github.nekke0409.lolinsight.global.riot.RiotApiResponseException
+import io.github.nekke0409.lolinsight.rank.application.CurrentRankedSoloRank
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.springframework.http.HttpStatus
@@ -104,6 +105,97 @@ class RiotLeagueClientTest {
 
         assertEquals(HttpStatus.TOO_MANY_REQUESTS, exception.statusCode)
         assertEquals(3, exception.retryAfterSeconds)
+        server.verify()
+    }
+
+    @Test
+    fun `looks up a player rank by PUUID and selects the Ranked Solo entry instead of Flex`() {
+        server
+            .expect(
+                requestTo(
+                    "https://kr.api.riotgames.com/lol/league/v4/entries/by-puuid/player-puuid",
+                ),
+            ).andRespond(
+                jsonResponse(
+                    """
+                    [
+                      {"puuid":"player-puuid","queueType":"RANKED_FLEX_SR","tier":"EMERALD","rank":"II"},
+                      {"puuid":"player-puuid","queueType":"RANKED_SOLO_5x5","tier":"GOLD","rank":"I"}
+                    ]
+                    """.trimIndent(),
+                ),
+            )
+
+        val rank = client.findCurrentRankedSoloRank("player-puuid")
+
+        assertEquals(CurrentRankedSoloRank(tier = "GOLD", division = "I"), rank)
+        server.verify()
+    }
+
+    @Test
+    fun `returns no rank when a player has no Ranked Solo entry`() {
+        server
+            .expect(
+                requestTo(
+                    "https://kr.api.riotgames.com/lol/league/v4/entries/by-puuid/player-puuid",
+                ),
+            ).andRespond(jsonResponse("[]"))
+
+        val rank = client.findCurrentRankedSoloRank("player-puuid")
+
+        assertEquals(null, rank)
+        server.verify()
+    }
+
+    @Test
+    fun `treats a PUUID rank lookup not found as unranked`() {
+        server
+            .expect(
+                requestTo(
+                    "https://kr.api.riotgames.com/lol/league/v4/entries/by-puuid/player-puuid",
+                ),
+            ).andRespond(withStatus(HttpStatus.NOT_FOUND))
+
+        val rank = client.findCurrentRankedSoloRank("player-puuid")
+
+        assertEquals(null, rank)
+        server.verify()
+    }
+
+    @Test
+    fun `propagates rate limiting from a PUUID rank lookup`() {
+        server
+            .expect(
+                requestTo(
+                    "https://kr.api.riotgames.com/lol/league/v4/entries/by-puuid/player-puuid",
+                ),
+            ).andRespond(withStatus(HttpStatus.TOO_MANY_REQUESTS).header("Retry-After", "3"))
+
+        val exception =
+            assertFailsWith<RiotApiResponseException> {
+                client.findCurrentRankedSoloRank("player-puuid")
+            }
+
+        assertEquals(HttpStatus.TOO_MANY_REQUESTS, exception.statusCode)
+        assertEquals(3, exception.retryAfterSeconds)
+        server.verify()
+    }
+
+    @Test
+    fun `propagates a provider server failure from a PUUID rank lookup`() {
+        server
+            .expect(
+                requestTo(
+                    "https://kr.api.riotgames.com/lol/league/v4/entries/by-puuid/player-puuid",
+                ),
+            ).andRespond(withStatus(HttpStatus.BAD_GATEWAY))
+
+        val exception =
+            assertFailsWith<RiotApiResponseException> {
+                client.findCurrentRankedSoloRank("player-puuid")
+            }
+
+        assertEquals(HttpStatus.BAD_GATEWAY, exception.statusCode)
         server.verify()
     }
 

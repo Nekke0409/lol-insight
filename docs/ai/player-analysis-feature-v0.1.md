@@ -52,15 +52,19 @@ rank 평균 CS, 특정 tier보다 뛰어나다는 비교 결과를 제공하지 
 Timeline 의존 지표도 제외한다. 10분 CS, 15분 골드 차이, 초반 데스 비율, 첫 오브젝트 참여율은
 Timeline 또는 추가 데이터가 필요하다.
 
-## Peer Benchmark와의 관계 (Planned)
+## Peer Benchmark와의 관계
 
 이 문서의 `PlayerAnalysisFeature`는 현재 구현된 개인 통계 feature이며, benchmark나 상대 비교 결과를
-포함하지 않는다. 향후 sampled `BenchmarkSample`을 cohort별로 집계한 `PeerBenchmark`와 이 feature를 결합해
-`PlayerComparisonFeature`를 만든다.
+포함하지 않는다. comparison-ready 사용자 입력은 별도 `PlayerComparisonContext`로 구현하며,
+현재 Solo rank와 `(championId, position)`별 사용자 통계를 보유한다. 두 모델을 하나로 합쳐 LLM self-analysis와
+peer comparison의 책임을 결합하지 않는다. 상세 범위는
+[Player Comparison Context v0.1](player-comparison-context-v0.1.md)을 따른다.
 
 `BenchmarkSample`은 여러 경기의 평균이 아닌 `(sampled player PUUID, matchId)` 한 건의 participant-level
 관측치다. tier는 rank가 독립적으로 확인된 sampled player에게만 귀속한다. cohort 선택, sample size,
-average·median·percentile 및 차이는 Backend가 계산하며, LLM은 해당 비교 결과를 설명만 한다. 상세 결정은
+average·median·percentile 및 차이는 Backend가 계산하며, LLM은 해당 비교 결과를 설명만 한다. 향후
+`PlayerComparisonContext`와 sampled `BenchmarkSample`을 cohort별로 집계한 `PeerBenchmark`를 결합해
+`PlayerComparisonFeature`를 만든다. 상세 결정은
 [ADR-006](../adr/006-use-sampled-peer-benchmark.md)을 따른다.
 
 ## 향후 진입점

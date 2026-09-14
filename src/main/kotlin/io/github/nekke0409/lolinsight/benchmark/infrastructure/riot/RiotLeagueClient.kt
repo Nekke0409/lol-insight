@@ -1,9 +1,11 @@
 package io.github.nekke0409.lolinsight.benchmark.infrastructure.riot
 
 import io.github.nekke0409.lolinsight.global.riot.RiotApiHttpClient
+import io.github.nekke0409.lolinsight.global.riot.RiotApiInvalidResponseException
 import io.github.nekke0409.lolinsight.global.riot.RiotApiResponseException
 import io.github.nekke0409.lolinsight.global.riot.RiotApiRouting
 import io.github.nekke0409.lolinsight.match.domain.RankedSoloQueue
+import io.github.nekke0409.lolinsight.rank.application.CurrentRankedSoloRank
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Component
 
@@ -11,6 +13,18 @@ import org.springframework.stereotype.Component
 class RiotLeagueClient(
     private val riotApiHttpClient: RiotApiHttpClient,
 ) {
+    fun findCurrentRankedSoloRank(puuid: String): CurrentRankedSoloRank? {
+        require(puuid.isNotBlank()) { "puuid must not be blank" }
+
+        val entry = findRankedEntriesByPuuid(puuid).firstOrNull { it.queueType == RankedSoloQueue.TYPE } ?: return null
+
+        return try {
+            CurrentRankedSoloRank(tier = entry.tier, division = entry.rank)
+        } catch (exception: IllegalArgumentException) {
+            throw RiotApiInvalidResponseException(exception)
+        }
+    }
+
     fun findRankedPlayerPuuids(
         tier: String,
         division: String,
@@ -69,8 +83,26 @@ class RiotLeagueClient(
             }
         }
 
+    private fun findRankedEntriesByPuuid(puuid: String): List<RiotLeagueEntryDto> =
+        try {
+            riotApiHttpClient
+                .get(
+                    routing = RiotApiRouting.PLATFORM,
+                    path = LEAGUE_ENTRIES_BY_PUUID_PATH,
+                    uriVariables = mapOf("puuid" to puuid),
+                    responseType = Array<RiotLeagueEntryDto>::class.java,
+                ).toList()
+        } catch (exception: RiotApiResponseException) {
+            if (exception.statusCode.value() == HttpStatus.NOT_FOUND.value()) {
+                emptyList()
+            } else {
+                throw exception
+            }
+        }
+
     private companion object {
         const val FIRST_PAGE = 1
         const val LEAGUE_ENTRIES_PATH = "/lol/league/v4/entries/{queue}/{tier}/{division}"
+        const val LEAGUE_ENTRIES_BY_PUUID_PATH = "/lol/league/v4/entries/by-puuid/{puuid}"
     }
 }

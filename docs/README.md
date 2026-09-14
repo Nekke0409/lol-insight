@@ -18,6 +18,11 @@
 
 Riot API endpoint별 routing host와 용도를 빠르게 확인하는 참고 문서입니다.
 
+### AI and Benchmark Inputs
+
+- [`ai/player-analysis-feature-v0.1.md`](ai/player-analysis-feature-v0.1.md): 개인 요약 feature의 범위
+- [`ai/player-comparison-context-v0.1.md`](ai/player-comparison-context-v0.1.md): 향후 peer comparison의 사용자 측 입력
+
 ### Performance Baselines
 
 [`performance/recent-matches-latency-baseline.md`](performance/recent-matches-latency-baseline.md)

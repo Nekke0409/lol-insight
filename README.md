@@ -23,7 +23,7 @@ Riot의 공식 Ranked Ladder를 대체하는 MMR, ELO 또는 자체 Skill Rating
 | Riot integration | Account-V1 기반 Riot ID 조회, Match-V5 Match ID/Detail 조회와 queue filter, League-V4 기반 KR Ranked Solo player discovery | representative sampling, scheduled collection |
 | Match processing | Riot Match DTO를 내부 `Match` 모델로 정규화하고 sampled player의 participant-level observation 추출 | aggregate용 추가 feature |
 | Player statistics | 최근 Match 표본의 KDA, CS/min, DPM, 골드/비전, 킬 관여율, 피해 비중 계산 | cohort와의 차이 및 percentile 계산 |
-| Analysis feature | `PlayerAnalysisFeature` 생성, cohort별 match-level `PeerBenchmark` 조회 | `PlayerComparisonFeature` 생성 |
+| Analysis feature | 개인 요약용 `PlayerAnalysisFeature`, 현재 Solo rank와 champion/position별 사용자 지표를 담는 `PlayerComparisonContext`, cohort별 match-level `PeerBenchmark` 조회 | `PlayerComparisonFeature` 생성 |
 | Redis | 성공한 Match Detail을 7일 TTL로 캐시 | benchmark 전용 Redis 기능은 도입하지 않음 |
 | Persistence | PostgreSQL, JPA, Flyway 기반 `BenchmarkSample` schema, idempotent 저장 진입점, 소규모 collector와 on-demand aggregate query | retention 정책 |
 | LLM | 구현되지 않음 — OpenAI/다른 Provider client, prompt, endpoint 없음 | Backend가 만든 comparison feature의 자연어 설명 |
@@ -102,6 +102,7 @@ Spring Security, AWS 및 OpenAI API 또는 다른 LLM Provider는 서비스 요�
 - [ADRs](docs/adr/): 장기적인 기술 의사결정
 - [Player Match Statistics v0.1](docs/statistics/player-match-statistics-v0.1.md): 현재 통계의 계산 기준
 - [Player Analysis Feature v0.1](docs/ai/player-analysis-feature-v0.1.md): 현재 provider 독립 feature의 범위
+- [Player Comparison Context v0.1](docs/ai/player-comparison-context-v0.1.md): 향후 peer comparison 입력의 범위
 
 ## Local Environment
 

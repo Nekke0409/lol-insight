@@ -94,9 +94,11 @@ Riot API의 원본 Match DTO와 서비스 내부에서 사용하는 모델을 �
 
 ### Analysis
 
-가공된 Match/통계 데이터를 이용해 분석 feature를 만든다. 현재는 `PlayerAnalysisFeature`를 만드는
-provider 독립 application service까지만 구현되어 있다. LLM 호출, prompt, 자연어 피드백 endpoint는
-향후 작업이다.
+가공된 Match/통계 데이터를 이용해 분석 feature를 만든다. 현재는 개인 요약용 `PlayerAnalysisFeature`와,
+향후 peer comparison의 사용자 측 입력인 `PlayerComparisonContext`를 만드는 provider 독립 application service가
+구현되어 있다. `PlayerComparisonContext`는 현재 Ranked Solo rank와 대상 사용자의 `(championId, position)`별
+통계를 포함하지만 benchmark를 조회하거나 차이·percentile을 계산하지 않는다. LLM 호출, prompt, 자연어 피드백
+endpoint는 향후 작업이다.
 
 LLM Provider의 요청/응답 형식이 Match나 Player의 핵심 로직에 직접 퍼지지 않도록 한다.
 
@@ -258,9 +260,11 @@ RiotAccountClient / RiotMatchClient
 - Riot의 HTTP 오류는 상태 코드와 응답 본문을 보존하는 외부 API 예외로 변환한다. 서비스의 HTTP 오류 응답으로 변환하는 정책은 실제 API endpoint를 추가할 때 결정한다.
 
 현재는 blocking Spring MVC 구조에 맞춰 Spring `RestClient`를 사용한다. 구현된 endpoint별 Client는
-Account-V1의 `RiotAccountClient`, Match-V5의 `RiotMatchClient`, 그리고 benchmark feature의 League-V4
-`RiotLeagueClient`다. `RiotLeagueClient`는 League response DTO를 feature infrastructure 안에 가두고, entry가 제공하는
-PUUID를 `SampledRankedPlayer`로 정규화한다. 공통 전송기에는 endpoint DTO나 도메인 판단을 넣지 않는다.
+Account-V1의 `RiotAccountClient`, Match-V5의 `RiotMatchClient`, 그리고 League-V4의 `RiotLeagueClient`다.
+`RiotLeagueClient`는 League response DTO를 infrastructure 안에 가두고, ladder entry의 PUUID를
+`SampledRankedPlayer`로 정규화한다. 또한 PUUID 기반 entries 응답에서는 `RANKED_SOLO_5x5` entry만 선택해
+`PlayerRankLookupService`가 사용하는 rank 입력으로 매핑한다. PUUID rank lookup과 tier/division ladder discovery는
+서로 다른 application service로 유지한다. 공통 전송기에는 endpoint DTO나 도메인 판단을 넣지 않는다.
 
 ### Bounded Match Detail Batch Loading
 
@@ -348,8 +352,9 @@ Riot API
     -> normalized Match
     -> PlayerMatchStatistics
     -> PlayerAnalysisFeature
+    -> PlayerComparisonContext (current Solo rank + champion/position user metrics)
 
-Benchmark flow (collection implemented; aggregation planned)
+Benchmark flow (collection and aggregation implemented)
 ranked player source
     -> sampled players (implemented)
     -> recent Ranked Solo Match IDs (implemented)
@@ -361,8 +366,14 @@ ranked player source
     -> PeerBenchmark (implemented)
 ```
 
-이후 `PlayerAnalysisFeature`와 `PeerBenchmark`를 결합해 `PlayerComparisonFeature`를 만들고 LLM에
-전달한다. sample 생성·저장과 match-level `PeerBenchmark` aggregate는 production Kotlin 코드에 구현됐지만,
+`PlayerComparisonContext`는 `PlayerAnalysisFeature`와 별개의 comparison-ready 사용자 입력이다. PUUID로 조회한
+현재 `RANKED_SOLO_5x5` tier/division과 그 조회 시각을 담고, rank가 없으면 `rankContext = null`로 정상 표현한다.
+대상 사용자의 Match 표본은 `(championId, position)`별로 분리하고, `MatchParticipantMetricsCalculator`의 KDA,
+CS/min, gold/min, damage/min, vision/min, kill participation, damage share 공식을 재사용한다. 이 단계는
+`PeerBenchmarkQueryService`를 호출하지 않는다.
+
+이후 `PlayerComparisonContext`와 `PeerBenchmark`를 결합해 `PlayerComparisonFeature`를 만들고 LLM에 전달한다.
+sample 생성·저장과 match-level `PeerBenchmark` aggregate는 production Kotlin 코드에 구현됐지만,
 `PlayerComparisonFeature`와 LLM adapter는 계획 상태다.
 
 #### BenchmarkSample
@@ -456,7 +467,7 @@ LLM은 주로 다음 역할을 담당한다.
 
 LLM이 정확한 산술 계산이나 원본 Match JSON의 전체 구조 이해를 담당한다고 가정하지 않는다.
 LLM은 percentile을 직접 계산하거나 임의 benchmark·MMR을 만들지 않는다. 현재 LLM Provider 연동은 구현되어
-있지 않으며, `PlayerAnalysisFeature`까지만 구현되어 있다.
+있지 않다. `PlayerAnalysisFeature`와 benchmark를 아직 조회하지 않는 `PlayerComparisonContext`까지만 구현되어 있다.
 
 ### Provider Boundary
 
@@ -592,9 +603,10 @@ Riot API 오류를 서비스 관점의 오류로 변환한 뒤
 현재 구현:
 
 - 단일 Spring Boot Backend
-- Account-V1과 Match-V5 Riot API 연동
+- Account-V1, Match-V5, League-V4 Riot API 연동
 - 플레이어/Match 조회와 normalized Match 생성
 - 최근 Match 기반 통계 계산과 `PlayerAnalysisFeature` 생성
+- 현재 Solo rank와 champion/position별 사용자 지표를 담는 `PlayerComparisonContext` 생성
 - 명확한 오류 처리
 - 핵심 테스트
 - Match Detail Redis cache와 bounded detail fan-out
