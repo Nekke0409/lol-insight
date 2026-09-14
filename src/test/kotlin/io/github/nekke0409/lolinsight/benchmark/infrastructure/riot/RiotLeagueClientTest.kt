@@ -38,20 +38,17 @@ class RiotLeagueClientTest {
     }
 
     @Test
-    fun `finds PUUIDs by passing queue tier division and first page to League API`() {
+    fun `finds PUUIDs directly by passing queue tier division and first page to League API`() {
         server
             .expect(
                 requestTo(
                     "https://kr.api.riotgames.com/lol/league/v4/entries/RANKED_SOLO_5x5/GOLD/I?page=1",
                 ),
-            ).andRespond(jsonResponse("[{\"summonerId\":\"encrypted-summoner-id\"}]"))
-        server
-            .expect(requestTo("https://kr.api.riotgames.com/lol/summoner/v4/summoners/encrypted-summoner-id"))
-            .andRespond(jsonResponse("{\"puuid\":\"bridge-puuid\"}"))
+            ).andRespond(jsonResponse("[{\"puuid\":\"league-puuid\"}]"))
 
         val puuids = client.findRankedPlayerPuuids(tier = "GOLD", division = "I", playerLimit = 1)
 
-        assertEquals(listOf("bridge-puuid"), puuids)
+        assertEquals(listOf("league-puuid"), puuids)
         server.verify()
     }
 
@@ -62,19 +59,13 @@ class RiotLeagueClientTest {
                 requestTo(
                     "https://kr.api.riotgames.com/lol/league/v4/entries/RANKED_SOLO_5x5/GOLD/I?page=1",
                 ),
-            ).andRespond(jsonResponse("[{\"summonerId\":\"summoner-one\"}]"))
-        server
-            .expect(requestTo("https://kr.api.riotgames.com/lol/summoner/v4/summoners/summoner-one"))
-            .andRespond(jsonResponse("{\"puuid\":\"puuid-one\"}"))
+            ).andRespond(jsonResponse("[{\"puuid\":\"puuid-one\"}]"))
         server
             .expect(
                 requestTo(
                     "https://kr.api.riotgames.com/lol/league/v4/entries/RANKED_SOLO_5x5/GOLD/I?page=2",
                 ),
-            ).andRespond(jsonResponse("[{\"summonerId\":\"summoner-two\"}]"))
-        server
-            .expect(requestTo("https://kr.api.riotgames.com/lol/summoner/v4/summoners/summoner-two"))
-            .andRespond(jsonResponse("{\"puuid\":\"puuid-two\"}"))
+            ).andRespond(jsonResponse("[{\"puuid\":\"puuid-two\"}]"))
 
         val puuids = client.findRankedPlayerPuuids(tier = "GOLD", division = "I", playerLimit = 2)
 
@@ -98,37 +89,13 @@ class RiotLeagueClientTest {
     }
 
     @Test
-    fun `skips an entry only when its Summoner PUUID bridge is not found`() {
+    fun `propagates a rate limit response from League API`() {
         server
             .expect(
                 requestTo(
                     "https://kr.api.riotgames.com/lol/league/v4/entries/RANKED_SOLO_5x5/GOLD/I?page=1",
                 ),
-            ).andRespond(jsonResponse("[{\"summonerId\":\"missing-summoner\"},{\"summonerId\":\"found-summoner\"}]"))
-        server
-            .expect(requestTo("https://kr.api.riotgames.com/lol/summoner/v4/summoners/missing-summoner"))
-            .andRespond(withStatus(HttpStatus.NOT_FOUND))
-        server
-            .expect(requestTo("https://kr.api.riotgames.com/lol/summoner/v4/summoners/found-summoner"))
-            .andRespond(jsonResponse("{\"puuid\":\"found-puuid\"}"))
-
-        val puuids = client.findRankedPlayerPuuids(tier = "GOLD", division = "I", playerLimit = 1)
-
-        assertEquals(listOf("found-puuid"), puuids)
-        server.verify()
-    }
-
-    @Test
-    fun `propagates a rate limit response without scheduling another bridge request`() {
-        server
-            .expect(
-                requestTo(
-                    "https://kr.api.riotgames.com/lol/league/v4/entries/RANKED_SOLO_5x5/GOLD/I?page=1",
-                ),
-            ).andRespond(jsonResponse("[{\"summonerId\":\"first-summoner\"},{\"summonerId\":\"second-summoner\"}]"))
-        server
-            .expect(requestTo("https://kr.api.riotgames.com/lol/summoner/v4/summoners/first-summoner"))
-            .andRespond(withStatus(HttpStatus.TOO_MANY_REQUESTS).header("Retry-After", "3"))
+            ).andRespond(withStatus(HttpStatus.TOO_MANY_REQUESTS).header("Retry-After", "3"))
 
         val exception =
             assertFailsWith<RiotApiResponseException> {

@@ -11,6 +11,12 @@ KR: kr.api.riotgames.com
 Purpose: profile / level
 
 LEAGUE-V4
+GET /lol/league/v4/entries/{queue}/{tier}/{division}?page={page}
+Routing: platform
+KR: kr.api.riotgames.com
+Purpose: ranked player discovery (League entry PUUID)
+
+LEAGUE-V4
 GET /lol/league/v4/entries/by-puuid/{encryptedPUUID}
 Routing: platform
 KR: kr.api.riotgames.com

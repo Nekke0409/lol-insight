@@ -73,7 +73,7 @@ PeerBenchmark의 우선 cohort dimension은 다음과 같다.
 ### Initial Vertical Slice
 
 초기 vertical slice는 `tier=GOLD`, `division=I`, `playerLimit=10`처럼 작은 범위로 League-V4 ranked player discovery와
-Summoner-V4 PUUID 연결을 검증한다. 이어서 이미 discovery된 `SampledRankedPlayer`를 입력으로 `queue=420` Match ID
+entry가 제공하는 PUUID 사용을 검증한다. 이어서 이미 discovery된 `SampledRankedPlayer`를 입력으로 `queue=420` Match ID
 조회, Match ID deduplication, bounded Detail 조회, participant metric 추출 및 idempotent persistence를 수행한다.
 
 이 결과를 production-quality GOLD benchmark 또는 GOLD 전체 population의 대표 평균으로 표현하지 않는다.
@@ -108,7 +108,7 @@ PlayerAnalysisFeature + PeerBenchmark
 
 `BenchmarkSample` persistence foundation은 구현됐다. PostgreSQL Flyway migration, domain model과 JPA Entity의
 분리, `(match_id, puuid)` unique constraint, 그리고 `saveIfAbsent`의 idempotent write가 포함된다. KR
-`RANKED_SOLO_5x5`의 League-V4 page 조회, Summoner-V4 PUUID 연결 및 `SampledRankedPlayer` 생성도 구현됐다.
+`RANKED_SOLO_5x5`의 League-V4 page 조회, entry PUUID 사용 및 `SampledRankedPlayer` 생성도 구현됐다.
 collector는 Match-V5 `queue=420` filter, Match ID deduplication과 sampled-player 관계 보존, bounded Detail loading,
 participant metric 계산 및 `BenchmarkSample` 저장을 구현한다. 429는 이후 Riot 요청 scheduling을 중단하고, collector 전체는
 transaction을 열지 않는다. scheduler, aggregate, `PlayerComparisonFeature`, LLM integration은 계속 계획 상태다.

@@ -34,7 +34,7 @@ class RiotLeagueClient(
                     return puuids
                 }
 
-                findPuuidBySummonerId(entry.summonerId)?.let(puuids::add)
+                puuids += entry.puuid
             }
             page += 1
         }
@@ -69,26 +69,8 @@ class RiotLeagueClient(
             }
         }
 
-    private fun findPuuidBySummonerId(summonerId: String): String? =
-        try {
-            riotApiHttpClient
-                .get(
-                    routing = RiotApiRouting.PLATFORM,
-                    path = SUMMONER_BY_ID_PATH,
-                    uriVariables = mapOf("summonerId" to summonerId),
-                    responseType = RiotSummonerDto::class.java,
-                ).puuid
-        } catch (exception: RiotApiResponseException) {
-            if (exception.statusCode.value() == HttpStatus.NOT_FOUND.value()) {
-                null
-            } else {
-                throw exception
-            }
-        }
-
     private companion object {
         const val FIRST_PAGE = 1
         const val LEAGUE_ENTRIES_PATH = "/lol/league/v4/entries/{queue}/{tier}/{division}"
-        const val SUMMONER_BY_ID_PATH = "/lol/summoner/v4/summoners/{summonerId}"
     }
 }

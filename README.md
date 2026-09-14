@@ -20,7 +20,7 @@ Riot의 공식 Ranked Ladder를 대체하는 MMR, ELO 또는 자체 Skill Rating
 
 | Area | Current implementation | Planned / future work |
 | --- | --- | --- |
-| Riot integration | Account-V1 기반 Riot ID 조회, Match-V5 Match ID/Detail 조회와 queue filter, League-V4 기반 KR Ranked Solo player discovery와 Summoner-V4 PUUID 연결 | representative sampling, scheduled collection |
+| Riot integration | Account-V1 기반 Riot ID 조회, Match-V5 Match ID/Detail 조회와 queue filter, League-V4 기반 KR Ranked Solo player discovery | representative sampling, scheduled collection |
 | Match processing | Riot Match DTO를 내부 `Match` 모델로 정규화하고 sampled player의 participant-level observation 추출 | aggregate용 추가 feature |
 | Player statistics | 최근 Match 표본의 KDA, CS/min, DPM, 골드/비전, 킬 관여율, 피해 비중 계산 | cohort와의 차이 및 percentile 계산 |
 | Analysis feature | `PlayerAnalysisFeature` 생성 | `PeerBenchmark`, `PlayerComparisonFeature` 생성 |
@@ -51,8 +51,8 @@ Riot ID -> Account-V1 -> PUUID -> Match IDs -> normalized Match
 Match Detail은 `RiotMatchClient` 경계에서 Redis를 사용합니다. 최근 경기 Detail fan-out은 application lifecycle이 관리하는 고정 4-thread executor와 sliding window로 제한됩니다. cache hit은 Riot Match-V5 Detail 호출을 생략하지만, cache는 rate limiter나 retry 정책이 아닙니다.
 
 Peer Benchmark의 ranked player discovery와 제한된 collection vertical slice가 구현됐습니다. League-V4의 KR
-`RANKED_SOLO_5x5` entry를 page 단위로 읽고 각 entry의 `summonerId`를 Summoner-V4로 PUUID에 연결해
-`SampledRankedPlayer`로 정규화합니다. collector는 Ranked Solo Match ID를 `queue=420`으로 조회하고, Match ID별로
+`RANKED_SOLO_5x5` entry를 page 단위로 읽어 entry가 제공하는 PUUID를 `SampledRankedPlayer`로 정규화합니다.
+collector는 Ranked Solo Match ID를 `queue=420`으로 조회하고, Match ID별로
 sampled player 관계를 보존한 채 Detail을 한 번만 읽어 participant-level sample을 idempotent하게 저장합니다.
 
 ```text
