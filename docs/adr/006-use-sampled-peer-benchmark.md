@@ -72,9 +72,10 @@ PeerBenchmark의 우선 cohort dimension은 다음과 같다.
 
 ### Initial Vertical Slice
 
-초기 vertical slice는 예를 들어 `tier=GOLD`, `division=I`, `playerLimit=10`, `matchesPerPlayer=5`처럼 작은
-범위로 ranked player discovery, PUUID 연결, Match ID 수집·중복 제거, Match Detail 조회, metric 추출과
-persistence가 end-to-end로 동작하는지만 검증한다.
+초기 vertical slice는 `tier=GOLD`, `division=I`, `playerLimit=10`처럼 작은 범위로 League-V4 ranked player discovery와
+Summoner-V4 PUUID 연결을 먼저 검증한다. 이 단계의 `SampledRankedPlayer`는 수집 시점 rank context만 담아 다음 단계에
+전달하며 persistence하지 않는다. Match ID 수집·중복 제거, Match Detail 조회, metric 추출 및 persistence는 이후 collector
+단계에서 별도로 검증한다.
 
 이 결과를 production-quality GOLD benchmark 또는 GOLD 전체 population의 대표 평균으로 표현하지 않는다.
 실제 benchmark 품질을 높이려면 여러 division/page와 명시적인 sampling policy를 별도로 결정해야 한다.
@@ -107,9 +108,10 @@ PlayerAnalysisFeature + PeerBenchmark
 ## Implementation Status
 
 `BenchmarkSample` persistence foundation은 구현됐다. PostgreSQL Flyway migration, domain model과 JPA Entity의
-분리, `(match_id, puuid)` unique constraint, 그리고 `saveIfAbsent`의 idempotent write가 포함된다. 이는 sample을
-수집하거나 aggregate를 계산하는 구현이 아니다. League API Client, collector, scheduler, aggregate,
-`PlayerComparisonFeature`, LLM integration은 계속 계획 상태다.
+분리, `(match_id, puuid)` unique constraint, 그리고 `saveIfAbsent`의 idempotent write가 포함된다. KR
+`RANKED_SOLO_5x5`의 League-V4 page 조회, Summoner-V4 PUUID 연결 및 `SampledRankedPlayer` 생성도 구현됐다.
+이는 Match를 수집하거나 `BenchmarkSample`을 생성·저장하거나 aggregate를 계산하는 구현이 아니다. collector, scheduler,
+aggregate, `PlayerComparisonFeature`, LLM integration은 계속 계획 상태다.
 
 ## Reason
 
@@ -152,8 +154,7 @@ Backend의 결정적 책임으로 유지한다.
 
 ## Future
 
-- League API Client와 ranked player discovery 구현
-- collector에서 `BenchmarkSample` 생성 및 persistence 진입점 호출
+- collector에서 Match ID·Detail을 조회하고 `BenchmarkSample` 생성 및 persistence 진입점 호출
 - deduplication policy와 retention 정책
 - scheduled collection과 failure/rate-limit handling
 - larger/stratified sampling 및 sampling policy 문서화

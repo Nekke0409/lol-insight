@@ -20,7 +20,7 @@ Riot의 공식 Ranked Ladder를 대체하는 MMR, ELO 또는 자체 Skill Rating
 
 | Area | Current implementation | Planned / future work |
 | --- | --- | --- |
-| Riot integration | Account-V1 기반 Riot ID 조회, Match-V5 Match ID 및 Detail 조회 | ranked player discovery와 benchmark collection |
+| Riot integration | Account-V1 기반 Riot ID 조회, Match-V5 Match ID 및 Detail 조회, League-V4 기반 KR Ranked Solo player discovery와 Summoner-V4 PUUID 연결 | benchmark collection |
 | Match processing | Riot Match DTO를 내부 `Match` 모델로 정규화 | benchmark용 participant-level observation 추출 |
 | Player statistics | 최근 Match 표본의 KDA, CS/min, DPM, 골드/비전, 킬 관여율, 피해 비중 계산 | cohort와의 차이 및 percentile 계산 |
 | Analysis feature | `PlayerAnalysisFeature` 생성 | `PeerBenchmark`, `PlayerComparisonFeature` 생성 |
@@ -50,7 +50,10 @@ Riot ID -> Account-V1 -> PUUID -> Match IDs -> normalized Match
 
 Match Detail은 `RiotMatchClient` 경계에서 Redis를 사용합니다. 최근 경기 Detail fan-out은 application lifecycle이 관리하는 고정 4-thread executor와 sliding window로 제한됩니다. cache hit은 Riot Match-V5 Detail 호출을 생략하지만, cache는 rate limiter나 retry 정책이 아닙니다.
 
-Peer Benchmark는 아직 구현되지 않았습니다. 합의된 향후 데이터 흐름은 다음과 같습니다.
+Peer Benchmark의 ranked player discovery는 구현됐습니다. League-V4의 KR `RANKED_SOLO_5x5` entry를 page 단위로 읽고,
+각 entry의 `summonerId`를 Summoner-V4로 PUUID에 연결해 `SampledRankedPlayer`로 정규화합니다. 이 단계는 수집 시각의
+rank context만 전달하며 Match-V5 조회, sample 생성·저장, collector 및 aggregate는 아직 구현하지 않았습니다. 이후 데이터
+흐름은 다음과 같습니다.
 
 ```text
 ranked player source

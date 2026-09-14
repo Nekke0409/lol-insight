@@ -103,9 +103,11 @@ LLM Provider의 요청/응답 형식이 Match나 Player의 핵심 로직에 직�
 ### Benchmark
 
 Peer Benchmark는 샘플링한 ranked player의 Ranked Solo Match participant 관측치를 수집하고, cohort별로
-집계해 상대 비교에 사용하는 기능 영역이다. `BenchmarkSample` domain/entity, Flyway schema 및 idempotent
-persistence 진입점은 구현됐다. 수집 Client, collector, scheduler, aggregate, percentile 및 comparison feature는
-아직 구현되지 않았다. 확정된 데이터 모델 원칙은 [ADR-006](adr/006-use-sampled-peer-benchmark.md)을 따른다.
+집계해 상대 비교에 사용하는 기능 영역이다. KR `RANKED_SOLO_5x5`의 League-V4 entry를 page 단위로 읽고
+Summoner-V4로 PUUID에 연결하는 ranked player discovery, `SampledRankedPlayer` domain model, `BenchmarkSample`
+domain/entity, Flyway schema 및 idempotent persistence 진입점은 구현됐다. Match ID·Detail 조회, sample 생성·저장 호출,
+collector, scheduler, aggregate, percentile 및 comparison feature는 아직 구현되지 않았다. 확정된 데이터 모델 원칙은
+[ADR-006](adr/006-use-sampled-peer-benchmark.md)을 따른다.
 
 ### Community
 
@@ -254,9 +256,9 @@ RiotAccountClient / RiotMatchClient
 - Riot의 HTTP 오류는 상태 코드와 응답 본문을 보존하는 외부 API 예외로 변환한다. 서비스의 HTTP 오류 응답으로 변환하는 정책은 실제 API endpoint를 추가할 때 결정한다.
 
 현재는 blocking Spring MVC 구조에 맞춰 Spring `RestClient`를 사용한다. 구현된 endpoint별 Client는
-Account-V1의 `RiotAccountClient`와 Match-V5의 `RiotMatchClient`다. ranked player discovery에 필요한
-League API Client 등은 실제 수집 기능 작업에서 해당 feature의 infrastructure 경계에 추가한다. 공통 전송기에는
-endpoint DTO나 도메인 판단을 넣지 않는다.
+Account-V1의 `RiotAccountClient`, Match-V5의 `RiotMatchClient`, 그리고 benchmark feature의 League-V4/Summoner-V4
+`RiotLeagueClient`다. `RiotLeagueClient`는 League response DTO를 feature infrastructure 안에 가두고, entry의
+`summonerId`를 Summoner-V4 응답의 PUUID로 연결한다. 공통 전송기에는 endpoint DTO나 도메인 판단을 넣지 않는다.
 
 ### Recent Match Detail Fan-Out
 
@@ -345,9 +347,9 @@ Riot API
     -> PlayerMatchStatistics
     -> PlayerAnalysisFeature
 
-Benchmark flow (collector and aggregation planned)
+Benchmark flow (ranked player discovery implemented; collection and aggregation planned)
 ranked player source
-    -> sampled players
+    -> sampled players (implemented)
     -> recent Ranked Solo Match IDs
     -> Match ID deduplication
     -> normalized Match
@@ -391,10 +393,11 @@ MVP의 rank는 일반적으로 **수집 시점의 rank**다. 이를 과거 Match
 
 #### Initial Vertical Slice
 
-예를 들어 `tier=GOLD`, `division=I`, `playerLimit=10`, `matchesPerPlayer=5` 수집은 ranked player discovery부터
-sample persistence까지의 end-to-end 흐름을 검증하기 위한 작은 vertical slice다. 이를 GOLD 전체 population의
-대표 평균이나 production-quality benchmark로 표현하지 않는다. 여러 division/page와 sampling policy는 실제
-benchmark 품질을 높이는 별도 결정이다.
+`tier=GOLD`, `division=I`, `playerLimit=10` discovery는 League-V4 page 조회와 PUUID 연결을 검증하는 작은 vertical
+slice다. 이 단계의 `SampledRankedPlayer`는 수집 시점의 rank context만 담고 persistence하지 않는다. 이후
+`matchesPerPlayer=5` 같은 Match 수집·sample persistence 흐름은 별도 단계다. 이를 GOLD 전체 population의 대표 평균이나
+production-quality benchmark로 표현하지 않는다. 여러 division/page와 sampling policy는 실제 benchmark 품질을 높이는
+별도 결정이다.
 
 ## 9. AI Analysis Architecture
 
