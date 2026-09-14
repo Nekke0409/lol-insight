@@ -107,8 +107,9 @@ Peer Benchmark는 샘플링한 ranked player의 Ranked Solo Match participant �
 entry가 제공하는 PUUID를 사용하는 ranked player discovery, `SampledRankedPlayer` domain model, `BenchmarkSample`
 domain/entity, Flyway schema 및 idempotent persistence 진입점은 구현됐다. collector는 Match-V5의 `queue=420` Match ID
 filter와 Detail 검증을 함께 사용하고, Match ID deduplication·sampled player 관계 보존·participant metric 계산·sample
-저장까지 수행한다. scheduler, aggregate, percentile 및 comparison feature는 아직 구현되지 않았다. 확정된 데이터 모델
-원칙은 [ADR-006](adr/006-use-sampled-peer-benchmark.md)을 따른다.
+저장까지 수행한다. raw `benchmark_sample`을 PostgreSQL에서 on-demand 집계하는 `PeerBenchmarkQueryService`와
+match-level percentile threshold는 구현됐다. scheduler, `PlayerComparisonFeature`, player percentile rank 및 LLM
+integration은 아직 구현되지 않았다. 확정된 데이터 모델 원칙은 [ADR-006](adr/006-use-sampled-peer-benchmark.md)을 따른다.
 
 ### Community
 
@@ -356,13 +357,13 @@ ranked player source
     -> normalized Match (implemented)
     -> BenchmarkSample (implemented)
     -> saveIfAbsent persistence (implemented)
-    -> Benchmark Aggregate
-    -> PeerBenchmark
+    -> Benchmark Aggregate (implemented)
+    -> PeerBenchmark (implemented)
 ```
 
 이후 `PlayerAnalysisFeature`와 `PeerBenchmark`를 결합해 `PlayerComparisonFeature`를 만들고 LLM에
-전달한다. sample 생성과 저장은 production Kotlin 코드에 구현됐지만, aggregate, `PeerBenchmark`,
-`PlayerComparisonFeature`, LLM adapter는 계획 상태다.
+전달한다. sample 생성·저장과 match-level `PeerBenchmark` aggregate는 production Kotlin 코드에 구현됐지만,
+`PlayerComparisonFeature`와 LLM adapter는 계획 상태다.
 
 #### BenchmarkSample
 
@@ -389,8 +390,25 @@ participant B의 rank가 별도로 확인돼 B도 sampled player라면, B의 sam
 MVP의 rank는 일반적으로 **수집 시점의 rank**다. 이를 과거 Match 시점의 정확한 rank라고 가정하지 않는다.
 따라서 "현재 GOLD인 sampled player의 최근 Ranked Solo Match"라는 시간 해석을 명시한다.
 
-`PeerBenchmark`의 우선 cohort dimension은 region, queue, tier, position, champion이다. 서로 다른 position을
-같은 기준선으로 직접 비교하지 않는다. patch/gameVersion, division 및 기타 맥락은 필요성이 확인되면 추가한다.
+`PeerBenchmark` v0.1 cohort dimension은 region, queue, tier, division, position, championId다. division을 포함해
+GOLD I sample을 전체 GOLD benchmark로 해석하지 않는다. 서로 다른 position을 같은 기준선으로 직접 비교하지 않는다.
+patch/gameVersion과 freshness window는 아직 cohort에 포함하지 않는다.
+
+#### Match-level PeerBenchmark Aggregate
+
+`PeerBenchmarkQueryService.findBenchmark(cohort)`는 raw `benchmark_sample`을 PostgreSQL에서 on-demand로 읽는다.
+`BenchmarkSampleAggregateRepository`가 `COUNT(*)`, `COUNT(DISTINCT puuid)`, `AVG`와 `percentile_cont`를 실행하며
+JPA Entity를 application layer에 반환하지 않는다. `PeerBenchmark`는 KDA, CS/min, gold/min, damage/min, vision/min,
+kill participation, damage share 각각의 mean, median, p25, p75, p90 threshold를 보유한다.
+
+이는 cohort의 **match-level observation distribution**이다. p90은 sample metric의 90th percentile threshold이지
+플레이어의 상위 10%나 사용자 percentile rank가 아니다. 한 sampled player가 여러 유효 Match를 제공하면 여러
+observation으로 분포에 기여하므로 `sampleCount`와 `uniquePlayerCount`를 분리한다. availability는 0건의 `NO_DATA`,
+휴리스틱(기본 30 samples 및 10 unique players) 미달의 `INSUFFICIENT_SAMPLE`, 그 외 `AVAILABLE`로 구분한다.
+
+v0.1은 aggregate table, materialized view, Redis aggregate cache 없이 correctness를 먼저 검증한다. `gameVersion`과
+`gameStartTimestamp`는 저장하지만 patch-aware cohort나 retention policy는 아직 없다. 따라서 오래된 sample이 누적되면
+patch mixing이 발생할 수 있고 production 도입 전 freshness window 또는 patch-aware cohort 전략이 필요하다.
 
 #### Initial Vertical Slice
 
@@ -462,11 +480,15 @@ transaction 안에서 PostgreSQL `INSERT ... ON CONFLICT DO NOTHING`을 실행�
 않고 `ALREADY_EXISTS`로 처리한다. collector는 Riot HTTP 호출과 sample 생성을 transaction 밖에서 마친 뒤 이
 진입점을 호출하므로 일부 upstream 실패가 이미 저장한 sample을 rollback하지 않는다.
 
-aggregate query가 구현되지 않았으므로 unique constraint 외의 cohort 복합 index는 추가하지 않았다. 저장 기간,
-aggregate materialization 및 retention 정책은 실제 사용 패턴과 함께 별도 결정한다.
+aggregate query는 raw table의 PostgreSQL `AVG`와 `percentile_cont`로 on-demand 실행한다. 현재 dataset 규모와
+사용 패턴에서는 aggregate table, materialized view, Redis aggregate cache 및 추가 cohort index를 도입하지 않았다.
+저장 기간, freshness window, patch-aware cohort와 aggregate materialization은 실제 query latency 및 사용 패턴을
+측정한 뒤 별도 결정한다.
 
 이 persistence는 PostgreSQL Testcontainers `@DataJpaTest`로 migration, JPA mapping validation, round trip,
-unique constraint와 idempotent write를 검증한다. 따라서 해당 integration test에는 Docker daemon이 필요하다.
+unique constraint와 idempotent write를 검증한다. 별도 aggregate fixture test는 exact cohort isolation,
+`COUNT(*)`/`COUNT(DISTINCT puuid)`, mean, median, p25, p75, p90과 availability를 검증한다. 따라서 해당 integration
+test에는 Docker daemon이 필요하다.
 기존 Riot/Redis Spring context test는 datasource auto-configuration을 test scope에서만 제외하고 persistence
 repository mock을 주입해 실제 PostgreSQL 없이도 기존 검증 범위를 유지한다.
 
@@ -580,7 +602,7 @@ Riot API 오류를 서비스 관점의 오류로 변환한 뒤
 다음 우선순위:
 
 - representative sampling과 scheduled benchmark collection
-- cohort aggregate, percentile, `PlayerComparisonFeature`
+- `PlayerComparisonFeature`, player percentile rank
 - 구조화된 comparison feature 기반 LLM 연동
 
 ### Future Considerations

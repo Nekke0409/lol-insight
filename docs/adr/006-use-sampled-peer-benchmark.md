@@ -64,11 +64,12 @@ PeerBenchmark의 우선 cohort dimension은 다음과 같다.
 - region
 - queue
 - tier
+- division
 - position
-- champion
+- championId
 
-서로 다른 position의 수치를 같은 기준선으로 직접 비교하지 않는다. patch/gameVersion, division 및 다른 게임
-맥락은 실제 필요가 확인될 때 추가한다.
+서로 다른 position의 수치를 같은 기준선으로 직접 비교하지 않는다. v0.1은 GOLD I sample을 전체 GOLD로 해석하지 않기 위해
+division을 cohort에 포함한다. patch/gameVersion 및 다른 게임 맥락은 실제 필요가 확인된 뒤 추가한다.
 
 ### Initial Vertical Slice
 
@@ -111,7 +112,9 @@ PlayerAnalysisFeature + PeerBenchmark
 `RANKED_SOLO_5x5`의 League-V4 page 조회, entry PUUID 사용 및 `SampledRankedPlayer` 생성도 구현됐다.
 collector는 Match-V5 `queue=420` filter, Match ID deduplication과 sampled-player 관계 보존, bounded Detail loading,
 participant metric 계산 및 `BenchmarkSample` 저장을 구현한다. 429는 이후 Riot 요청 scheduling을 중단하고, collector 전체는
-transaction을 열지 않는다. scheduler, aggregate, `PlayerComparisonFeature`, LLM integration은 계속 계획 상태다.
+transaction을 열지 않는다. raw `benchmark_sample`의 PostgreSQL on-demand aggregate, match-level percentile threshold,
+`PeerBenchmarkQueryService`와 availability policy는 구현됐다. scheduler, `PlayerComparisonFeature`, player percentile rank,
+LLM integration은 계속 계획 상태다.
 
 ## Reason
 
@@ -158,5 +161,5 @@ Backend의 결정적 책임으로 유지한다.
 - scheduled collection과 process-wide rate-limit handling
 - larger/stratified sampling 및 sampling policy 문서화
 - patch-aware benchmark와 rank snapshot history
-- aggregate materialization, percentile, `PlayerComparisonFeature`
+- aggregate materialization, `PlayerComparisonFeature`, player percentile rank
 - LLM Provider adapter와 자연어 피드백 endpoint

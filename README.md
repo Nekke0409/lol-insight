@@ -23,9 +23,9 @@ Riot의 공식 Ranked Ladder를 대체하는 MMR, ELO 또는 자체 Skill Rating
 | Riot integration | Account-V1 기반 Riot ID 조회, Match-V5 Match ID/Detail 조회와 queue filter, League-V4 기반 KR Ranked Solo player discovery | representative sampling, scheduled collection |
 | Match processing | Riot Match DTO를 내부 `Match` 모델로 정규화하고 sampled player의 participant-level observation 추출 | aggregate용 추가 feature |
 | Player statistics | 최근 Match 표본의 KDA, CS/min, DPM, 골드/비전, 킬 관여율, 피해 비중 계산 | cohort와의 차이 및 percentile 계산 |
-| Analysis feature | `PlayerAnalysisFeature` 생성 | `PeerBenchmark`, `PlayerComparisonFeature` 생성 |
+| Analysis feature | `PlayerAnalysisFeature` 생성, cohort별 match-level `PeerBenchmark` 조회 | `PlayerComparisonFeature` 생성 |
 | Redis | 성공한 Match Detail을 7일 TTL로 캐시 | benchmark 전용 Redis 기능은 도입하지 않음 |
-| Persistence | PostgreSQL, JPA, Flyway 기반 `BenchmarkSample` schema, idempotent 저장 진입점과 소규모 collector 구현 | aggregate, retention 정책 |
+| Persistence | PostgreSQL, JPA, Flyway 기반 `BenchmarkSample` schema, idempotent 저장 진입점, 소규모 collector와 on-demand aggregate query | retention 정책 |
 | LLM | 구현되지 않음 — OpenAI/다른 Provider client, prompt, endpoint 없음 | Backend가 만든 comparison feature의 자연어 설명 |
 
 ## Current Architecture
@@ -63,15 +63,15 @@ ranked player source
     -> normalized Match (implemented)
     -> BenchmarkSample (sampled player, matchId, implemented)
     -> saveIfAbsent PostgreSQL persistence (implemented)
-    -> Benchmark Aggregate
-    -> PeerBenchmark
+    -> Benchmark Aggregate (implemented)
+    -> PeerBenchmark (implemented)
     -> PlayerComparisonFeature
     -> LLM feedback
 ```
 
 `BenchmarkSample`은 여러 경기를 평균 낸 값이 아니라, 표본 플레이어 한 명의 한 경기 participant-level observation입니다. 해당 플레이어의 수집 시점 rank만 sample에 귀속하며, 같은 Match의 다른 participant에게 tier를 추정하거나 부여하지 않습니다.
 
-자세한 설계와 현재 구현 경계는 [architecture.md](docs/architecture.md), Peer Benchmark 선택의 근거는 [ADR-006](docs/adr/006-use-sampled-peer-benchmark.md)에서 확인할 수 있습니다.
+자세한 설계와 현재 구현 경계는 [architecture.md](docs/architecture.md), Peer Benchmark 선택의 근거는 [ADR-006](docs/adr/006-use-sampled-peer-benchmark.md), v0.1 aggregate의 정확한 의미와 한계는 [Peer Benchmark v0.1](docs/benchmark/peer-benchmark-v0.1.md)에서 확인할 수 있습니다.
 
 ## AI Analysis Principle
 
@@ -123,8 +123,9 @@ docker compose up -d
 로컬 개발 기본값일 뿐 production secret이 아닙니다.
 
 `BenchmarkSample` persistence는 migration으로 관리되며 JPA는 schema validation만 수행합니다. collector는 public REST
-endpoint, startup runner, scheduler 없이 application service로만 제공됩니다. aggregate, percentile, 비교 및 LLM 기능은
-아직 구현되지 않았습니다. 현재 설정의 기본 Redis 주소는
+endpoint, startup runner, scheduler 없이 application service로만 제공됩니다. `PeerBenchmarkQueryService`는 raw
+`benchmark_sample`을 PostgreSQL에서 on-demand 집계하며, percentile threshold와 availability만 제공합니다.
+`PlayerComparisonFeature`, player percentile rank 및 LLM 기능은 아직 구현되지 않았습니다. 현재 설정의 기본 Redis 주소는
 `localhost:6379`입니다. 실행 및 측정 방법은
 [recent match latency baseline](docs/performance/recent-matches-latency-baseline.md)을 참고합니다.
 
