@@ -3,6 +3,7 @@ package io.github.nekke0409.lolinsight.benchmark.infrastructure.riot
 import io.github.nekke0409.lolinsight.global.riot.RiotApiHttpClient
 import io.github.nekke0409.lolinsight.global.riot.RiotApiResponseException
 import io.github.nekke0409.lolinsight.global.riot.RiotApiRouting
+import io.github.nekke0409.lolinsight.match.domain.RankedSoloQueue
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Component
 
@@ -53,7 +54,7 @@ class RiotLeagueClient(
                     path = LEAGUE_ENTRIES_PATH,
                     uriVariables =
                         mapOf(
-                            "queue" to RANKED_SOLO_QUEUE,
+                            "queue" to RankedSoloQueue.TYPE,
                             "tier" to tier,
                             "division" to division,
                         ),
@@ -87,7 +88,6 @@ class RiotLeagueClient(
 
     private companion object {
         const val FIRST_PAGE = 1
-        const val RANKED_SOLO_QUEUE = "RANKED_SOLO_5x5"
         const val LEAGUE_ENTRIES_PATH = "/lol/league/v4/entries/{queue}/{tier}/{division}"
         const val SUMMONER_BY_ID_PATH = "/lol/summoner/v4/summoners/{summonerId}"
     }

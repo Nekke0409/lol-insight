@@ -1,10 +1,10 @@
 package io.github.nekke0409.lolinsight.analysis.application
 
+import io.github.nekke0409.lolinsight.match.application.kda
 import io.github.nekke0409.lolinsight.match.domain.Match
 import io.github.nekke0409.lolinsight.match.domain.MatchParticipant
 import io.github.nekke0409.lolinsight.player.application.PlayerMatchStatistics
 import io.github.nekke0409.lolinsight.player.application.PlayerRecentMatchHistoryPlayer
-import io.github.nekke0409.lolinsight.player.application.kda
 import org.springframework.stereotype.Component
 
 @Component

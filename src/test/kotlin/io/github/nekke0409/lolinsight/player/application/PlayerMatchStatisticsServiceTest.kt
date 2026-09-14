@@ -1,5 +1,6 @@
 package io.github.nekke0409.lolinsight.player.application
 
+import io.github.nekke0409.lolinsight.match.application.MAX_CONCURRENT_MATCH_DETAIL_REQUESTS
 import io.github.nekke0409.lolinsight.match.domain.Match
 import io.github.nekke0409.lolinsight.match.domain.MatchChampion
 import io.github.nekke0409.lolinsight.match.domain.MatchObjectives

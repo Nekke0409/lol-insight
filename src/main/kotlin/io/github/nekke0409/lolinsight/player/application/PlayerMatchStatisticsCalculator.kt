@@ -1,7 +1,8 @@
 package io.github.nekke0409.lolinsight.player.application
 
+import io.github.nekke0409.lolinsight.match.application.MatchParticipantMetrics
+import io.github.nekke0409.lolinsight.match.application.MatchParticipantMetricsCalculator
 import io.github.nekke0409.lolinsight.match.domain.Match
-import io.github.nekke0409.lolinsight.match.domain.MatchParticipant
 import org.springframework.stereotype.Component
 
 @Component
@@ -36,58 +37,23 @@ class PlayerMatchStatisticsCalculator {
 
     private fun Match.toMetricsFor(targetPuuid: String): MatchMetrics? {
         val participant = participants.firstOrNull { it.puuid == targetPuuid } ?: return null
-        val teamParticipants = participants.filter { it.teamId == participant.teamId }
-        val durationMinutes = duration.toMinutesFraction()
-        val totalCs = participant.laneMinionKills.toDouble() + participant.neutralMinionKills.toDouble()
+        return MatchParticipantMetricsCalculator.calculate(this, participant).toMatchMetrics()
+    }
 
-        return MatchMetrics(
-            won = participant.won,
-            kills = participant.kills,
-            deaths = participant.deaths,
-            assists = participant.assists,
-            kda = participant.kda(),
-            csPerMinute = totalCs.perMinute(durationMinutes),
-            goldPerMinute = participant.goldEarned.toDouble().perMinute(durationMinutes),
-            damagePerMinute = participant.championDamageDealt.toDouble().perMinute(durationMinutes),
-            visionPerMinute =
-                participant.vision.score
-                    .toDouble()
-                    .perMinute(durationMinutes),
-            killParticipation = participant.killParticipation(teamParticipants),
-            damageShare = participant.damageShare(teamParticipants),
+    private fun MatchParticipantMetrics.toMatchMetrics(): MatchMetrics =
+        MatchMetrics(
+            won = won,
+            kills = kills,
+            deaths = deaths,
+            assists = assists,
+            kda = kda,
+            csPerMinute = csPerMinute,
+            goldPerMinute = goldPerMinute,
+            damagePerMinute = damagePerMinute,
+            visionPerMinute = visionPerMinute,
+            killParticipation = killParticipation,
+            damageShare = damageShare,
         )
-    }
-
-    private fun MatchParticipant.killParticipation(teamParticipants: List<MatchParticipant>): Double {
-        val teamKills = teamParticipants.sumOf { it.kills.toLong() }
-        return (kills.toDouble() + assists).ratioOf(teamKills)
-    }
-
-    private fun MatchParticipant.damageShare(teamParticipants: List<MatchParticipant>): Double {
-        val teamDamage = teamParticipants.sumOf { it.championDamageDealt.toLong() }
-        return championDamageDealt.toDouble().ratioOf(teamDamage)
-    }
-
-    private fun java.time.Duration.toMinutesFraction(): Double =
-        if (isZero || isNegative) {
-            0.0
-        } else {
-            toMillis().toDouble() / MILLIS_PER_MINUTE
-        }
-
-    private fun Double.perMinute(durationMinutes: Double): Double =
-        if (durationMinutes == 0.0) {
-            0.0
-        } else {
-            this / durationMinutes
-        }
-
-    private fun Double.ratioOf(denominator: Long): Double =
-        if (denominator == 0L) {
-            0.0
-        } else {
-            this / denominator
-        }
 
     private fun List<MatchMetrics>.meanOf(selector: (MatchMetrics) -> Double): Double = sumOf(selector) / size
 
@@ -104,10 +70,6 @@ class PlayerMatchStatisticsCalculator {
         val killParticipation: Double,
         val damageShare: Double,
     )
-
-    private companion object {
-        const val MILLIS_PER_MINUTE = 60_000.0
-    }
 }
 
 data class PlayerMatchStatistics(

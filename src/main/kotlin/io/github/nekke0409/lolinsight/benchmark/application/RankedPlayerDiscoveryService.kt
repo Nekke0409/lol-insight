@@ -2,6 +2,7 @@ package io.github.nekke0409.lolinsight.benchmark.application
 
 import io.github.nekke0409.lolinsight.benchmark.domain.SampledRankedPlayer
 import io.github.nekke0409.lolinsight.benchmark.infrastructure.riot.RiotLeagueClient
+import io.github.nekke0409.lolinsight.match.domain.RankedSoloQueue
 import org.springframework.stereotype.Service
 import java.time.Clock
 
@@ -28,7 +29,7 @@ class RankedPlayerDiscoveryService(
                 SampledRankedPlayer(
                     puuid = puuid,
                     region = KR_REGION,
-                    queue = RANKED_SOLO_QUEUE,
+                    queue = RankedSoloQueue.TYPE,
                     tier = tier,
                     division = division,
                     rankCapturedAt = rankCapturedAt,
@@ -38,6 +39,5 @@ class RankedPlayerDiscoveryService(
 
     private companion object {
         const val KR_REGION = "KR"
-        const val RANKED_SOLO_QUEUE = "RANKED_SOLO_5x5"
     }
 }

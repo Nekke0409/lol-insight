@@ -1,19 +1,19 @@
-package io.github.nekke0409.lolinsight.player.application
+package io.github.nekke0409.lolinsight.match.application
 
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor
 
-const val RECENT_MATCH_DETAIL_EXECUTOR = "recentMatchDetailExecutor"
+const val MATCH_DETAIL_EXECUTOR = "recentMatchDetailExecutor"
 const val MAX_CONCURRENT_MATCH_DETAIL_REQUESTS = 4
 
 @Configuration(proxyBeanMethods = false)
-class RecentMatchDetailExecutorConfiguration {
-    @Bean(RECENT_MATCH_DETAIL_EXECUTOR)
-    fun recentMatchDetailExecutor(): ThreadPoolTaskExecutor =
+class MatchDetailExecutorConfiguration {
+    @Bean(MATCH_DETAIL_EXECUTOR)
+    fun matchDetailExecutor(): ThreadPoolTaskExecutor =
         ThreadPoolTaskExecutor().apply {
             corePoolSize = MAX_CONCURRENT_MATCH_DETAIL_REQUESTS
             maxPoolSize = MAX_CONCURRENT_MATCH_DETAIL_REQUESTS
-            setThreadNamePrefix("recent-match-detail-")
+            setThreadNamePrefix("match-detail-")
         }
 }

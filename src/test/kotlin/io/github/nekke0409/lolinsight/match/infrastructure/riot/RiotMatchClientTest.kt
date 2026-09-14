@@ -74,6 +74,25 @@ class RiotMatchClientTest {
     }
 
     @Test
+    fun `filters Match IDs by queue when requested`() {
+        server
+            .expect(
+                requestTo(
+                    "https://asia.api.riotgames.com/lol/match/v5/matches/by-puuid/test-puuid/ids?start=0&count=2&queue=420",
+                ),
+            ).andRespond(
+                withStatus(HttpStatus.OK)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body("[\"KR_100\",\"KR_99\"]"),
+            )
+
+        val matchIds = client.findMatchIdsByPuuid(puuid = "test-puuid", count = 2, queue = 420)
+
+        assertEquals(listOf("KR_100", "KR_99"), matchIds)
+        server.verify()
+    }
+
+    @Test
     fun `finds Match Detail with Asia regional routing and deserializes selected Riot fields`() {
         server
             .expect(

@@ -105,9 +105,10 @@ LLM Provider의 요청/응답 형식이 Match나 Player의 핵심 로직에 직�
 Peer Benchmark는 샘플링한 ranked player의 Ranked Solo Match participant 관측치를 수집하고, cohort별로
 집계해 상대 비교에 사용하는 기능 영역이다. KR `RANKED_SOLO_5x5`의 League-V4 entry를 page 단위로 읽고
 Summoner-V4로 PUUID에 연결하는 ranked player discovery, `SampledRankedPlayer` domain model, `BenchmarkSample`
-domain/entity, Flyway schema 및 idempotent persistence 진입점은 구현됐다. Match ID·Detail 조회, sample 생성·저장 호출,
-collector, scheduler, aggregate, percentile 및 comparison feature는 아직 구현되지 않았다. 확정된 데이터 모델 원칙은
-[ADR-006](adr/006-use-sampled-peer-benchmark.md)을 따른다.
+domain/entity, Flyway schema 및 idempotent persistence 진입점은 구현됐다. collector는 Match-V5의 `queue=420` Match ID
+filter와 Detail 검증을 함께 사용하고, Match ID deduplication·sampled player 관계 보존·participant metric 계산·sample
+저장까지 수행한다. scheduler, aggregate, percentile 및 comparison feature는 아직 구현되지 않았다. 확정된 데이터 모델
+원칙은 [ADR-006](adr/006-use-sampled-peer-benchmark.md)을 따른다.
 
 ### Community
 
@@ -260,21 +261,21 @@ Account-V1의 `RiotAccountClient`, Match-V5의 `RiotMatchClient`, 그리고 benc
 `RiotLeagueClient`다. `RiotLeagueClient`는 League response DTO를 feature infrastructure 안에 가두고, entry의
 `summonerId`를 Summoner-V4 응답의 PUUID로 연결한다. 공통 전송기에는 endpoint DTO나 도메인 판단을 넣지 않는다.
 
-### Recent Match Detail Fan-Out
+### Bounded Match Detail Batch Loading
 
-최근 경기 조회는 Account-V1 Riot ID 조회와 Match-V5 Match ID 목록 조회를 요청 thread에서 순차로
-수행한다. 그 뒤의 Match Detail 조회만 `recentMatchDetailExecutor`로 fan-out 한다. 이 executor는
-Spring application lifecycle이 관리하는 고정 4-thread pool이며, 서비스도 한 요청에서 최대 4개의
-Detail 작업만 제출하는 sliding window를 사용한다.
+`MatchDetailBatchLoader`는 최근 경기와 benchmark collector가 함께 사용하는 Match Detail fan-out 경계다. 최근
+경기 조회는 Account-V1 Riot ID 조회와 Match-V5 Match ID 목록 조회를 요청 thread에서 순차로 수행하고, 그 뒤의
+Detail만 이 loader로 전달한다. executor는 Spring application lifecycle이 관리하는 고정 4-thread pool이며, loader는
+한 batch에서 최대 4개의 Detail 작업만 제출하는 sliding window를 사용한다.
 
 작업 완료 순서는 응답 순서가 아니다. 각 Detail 결과는 원래 Match ID 목록의 index에 저장한 뒤 index
 순서로 response를 조립하므로 API 사용자는 Riot Match ID 목록의 순서를 그대로 받는다.
 
 이 4는 동시에 실행 중인 Match Detail HTTP 호출 수의 상한이다. token bucket이나 요청/초 제한기는
-아니며, process-wide cooldown도 제공하지 않는다. 429를 포함해 전체 요청을 실패시켜야 하는 Detail
-오류를 수집하면 아직 제출하지 않은 작업은 더 제출하지 않고, 이미 제출됐지만 실행 전인 작업은
-`cancel(false)`로 취소한다. 실행 중인 blocking HTTP 호출은 강제로 interrupt하거나 취소하지 않는다.
-Match Detail 404와 target PUUID가 없는 Detail만 unavailable 결과로 수집하여 partial response를 만든다.
+아니며, process-wide cooldown도 제공하지 않는다. Player flow는 429·5xx·transport failure에서 이후 제출을 멈추고
+기존 오류를 전파한다. collector는 404·5xx·transport failure를 Match별 partial failure로 집계하지만 429에서는
+이후 제출을 멈추고 `cancel(false)`로 실행 전 작업을 취소하며 Retry-After를 결과에 보존한다. 실행 중인 blocking
+HTTP 호출은 강제로 interrupt하거나 취소하지 않는다.
 
 ### Error Boundary
 
@@ -336,7 +337,7 @@ Riot or Redis directly.
 
 이 결정이 서비스 전체의 저장 비용과 데이터 모델에 큰 영향을 주게 되면 ADR로 기록한다.
 
-### Planned Peer Benchmark Flow
+### Peer Benchmark Flow
 
 현재의 플레이어 흐름과 향후 benchmark 흐름은 목적과 집계 단위가 다르므로 독립적으로 존재한다.
 
@@ -347,21 +348,21 @@ Riot API
     -> PlayerMatchStatistics
     -> PlayerAnalysisFeature
 
-Benchmark flow (ranked player discovery implemented; collection and aggregation planned)
+Benchmark flow (collection implemented; aggregation planned)
 ranked player source
     -> sampled players (implemented)
-    -> recent Ranked Solo Match IDs
-    -> Match ID deduplication
-    -> normalized Match
-    -> BenchmarkSample
+    -> recent Ranked Solo Match IDs (implemented)
+    -> Match ID deduplication (implemented)
+    -> normalized Match (implemented)
+    -> BenchmarkSample (implemented)
     -> saveIfAbsent persistence (implemented)
     -> Benchmark Aggregate
     -> PeerBenchmark
 ```
 
 이후 `PlayerAnalysisFeature`와 `PeerBenchmark`를 결합해 `PlayerComparisonFeature`를 만들고 LLM에
-전달한다. `BenchmarkSample`의 domain/entity와 저장은 production Kotlin 코드에 구현됐지만, sample 생성,
-aggregate, `PeerBenchmark`, `PlayerComparisonFeature`, LLM adapter는 계획 상태다.
+전달한다. sample 생성과 저장은 production Kotlin 코드에 구현됐지만, aggregate, `PeerBenchmark`,
+`PlayerComparisonFeature`, LLM adapter는 계획 상태다.
 
 #### BenchmarkSample
 
@@ -369,9 +370,9 @@ aggregate, `PeerBenchmark`, `PlayerComparisonFeature`, LLM adapter는 계획 상
 participant-level observation이다. 즉 sampled player가 해당 Ranked Solo Match에서 기록한 KDA, CS/min,
 gold/min, damage/min, vision/min, kill participation, damage share 등의 per-match metric이 한 sample을 이룬다.
 
-여러 sample의 average, median, percentile은 별도의 aggregate 단계에서 계산한다. 이때 metric 공식과 source of
-truth는 기존 `PlayerMatchStatisticsCalculator`의 per-match 계산을 재사용하거나 같은 기준으로 추출한다. aggregate
-객체를 `BenchmarkSample`으로 재사용하지 않는다.
+여러 sample의 average, median, percentile은 별도의 aggregate 단계에서 계산한다. per-match metric의 source of
+truth는 `MatchParticipantMetricsCalculator`이며 Player statistics와 collector가 함께 사용한다. aggregate 객체를
+`BenchmarkSample`으로 재사용하지 않는다.
 
 `BenchmarkSample` persistence는 `benchmark_sample` table에 `matchId`, `puuid`, cohort context, participant
 context와 per-match metric을 저장한다. `championName`은 display용 중복 데이터이므로 저장하지 않고 안정적인
@@ -458,8 +459,8 @@ Flyway migration이며, JPA는 `ddl-auto=validate`로 mapping만 검증한다. d
 표현이다. Entity를 Controller 응답이나 향후 aggregate model로 직접 반환하지 않는다. `(match_id, puuid)` unique
 constraint가 데이터 정합성의 최종 방어선이며, `BenchmarkSamplePersistenceService.saveIfAbsent`는 짧은
 transaction 안에서 PostgreSQL `INSERT ... ON CONFLICT DO NOTHING`을 실행한다. duplicate는 기존 row를 갱신하지
-않고 `ALREADY_EXISTS`로 처리한다. 미래 collector는 Riot HTTP 호출과 sample 생성을 transaction 밖에서 마친 뒤
-이 진입점을 호출해야 한다.
+않고 `ALREADY_EXISTS`로 처리한다. collector는 Riot HTTP 호출과 sample 생성을 transaction 밖에서 마친 뒤 이
+진입점을 호출하므로 일부 upstream 실패가 이미 저장한 sample을 rollback하지 않는다.
 
 aggregate query가 구현되지 않았으므로 unique constraint 외의 cohort 복합 index는 추가하지 않았다. 저장 기간,
 aggregate materialization 및 retention 정책은 실제 사용 패턴과 함께 별도 결정한다.
@@ -513,9 +514,8 @@ responses leave no cache entry because the cached method does not complete succe
 Cache hits bypass Match-V5 Detail HTTP calls. Cache misses still call Riot and can still receive a
 429 response; caching is not a distributed rate limiter, cooldown, retry, or token-bucket policy.
 
-향후 benchmark collection도 기존 `RiotMatchClient.findMatchById`를 호출하면 이 Match Detail cache 경로를
-재사용할 수 있다. 이 결정은 benchmark 전용 Redis cache, collector state cache 또는 aggregate cache를 새로
-도입하는 것이 아니다.
+benchmark collection은 기존 `RiotMatchClient.findMatchById`를 호출해 이 Match Detail cache 경로를 재사용한다.
+이 결정은 benchmark 전용 Redis cache, collector state cache 또는 aggregate cache를 새로 도입하는 것이 아니다.
 
 ## 12. Error Handling
 
@@ -579,7 +579,7 @@ Riot API 오류를 서비스 관점의 오류로 변환한 뒤
 
 다음 우선순위:
 
-- sampled Peer Benchmark dataset과 `BenchmarkSample` persistence
+- representative sampling과 scheduled benchmark collection
 - cohort aggregate, percentile, `PlayerComparisonFeature`
 - 구조화된 comparison feature 기반 LLM 연동
 

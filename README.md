@@ -20,12 +20,12 @@ Riot의 공식 Ranked Ladder를 대체하는 MMR, ELO 또는 자체 Skill Rating
 
 | Area | Current implementation | Planned / future work |
 | --- | --- | --- |
-| Riot integration | Account-V1 기반 Riot ID 조회, Match-V5 Match ID 및 Detail 조회, League-V4 기반 KR Ranked Solo player discovery와 Summoner-V4 PUUID 연결 | benchmark collection |
-| Match processing | Riot Match DTO를 내부 `Match` 모델로 정규화 | benchmark용 participant-level observation 추출 |
+| Riot integration | Account-V1 기반 Riot ID 조회, Match-V5 Match ID/Detail 조회와 queue filter, League-V4 기반 KR Ranked Solo player discovery와 Summoner-V4 PUUID 연결 | representative sampling, scheduled collection |
+| Match processing | Riot Match DTO를 내부 `Match` 모델로 정규화하고 sampled player의 participant-level observation 추출 | aggregate용 추가 feature |
 | Player statistics | 최근 Match 표본의 KDA, CS/min, DPM, 골드/비전, 킬 관여율, 피해 비중 계산 | cohort와의 차이 및 percentile 계산 |
 | Analysis feature | `PlayerAnalysisFeature` 생성 | `PeerBenchmark`, `PlayerComparisonFeature` 생성 |
 | Redis | 성공한 Match Detail을 7일 TTL로 캐시 | benchmark 전용 Redis 기능은 도입하지 않음 |
-| Persistence | PostgreSQL, JPA, Flyway 기반 `BenchmarkSample` schema와 idempotent 저장 진입점 구현 | benchmark collector, aggregate, retention 정책 |
+| Persistence | PostgreSQL, JPA, Flyway 기반 `BenchmarkSample` schema, idempotent 저장 진입점과 소규모 collector 구현 | aggregate, retention 정책 |
 | LLM | 구현되지 않음 — OpenAI/다른 Provider client, prompt, endpoint 없음 | Backend가 만든 comparison feature의 자연어 설명 |
 
 ## Current Architecture
@@ -50,18 +50,19 @@ Riot ID -> Account-V1 -> PUUID -> Match IDs -> normalized Match
 
 Match Detail은 `RiotMatchClient` 경계에서 Redis를 사용합니다. 최근 경기 Detail fan-out은 application lifecycle이 관리하는 고정 4-thread executor와 sliding window로 제한됩니다. cache hit은 Riot Match-V5 Detail 호출을 생략하지만, cache는 rate limiter나 retry 정책이 아닙니다.
 
-Peer Benchmark의 ranked player discovery는 구현됐습니다. League-V4의 KR `RANKED_SOLO_5x5` entry를 page 단위로 읽고,
-각 entry의 `summonerId`를 Summoner-V4로 PUUID에 연결해 `SampledRankedPlayer`로 정규화합니다. 이 단계는 수집 시각의
-rank context만 전달하며 Match-V5 조회, sample 생성·저장, collector 및 aggregate는 아직 구현하지 않았습니다. 이후 데이터
-흐름은 다음과 같습니다.
+Peer Benchmark의 ranked player discovery와 제한된 collection vertical slice가 구현됐습니다. League-V4의 KR
+`RANKED_SOLO_5x5` entry를 page 단위로 읽고 각 entry의 `summonerId`를 Summoner-V4로 PUUID에 연결해
+`SampledRankedPlayer`로 정규화합니다. collector는 Ranked Solo Match ID를 `queue=420`으로 조회하고, Match ID별로
+sampled player 관계를 보존한 채 Detail을 한 번만 읽어 participant-level sample을 idempotent하게 저장합니다.
 
 ```text
 ranked player source
     -> sampled players
-    -> recent Ranked Solo Match IDs
-    -> Match ID deduplication
-    -> normalized Match
-    -> BenchmarkSample (sampled player, matchId)
+    -> recent Ranked Solo Match IDs (implemented)
+    -> Match ID deduplication (implemented)
+    -> normalized Match (implemented)
+    -> BenchmarkSample (sampled player, matchId, implemented)
+    -> saveIfAbsent PostgreSQL persistence (implemented)
     -> Benchmark Aggregate
     -> PeerBenchmark
     -> PlayerComparisonFeature
@@ -121,10 +122,19 @@ docker compose up -d
 있으며 production에서는 모든 값을 환경변수로 제공해야 합니다. Compose의 `lol-insight-local` password는
 로컬 개발 기본값일 뿐 production secret이 아닙니다.
 
-`BenchmarkSample` persistence는 migration으로 관리되며 JPA는 schema validation만 수행합니다. collector,
-aggregate, percentile, 비교 및 LLM 기능은 아직 구현되지 않았습니다. 현재 설정의 기본 Redis 주소는
+`BenchmarkSample` persistence는 migration으로 관리되며 JPA는 schema validation만 수행합니다. collector는 public REST
+endpoint, startup runner, scheduler 없이 application service로만 제공됩니다. aggregate, percentile, 비교 및 LLM 기능은
+아직 구현되지 않았습니다. 현재 설정의 기본 Redis 주소는
 `localhost:6379`입니다. 실행 및 측정 방법은
 [recent match latency baseline](docs/performance/recent-matches-latency-baseline.md)을 참고합니다.
 
 `BenchmarkSample` persistence integration test는 Testcontainers PostgreSQL을 사용하므로 Docker daemon이
 실행 중이어야 합니다.
+
+## Development Smoke Procedure
+
+실제 development Riot key로 작은 수집을 확인할 때는 IDE의 dev-only evaluation 또는 임시 local harness에서
+`RankedPlayerDiscoveryService.discover("GOLD", "I", 2)`의 결과를
+`BenchmarkMatchCollectionService.collect(players, 2)`에 전달합니다. 이 흐름은 `RIOT_API_KEY`와 local PostgreSQL/Redis를
+필요로 하며, endpoint·scheduler·startup runner를 추가하지 않습니다. 결과는 representative GOLD benchmark가 아니라
+작은 연결 확인용 표본으로만 해석합니다.

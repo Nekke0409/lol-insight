@@ -2,6 +2,7 @@ package io.github.nekke0409.lolinsight.player.application
 
 import io.github.nekke0409.lolinsight.global.riot.RiotApiResponseException
 import io.github.nekke0409.lolinsight.global.riot.RiotApiTransportException
+import io.github.nekke0409.lolinsight.match.application.MAX_CONCURRENT_MATCH_DETAIL_REQUESTS
 import io.github.nekke0409.lolinsight.match.application.MatchNotFoundException
 import io.github.nekke0409.lolinsight.match.domain.Match
 import io.github.nekke0409.lolinsight.match.domain.MatchChampion

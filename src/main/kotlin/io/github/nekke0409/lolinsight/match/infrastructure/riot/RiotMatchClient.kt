@@ -38,13 +38,14 @@ class RiotMatchClient(
         puuid: String,
         start: Int = DEFAULT_START,
         count: Int = DEFAULT_COUNT,
+        queue: Int? = null,
     ): List<String> =
         riotApiHttpClient
             .get(
                 routing = RiotApiRouting.REGIONAL,
                 path = "/lol/match/v5/matches/by-puuid/{puuid}/ids",
                 uriVariables = mapOf("puuid" to puuid),
-                queryParameters = mapOf("start" to start, "count" to count),
+                queryParameters = mapOf("start" to start, "count" to count, "queue" to queue),
                 responseType = Array<String>::class.java,
             ).toList()
 
