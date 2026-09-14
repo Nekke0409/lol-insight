@@ -82,9 +82,9 @@ entry가 제공하는 PUUID 사용을 검증한다. 이어서 이미 discovery�
 
 ### Analysis Boundary
 
-Backend는 cohort 선택, sample size 검증, average·median·percentile, player와 benchmark의 차이,
-deterministic `PlayerComparisonFeature`를 계산한다. LLM은 구조화된 비교 결과를 자연어로 설명하고 피드백을
-생성한다.
+Backend는 cohort 선택, sample size 검증, average·median·match-level percentile threshold, player와 benchmark의
+numeric difference, deterministic `PlayerComparisonFeature`를 계산한다. LLM은 구조화된 비교 결과를 자연어로
+설명하고 피드백을 생성한다.
 
 LLM은 원본 Riot Match JSON을 직접 분석해 percentile을 계산하거나, 임의 benchmark를 만들거나, MMR을 추정하지
 않는다.
@@ -98,7 +98,7 @@ collector는 기존 `RiotMatchClient.findMatchById`를 통해 Match Detail을 �
 
 ```text
 PlayerAnalysisFeature + PeerBenchmark
-    -> PlayerComparisonFeature (planned)
+    -> PlayerComparisonFeature (implemented)
     -> LLM explanation (planned)
 ```
 
@@ -113,8 +113,8 @@ PlayerAnalysisFeature + PeerBenchmark
 collector는 Match-V5 `queue=420` filter, Match ID deduplication과 sampled-player 관계 보존, bounded Detail loading,
 participant metric 계산 및 `BenchmarkSample` 저장을 구현한다. 429는 이후 Riot 요청 scheduling을 중단하고, collector 전체는
 transaction을 열지 않는다. raw `benchmark_sample`의 PostgreSQL on-demand aggregate, match-level percentile threshold,
-`PeerBenchmarkQueryService`와 availability policy는 구현됐다. scheduler, `PlayerComparisonFeature`, player percentile rank,
-LLM integration은 계속 계획 상태다.
+`PeerBenchmarkQueryService`와 availability policy, exact cohort·availability·numeric difference를 결합하는
+`PlayerComparisonFeature`는 구현됐다. scheduler, player percentile rank, LLM integration은 계속 계획 상태다.
 
 ## Reason
 
@@ -161,5 +161,5 @@ Backend의 결정적 책임으로 유지한다.
 - scheduled collection과 process-wide rate-limit handling
 - larger/stratified sampling 및 sampling policy 문서화
 - patch-aware benchmark와 rank snapshot history
-- aggregate materialization, `PlayerComparisonFeature`, player percentile rank
+- aggregate materialization, player percentile rank
 - LLM Provider adapter와 자연어 피드백 endpoint

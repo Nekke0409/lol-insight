@@ -94,11 +94,11 @@ Riot API의 원본 Match DTO와 서비스 내부에서 사용하는 모델을 �
 
 ### Analysis
 
-가공된 Match/통계 데이터를 이용해 분석 feature를 만든다. 현재는 개인 요약용 `PlayerAnalysisFeature`와,
-향후 peer comparison의 사용자 측 입력인 `PlayerComparisonContext`를 만드는 provider 독립 application service가
-구현되어 있다. `PlayerComparisonContext`는 현재 Ranked Solo rank와 대상 사용자의 `(championId, position)`별
-통계를 포함하지만 benchmark를 조회하거나 차이·percentile을 계산하지 않는다. LLM 호출, prompt, 자연어 피드백
-endpoint는 향후 작업이다.
+가공된 Match/통계 데이터를 이용해 분석 feature를 만든다. 현재는 개인 요약용 `PlayerAnalysisFeature`, peer
+comparison의 사용자 측 입력인 `PlayerComparisonContext`, 그리고 exact cohort benchmark와 결합한
+`PlayerComparisonFeature`가 구현되어 있다. `PlayerComparisonFeature`는 현재 Ranked Solo rank와 대상 사용자의
+`(championId, position)`별 통계를 기준으로 benchmark availability와 numeric difference를 결정한다. LLM 호출,
+prompt, 자연어 피드백 endpoint는 향후 작업이다.
 
 LLM Provider의 요청/응답 형식이 Match나 Player의 핵심 로직에 직접 퍼지지 않도록 한다.
 
@@ -110,8 +110,9 @@ entry가 제공하는 PUUID를 사용하는 ranked player discovery, `SampledRan
 domain/entity, Flyway schema 및 idempotent persistence 진입점은 구현됐다. collector는 Match-V5의 `queue=420` Match ID
 filter와 Detail 검증을 함께 사용하고, Match ID deduplication·sampled player 관계 보존·participant metric 계산·sample
 저장까지 수행한다. raw `benchmark_sample`을 PostgreSQL에서 on-demand 집계하는 `PeerBenchmarkQueryService`와
-match-level percentile threshold는 구현됐다. scheduler, `PlayerComparisonFeature`, player percentile rank 및 LLM
-integration은 아직 구현되지 않았다. 확정된 데이터 모델 원칙은 [ADR-006](adr/006-use-sampled-peer-benchmark.md)을 따른다.
+match-level percentile threshold, 이를 사용자 context와 결합하는 `PlayerComparisonFeature`는 구현됐다. scheduler,
+player percentile rank 및 LLM integration은 아직 구현되지 않았다. 확정된 데이터 모델 원칙은
+[ADR-006](adr/006-use-sampled-peer-benchmark.md)을 따른다.
 
 ### Community
 
@@ -364,6 +365,7 @@ ranked player source
     -> saveIfAbsent persistence (implemented)
     -> Benchmark Aggregate (implemented)
     -> PeerBenchmark (implemented)
+    -> PlayerComparisonFeature (implemented)
 ```
 
 `PlayerComparisonContext`는 `PlayerAnalysisFeature`와 별개의 comparison-ready 사용자 입력이다. PUUID로 조회한
@@ -372,9 +374,12 @@ ranked player source
 CS/min, gold/min, damage/min, vision/min, kill participation, damage share 공식을 재사용한다. 이 단계는
 `PeerBenchmarkQueryService`를 호출하지 않는다.
 
-이후 `PlayerComparisonContext`와 `PeerBenchmark`를 결합해 `PlayerComparisonFeature`를 만들고 LLM에 전달한다.
-sample 생성·저장과 match-level `PeerBenchmark` aggregate는 production Kotlin 코드에 구현됐지만,
-`PlayerComparisonFeature`와 LLM adapter는 계획 상태다.
+`PlayerComparisonFeatureService`는 `PlayerComparisonContextService`와 `PeerBenchmarkQueryService`를 조합한다.
+rank가 있으면 KR Ranked Solo의 `region / queueId / tier / division / position / championId` exact cohort만 만들고,
+각 cohort의 사용자 표본·benchmark availability를 판정한 뒤 `AVAILABLE`일 때만 7개 metric의 numeric difference를
+계산한다. rank가 없으면 query 없이 `UNRANKED` comparison을 만든다. player percentile rank와 LLM adapter는 계획
+상태다. 상세 contract와 statistical limit은 [Player Comparison Feature v0.1](ai/player-comparison-feature-v0.1.md)을
+따른다.
 
 #### BenchmarkSample
 
@@ -437,7 +442,7 @@ AI 기능의 기본 원칙은 **계산과 설명을 분리하는 것**이다.
 Riot API data
     -> Backend normalization
     -> Backend statistics calculation
-    -> Peer Benchmark comparison (planned)
+    -> Peer Benchmark comparison
     -> Analysis / comparison feature generation
     -> LLM request (planned)
     -> Natural-language feedback (planned)
@@ -454,7 +459,7 @@ Riot API data
 - 분석 기준에 필요한 파생 feature
 - LLM에게 전달할 구조화된 입력
 - cohort 선택과 sample size 검증
-- average, median, percentile 및 player와 benchmark의 차이 계산
+- average, median, match-level percentile threshold 및 player와 benchmark의 numeric difference 계산
 
 ### LLM Responsibility
 
@@ -466,8 +471,9 @@ LLM은 주로 다음 역할을 담당한다.
 - 개선 포인트의 자연어 표현
 
 LLM이 정확한 산술 계산이나 원본 Match JSON의 전체 구조 이해를 담당한다고 가정하지 않는다.
-LLM은 percentile을 직접 계산하거나 임의 benchmark·MMR을 만들지 않는다. 현재 LLM Provider 연동은 구현되어
-있지 않다. `PlayerAnalysisFeature`와 benchmark를 아직 조회하지 않는 `PlayerComparisonContext`까지만 구현되어 있다.
+LLM은 cohort를 선택하거나 sample availability·subtraction·player percentile을 계산하거나 임의 benchmark·MMR을
+만들지 않는다. 현재 LLM Provider 연동은 구현되어 있지 않다. `PlayerComparisonFeature`가 LLM에 전달할 구조화된
+comparison input의 source of truth다.
 
 ### Provider Boundary
 
@@ -607,6 +613,7 @@ Riot API 오류를 서비스 관점의 오류로 변환한 뒤
 - 플레이어/Match 조회와 normalized Match 생성
 - 최근 Match 기반 통계 계산과 `PlayerAnalysisFeature` 생성
 - 현재 Solo rank와 champion/position별 사용자 지표를 담는 `PlayerComparisonContext` 생성
+- exact benchmark availability와 numeric difference를 담는 `PlayerComparisonFeature` 생성
 - 명확한 오류 처리
 - 핵심 테스트
 - Match Detail Redis cache와 bounded detail fan-out
@@ -614,7 +621,7 @@ Riot API 오류를 서비스 관점의 오류로 변환한 뒤
 다음 우선순위:
 
 - representative sampling과 scheduled benchmark collection
-- `PlayerComparisonFeature`, player percentile rank
+- player percentile rank
 - 구조화된 comparison feature 기반 LLM 연동
 
 ### Future Considerations

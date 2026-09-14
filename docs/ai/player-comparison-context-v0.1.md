@@ -2,7 +2,8 @@
 
 ## Purpose
 
-`PlayerComparisonContext` is a provider-independent, user-side input for a future exact Peer Benchmark comparison.
+`PlayerComparisonContext` is a provider-independent, user-side input for `PlayerComparisonFeature`'s exact Peer
+Benchmark comparison.
 It is not a benchmark result and does not decide whether the user is eligible for comparison.
 
 ```text
@@ -12,7 +13,7 @@ Riot ID
     -> recent normalized Match sample
     -> championId + position user metrics
     -> PlayerComparisonContext
-    -> future PlayerComparisonFeature
+    -> PlayerComparisonFeature
 ```
 
 The current implementation intentionally stops before creating a `BenchmarkCohort` or calling
@@ -47,8 +48,8 @@ summary or position summary cannot replace this exact grouping. Each metric is t
 values from `MatchParticipantMetricsCalculator`, which remains the single source of truth for KDA, per-minute, and
 team-relative formulas. Results are sorted by games descending, then position and champion ID ascending.
 
-`games` is always included. v0.1 deliberately does not introduce a `minimumUserGamesForComparison` policy; a later
-`PlayerComparisonFeature` can apply that policy explicitly.
+`games` is always included. v0.1 deliberately does not introduce a `minimumUserGamesForComparison` policy here;
+`PlayerComparisonFeature` applies that policy explicitly without changing the context contract.
 
 ## Boundaries
 

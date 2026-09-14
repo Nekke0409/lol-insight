@@ -17,12 +17,13 @@ one. Tier-wide aggregation needs a separate sampling policy that deliberately co
 
 ## User-side comparison input
 
-`PlayerComparisonContext` is the implemented provider-independent input for a future comparison. It contains the
+`PlayerComparisonContext` is the implemented provider-independent user input for `PlayerComparisonFeature`. It contains the
 user's current `RANKED_SOLO_5x5` tier/division and capture time, plus target-player Match metrics grouped by the same
 `championId + position` dimensions. A player without a Ranked Solo entry has `rankContext = null`; this is not a Riot
 failure. The context deliberately does not invoke `PeerBenchmarkQueryService`, construct a `BenchmarkCohort`, apply a
-minimum-user-games policy, calculate a difference, or claim a percentile. See
-[Player Comparison Context v0.1](../ai/player-comparison-context-v0.1.md) for its complete contract.
+minimum-user-games policy, calculate a difference, or claim a percentile. Those responsibilities belong to
+`PlayerComparisonFeatureService`; see [Player Comparison Context v0.1](../ai/player-comparison-context-v0.1.md) and
+[Player Comparison Feature v0.1](../ai/player-comparison-feature-v0.1.md) for the separate contracts.
 
 ## Observation unit and output
 
