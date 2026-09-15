@@ -21,6 +21,7 @@ import org.junit.jupiter.api.Test
 import org.mockito.ArgumentMatchers.any
 import org.mockito.Mockito.doThrow
 import org.mockito.Mockito.mock
+import org.mockito.Mockito.verify
 import org.mockito.Mockito.`when`
 import tools.jackson.databind.json.JsonMapper
 import java.util.Optional
@@ -44,6 +45,7 @@ class OpenAiPlayerAnalysisGeneratorTest {
         assertEquals("CS/min 비교", result.observations.single().title)
         assertEquals("player=7.2", result.observations.single().evidence)
         assertEquals(emptyList(), result.strengths)
+        verify(responses).create(anyStructuredResponseParams())
     }
 
     @Test

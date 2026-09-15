@@ -103,4 +103,12 @@ $env:RUN_OPENAI_SMOKE_TEST = "true"
 .\gradlew.bat test --tests "*OpenAiPlayerAnalysisManualSmokeTest" --no-daemon
 ```
 
+manual smoke는 production `OpenAiProperties`와 동일한 Spring Boot binding으로 `OPENAI_TIMEOUT`을 읽는다.
+환경 변수가 없으면 현재 기본값인 `20s`를 사용한다. timeout 가설을 검증할 때만 다음처럼 명시적으로
+override하며, retry 정책(`maxRetries(0)`)은 변경하지 않는다.
+
+```powershell
+$env:OPENAI_TIMEOUT = "45s"
+```
+
 smoke test는 운영 분석 정책을 변경하지 않는다.
