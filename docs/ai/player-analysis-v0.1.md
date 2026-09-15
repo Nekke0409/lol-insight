@@ -1,5 +1,8 @@
 # Player Analysis v0.1
 
+> [Player Analysis v0.2](player-analysis-v0.2.md)로 대체되었습니다. 이 문서는 이전의
+> champion-position 전용 입력 계약을 기록합니다.
+
 ## 목적
 
 `POST /api/v1/players/{gameName}/{tagLine}/analysis?start=0&count=20`는 Backend가 결정한

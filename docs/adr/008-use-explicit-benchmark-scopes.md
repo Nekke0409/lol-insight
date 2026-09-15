@@ -48,3 +48,10 @@ request를 보내지 않는다.
 
 Benchmark는 계속 match-level이며 patch-aware하지 않고 heavy contributor의 영향을 받을 수 있다. 어느 scope도
 player percentile, rank estimate, top-X-percent claim, player-balanced distribution을 만들지 않는다.
+
+## 구현 갱신
+
+이전에 미뤘던 OpenAI input 확장은 Player Analysis v0.2에서 구현됐다. adapter는 AVAILABLE인 모든 POSITION 및
+CHAMPION_POSITION comparison을 명시적인 scope와 nullable champion ID invariant를 포함해 결정적인 scope 순서로
+전달한다. 두 scope는 독립적으로 유지하며 fallback이나 metric 혼합을 추가하지 않는다.
+[Player Analysis v0.2](../ai/player-analysis-v0.2.md)를 참고한다.

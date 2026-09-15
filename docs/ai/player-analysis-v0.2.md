@@ -1,0 +1,106 @@
+# Player Analysis v0.2
+
+## 목적
+
+`POST /api/v1/players/{gameName}/{tagLine}/analysis?start=0&count=20`는 Backend가 계산한
+`PlayerComparisonFeature`를 한국어 자연어 분석으로 변환한다. 성공한 요청은 외부 AI provider 호출 비용을 발생시킬 수 있으므로
+endpoint는 계속 `POST`를 사용한다.
+
+이 버전은 ADR-008에서 도입한 두 독립 benchmark scope에 맞춰 OpenAI 입력 경계를 확장한다. benchmark 수집,
+aggregate SQL, availability threshold, self-exclusion, REST output schema는 변경하지 않는다.
+
+```text
+Riot API data
+    -> normalized Match / player statistics
+    -> PlayerComparisonFeatureService
+    -> PlayerComparisonFeature
+    -> AVAILABLE comparison gate
+    -> PlayerAnalysisInput
+    -> PlayerAnalysisGenerator
+    -> OpenAI Responses API Structured Outputs
+    -> PlayerAnalysisResult
+```
+
+## 분석 게이트와 요청 횟수
+
+서비스는 scope와 관계없이 하나 이상의 comparison이 `status == AVAILABLE`이면
+`PlayerAnalysisGenerator`를 정확히 한 번 호출한다. AVAILABLE comparison이 없으면 생성기를 호출하지 않는다.
+
+| POSITION 범위 | CHAMPION_POSITION 범위 | 결과 |
+| --- | --- | --- |
+| `AVAILABLE` | 표본 부족 또는 데이터 없음 | POSITION comparison만 포함한 요청 1회 |
+| 표본 부족 또는 데이터 없음 | `AVAILABLE` | CHAMPION_POSITION comparison만 포함한 요청 1회 |
+| `AVAILABLE` | `AVAILABLE` | 두 comparison을 포함한 요청 1회 |
+| `AVAILABLE` 아님 | `AVAILABLE` 아님 | `INSUFFICIENT_COMPARISON_DATA`, 요청 없음 |
+
+rank가 없는 사용자는 계속 `UNRANKED`, `analysis: null`을 받고 AI provider 요청은 없다. v0.2에는
+scope별 요청, fallback 요청, cache, token optimizer, 분석 결과 저장을 추가하지 않는다.
+
+## 구조화된 입력
+
+`PlayerAnalysisInput.comparisons`에는 `AVAILABLE` comparison만 들어간다. 순서는 결정적이며
+`POSITION`이 먼저, `CHAMPION_POSITION`이 뒤이며, 같은 scope 안에서는 기존의 결정적인 comparison 순서를
+유지한다. 사용 불가 comparison은 metric 근거를 포함해 OpenAI에 전달하지 않는다.
+
+각 `AnalysisComparisonInput`에는 Backend가 계산한 다음 필드가 들어간다.
+
+| 필드 | 의미 |
+| --- | --- |
+| `scope` | 명시적인 `POSITION` 또는 `CHAMPION_POSITION` 모집단 식별자 |
+| `position` | 사용자 통계와 benchmark cohort가 함께 사용하는 포지션 |
+| `championId` | `POSITION`에서는 `null`, `CHAMPION_POSITION`에서는 필수 |
+| `userGames` | 같은 scope에서의 사용자 관측 수 |
+| `benchmarkCohort` | region, queue, tier, division, position 및 일치하는 nullable champion identity |
+| `benchmarkSampleCount`, `benchmarkUniquePlayerCount` | 대상 플레이어 self-exclusion 후의 benchmark 수 |
+| `metrics` | Backend가 계산한 player value, benchmark mean/median/p25/p75/p90, mean/median 차이 |
+
+모델은 scope와 champion identity 조합이 유효한지, 중첩된 benchmark cohort가 입력의 position 및 champion
+identity와 일치하는지 검증한다. 따라서 POSITION 입력에는 champion ID가 들어갈 수 없고,
+CHAMPION_POSITION 입력은 champion ID를 생략할 수 없다.
+
+`PlayerAnalysisInput`에는 PUUID, Riot ID, Match ID, raw Riot JSON, DB entity, Redis value, API key가 없다.
+target PUUID는 Backend의 aggregate self-exclusion 경계 안에서만 사용한다.
+
+## Scope의 의미
+
+`POSITION`과 `CHAMPION_POSITION`은 fallback 관계가 아닌 독립적인 분석 근거다.
+
+- `POSITION`은 `region / queue / tier / division / position` key를 사용하는 역할 수준의 경기 단위 기준선이다.
+  이 scope의 사용자 값은 해당 position의 모든 사용자 경기 평균이며, benchmark에는 champion mix가 포함된다.
+  Ahri를 포함한 특정 champion benchmark나 champion별 기준선으로 표현하면 안 된다.
+- `CHAMPION_POSITION`은 `region / queue / tier / division / position / championId` key를 사용하는
+  champion별 경기 단위 기준선이다. 이 scope의 사용자 값은 해당 champion과 position 경기만의 평균이다.
+
+AI prompt는 metric을 사용하는 각 evidence 문장이 scope 의미를 명시하도록 요구한다. POSITION 결과로
+champion-specific 성과를 주장하거나, CHAMPION_POSITION 결과를 해당 position 전체 성과로 일반화하거나,
+서로 다른 scope 숫자를 섞거나, 한 scope가 다른 scope를 대체했다고 표현하는 것을 금지한다.
+
+## 계산과 출력 경계
+
+Backend는 provider 호출 전에 모든 metric comparison을 계속 계산한다.
+
+- `playerValue`
+- `benchmarkMean`, `benchmarkMedian`, `benchmarkP25`, `benchmarkP75`, `benchmarkP90`
+- `differenceFromMean`, `differenceFromMedian`
+- `benchmarkSampleCount`, `benchmarkUniquePlayerCount`
+
+OpenAI adapter는 뺄셈, percentile 계산, cohort 선택, eligibility 판단을 수행하지 않는다. prompt는
+top-X-percent 주장, player percentile, 일반적인 좋음/나쁨 판정, cross-position ranking, patch-aware 주장,
+Backend 제공 숫자 변경도 계속 금지한다.
+
+`PlayerAnalysisResult`와 REST `PlayerAnalysisResponse` schema는 변경하지 않는다. 필요하면 evidence 텍스트에서
+scope를 표현할 수 있으므로 출력 model을 새로 설계할 필요가 없다.
+
+## 수동 smoke test
+
+명시적으로 활성화한 OpenAI smoke test는 POSITION comparison 하나와 CHAMPION_POSITION comparison 하나가 있는 결정적인 입력을
+사용한다. 다음 두 환경 변수가 모두 있어야 실행되며, 그렇지 않으면 skip된다.
+
+```powershell
+$env:OPENAI_API_KEY = "..."
+$env:OPENAI_MODEL = "gpt-5-mini"
+$env:RUN_OPENAI_SMOKE_TEST = "true"
+.\gradlew.bat test --tests "*OpenAiPlayerAnalysisManualSmokeTest" --no-daemon
+```
+
+smoke test는 운영 분석 정책을 변경하지 않는다.

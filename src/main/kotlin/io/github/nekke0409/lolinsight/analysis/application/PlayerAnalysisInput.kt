@@ -1,18 +1,20 @@
 package io.github.nekke0409.lolinsight.analysis.application
 
+import io.github.nekke0409.lolinsight.benchmark.domain.BenchmarkScope
+
 data class PlayerAnalysisInput(
-    val availableComparisons: List<AvailablePlayerCohortComparison>,
-    val excludedComparisonSummary: List<ExcludedPlayerCohortComparison>,
+    val comparisons: List<AnalysisComparisonInput>,
     val analysisLimitations: List<PlayerAnalysisLimitation>,
 ) {
     init {
-        require(availableComparisons.isNotEmpty()) { "availableComparisons must not be empty" }
+        require(comparisons.isNotEmpty()) { "comparisons must not be empty" }
     }
 }
 
-data class AvailablePlayerCohortComparison(
-    val championId: Int,
+data class AnalysisComparisonInput(
+    val scope: BenchmarkScope,
     val position: String,
+    val championId: Int?,
     val userGames: Int,
     val benchmarkCohort: PlayerAnalysisBenchmarkCohort,
     val benchmarkSampleCount: Long,
@@ -20,7 +22,6 @@ data class AvailablePlayerCohortComparison(
     val metrics: List<PlayerAnalysisMetric>,
 ) {
     init {
-        require(championId > 0) { "championId must be positive" }
         require(position.isNotBlank()) { "position must not be blank" }
         require(userGames > 0) { "userGames must be positive" }
         require(benchmarkSampleCount > 0) { "benchmarkSampleCount must be positive" }
@@ -29,20 +30,16 @@ data class AvailablePlayerCohortComparison(
             "benchmarkUniquePlayerCount cannot exceed benchmarkSampleCount"
         }
         require(metrics.isNotEmpty()) { "metrics must not be empty" }
-    }
-}
+        require(benchmarkCohort.position == position) { "benchmark cohort position must match comparison position" }
+        require(benchmarkCohort.championId == championId) { "benchmark cohort championId must match comparison championId" }
 
-data class ExcludedPlayerCohortComparison(
-    val championId: Int,
-    val position: String,
-    val userGames: Int,
-    val status: String,
-) {
-    init {
-        require(championId > 0) { "championId must be positive" }
-        require(position.isNotBlank()) { "position must not be blank" }
-        require(userGames > 0) { "userGames must be positive" }
-        require(status.isNotBlank()) { "status must not be blank" }
+        when (scope) {
+            BenchmarkScope.POSITION -> require(championId == null) { "POSITION scope must not include championId" }
+            BenchmarkScope.CHAMPION_POSITION ->
+                require(championId != null && championId > 0) {
+                    "CHAMPION_POSITION scope requires a positive championId"
+                }
+        }
     }
 }
 
@@ -52,7 +49,7 @@ data class PlayerAnalysisBenchmarkCohort(
     val tier: String,
     val division: String,
     val position: String,
-    val championId: Int,
+    val championId: Int?,
 )
 
 data class PlayerAnalysisMetric(

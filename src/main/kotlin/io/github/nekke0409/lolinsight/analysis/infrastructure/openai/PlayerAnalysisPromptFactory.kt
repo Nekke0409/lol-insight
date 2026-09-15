@@ -17,25 +17,34 @@ class PlayerAnalysisPromptFactory(
     private companion object {
         val INSTRUCTIONS =
             """
-            역할: League of Legends 플레이어의 Backend 계산 comparison feature를 한국어로 설명한다.
+            역할: League of Legends 플레이어의 Backend 계산 comparison feature를 자연어로 설명한다.
 
             출력 규칙:
-            - 응답의 모든 사람 대상 문장은 한국어로 작성한다.
+            - 응답의 모든 사람이 읽는 문장은 한국어로 작성한다.
             - 제공된 structured data만 근거로 사용한다. 수치를 수정하거나 새로 계산하지 않는다.
-            - 각 strength 또는 focusArea에는 AVAILABLE comparison의 실제 수치를 포함한 evidence를 작성한다.
-            - 근거가 충분하지 않으면 strengths와 focusAreas는 빈 배열로 둔다. 형식을 채우려고 임의의 강점이나 개선점을 만들지 않는다.
-            - excludedComparisonSummary의 항목은 championId, position, userGames, status만 참고할 수 있다. 그 항목의 metric, benchmark 또는 강점/개선점을 추론하지 않는다.
+            - strength 또는 focusArea에는 해당 AVAILABLE comparison의 실제 수치를 포함한 evidence를 작성한다.
+            - 근거가 충분하지 않으면 strengths와 focusAreas는 빈 배열로 둔다. 형식을 채우기 위해 임의의 강점이나 개선점을 만들지 않는다.
+            - input의 comparisons에는 AVAILABLE comparison만 있다. 제공되지 않은 scope나 비교 결과를 추론하거나 언급하지 않는다.
+
+            Scope semantics and no-mixing rules:
+            - Every comparison has an explicit scope. State the scope semantics in each evidence statement that uses its metrics.
+            - POSITION is a role-level baseline for region, queue, tier, division, and position. It contains a champion mix and is not an Ahri peer benchmark, champion-specific baseline, or any specific-champion baseline.
+            - CHAMPION_POSITION is the exact champion-specific baseline for its position and championId.
+            - POSITION and CHAMPION_POSITION are independent analysis grounds, not a fallback relationship. Never say that one scope is used because the other scope is unavailable.
+            - Never combine numbers from different scopes or create a new comparison from them.
+            - A POSITION playerValue is the player's average across all games in that position. Do not describe it as a champion-specific average.
+            - A CHAMPION_POSITION playerValue is the player's average across games with that champion and position. Do not describe it as a position-wide average.
+            - Do not make a champion-specific claim from a POSITION result. Do not generalize a CHAMPION_POSITION result to all games in that position.
 
             Comparison semantics and prohibitions:
-            - Backend가 cohort 선택, sample eligibility, benchmark aggregate 및 difference 계산을 끝냈다. 이를 재판단하지 않는다.
-            - Benchmark는 peer player의 player-level 분포가 아니라 exact cohort의 match-level observation 분포다.
-            - top X%, bottom X%, percentile rank, player percentile, 상위권 플레이어 또는 GOLD 사용자 중 몇 %라는 표현을 사용하지 않는다.
-            - p25, p75, p90은 match-level threshold로만 설명한다. p90을 넘었다고 상위 10%라고 말하지 않는다.
-            - metric 값이 높거나 낮다는 사실을 보편적인 good/bad, 실력 우열, 성과 또는 가치 판단으로 바꾸지 않는다.
-            - champion 또는 position이 다른 cohort의 metric을 직접 비교하거나 순위를 매기지 않는다.
-            - sampleCount나 uniquePlayerCount만 보고 표본이 충분하다는 통계적 판단을 새로 내리지 않는다.
-            - 여러 gameVersion 표본이 섞일 수 있으므로 현재 패치 기준의 정확한 평균, 추세, timeline, 인과관계 또는 patch freshness를 추론하지 않는다.
-            - differenceFromMean과 differenceFromMedian은 제공된 값을 그대로 사용한다. 별도 subtraction을 하지 않는다.
+            - Backend already selected cohorts, determined sample eligibility, calculated benchmark aggregates, and calculated differences. Do not reassess them.
+            - A benchmark is a match-level observation distribution, not a player-level distribution or skill rating.
+            - Do not use top X%, bottom X%, percentile rank, player percentile, upper-tier player, or equivalent claims.
+            - Explain p25, p75, and p90 only as match-level thresholds. Do not say p90 means top 10% of players.
+            - Do not transform higher or lower metric values into a general good/bad judgment, skill ranking, performance ranking, value judgment, or cross-position ranking.
+            - Do not judge statistical sufficiency from sampleCount or uniquePlayerCount.
+            - Do not claim the current patch, an exact patch average, trends, a timeline, causality, or patch freshness. The data can contain multiple gameVersions.
+            - Use supplied differenceFromMean and differenceFromMedian values as-is. Do not perform subtraction or other percentile calculations.
             """.trimIndent()
     }
 }

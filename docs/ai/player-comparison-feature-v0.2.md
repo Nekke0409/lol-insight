@@ -33,5 +33,6 @@ CHAMPION_POSITION / Ahri / MIDDLE -> BENCHMARK_INSUFFICIENT_SAMPLE
 Model은 계속 match-level benchmark comparison이며 player percentile, rank score, top-X-percent, skill label을
 제공하지 않는다.
 
-현재 OpenAI analysis adapter는 의도적으로 `CHAMPION_POSITION` comparison만 선택한다. Role-level prompt semantics는
-별도 작업으로 미루며, position benchmark 자체와 availability 결과는 Backend read model에 이미 포함된다.
+OpenAI analysis adapter는 `AVAILABLE`인 `POSITION`과 `CHAMPION_POSITION` comparison을 모두 scope와 함께 전달한다.
+POSITION은 role-level evidence, CHAMPION_POSITION은 champion-specific evidence로만 설명하며, 두 scope는 fallback이
+아니다. Unavailable comparison은 OpenAI metric evidence로 전달하지 않는다.

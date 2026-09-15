@@ -93,7 +93,7 @@ Backend는 metric, exact cohort, sample size, 평균·중앙값·match-level per
 현재 사용 중인 기술은 Kotlin, Spring Boot, Spring MVC `RestClient`, PostgreSQL, Spring Data JPA,
 Flyway, Redis, Docker, OpenAI Java SDK입니다. JDK 21을 사용합니다.
 
-OpenAI 연동은 Responses API Structured Outputs를 사용하는 v0.1 analysis 경계로만 구현되어 있습니다.
+OpenAI 연동은 Responses API Structured Outputs를 사용하는 v0.2 다중 scope 분석 경계로 구현되어 있습니다.
 Spring Security, AWS, 다중 LLM Provider, 결과 cache/persistence, 사용자별 AI rate limit과 비용 관측은 후속 기술 방향입니다.
 
 ## Documentation
@@ -104,7 +104,7 @@ Spring Security, AWS, 다중 LLM Provider, 결과 cache/persistence, 사용자�
 - [ADR-007](docs/adr/007-use-structured-llm-analysis-boundary.md): Structured LLM analysis 경계 결정
 - [Player Match Statistics v0.1](docs/statistics/player-match-statistics-v0.1.md): 현재 통계의 계산 기준
 - [Player Analysis Feature v0.1](docs/ai/player-analysis-feature-v0.1.md): 현재 provider 독립 feature의 범위
-- [Player Analysis v0.1](docs/ai/player-analysis-v0.1.md): OpenAI analysis pipeline, gate, input/output 및 운영 제약
+- [Player Analysis v0.2](docs/ai/player-analysis-v0.2.md): 다중 scope OpenAI 분석 게이트, input/output 및 운영 제약
 - [Player Comparison Context v0.1](docs/ai/player-comparison-context-v0.1.md): peer comparison 사용자 입력의 범위
 - [Player Comparison Feature v0.1](docs/ai/player-comparison-feature-v0.1.md): exact benchmark comparison의 범위와 한계
 
@@ -190,11 +190,12 @@ AVAILABLE role-level 결과가 insufficient champion-specific 결과를 조용�
 scope별 target-player self-exclusion 후 30 match observations와 10 unique players를 요구한다.
 
 `POSITION`은 해당 role의 champion mix를 포함하므로 role-level baseline으로만 사용한다. Champion-specific skill
-baseline으로 표현하지 않는다. 현재 OpenAI analysis는 계속 champion-position만 사용하며 position-level prompt
-해석은 별도 작업이다. 자세한 내용은 [ADR-008](docs/adr/008-use-explicit-benchmark-scopes.md),
+baseline으로 표현하지 않는다. OpenAI analysis는 AVAILABLE인 두 scope를 하나의 요청에 함께 전달하되, scope를
+명시하고 서로를 fallback으로 표현하거나 수치를 섞지 않는다. 자세한 내용은 [ADR-008](docs/adr/008-use-explicit-benchmark-scopes.md),
 [Peer Benchmark v0.2](docs/benchmark/peer-benchmark-v0.2.md),
 [Player Comparison Context v0.2](docs/ai/player-comparison-context-v0.2.md),
-[Player Comparison Feature v0.2](docs/ai/player-comparison-feature-v0.2.md)를 참고한다.
+[Player Comparison Feature v0.2](docs/ai/player-comparison-feature-v0.2.md),
+[Player Analysis v0.2](docs/ai/player-analysis-v0.2.md)를 참고한다.
 
 ## Development Smoke Procedure
 

@@ -1,6 +1,5 @@
 package io.github.nekke0409.lolinsight.analysis.application
 
-import io.github.nekke0409.lolinsight.benchmark.domain.BenchmarkScope
 import io.github.nekke0409.lolinsight.comparison.application.PlayerCohortComparisonStatus
 import io.github.nekke0409.lolinsight.comparison.application.PlayerComparisonFeatureService
 import org.springframework.stereotype.Service
@@ -24,7 +23,7 @@ class PlayerAnalysisService(
         }
         if (
             feature.comparisons.none {
-                it.scope == BenchmarkScope.CHAMPION_POSITION && it.status == PlayerCohortComparisonStatus.AVAILABLE
+                it.status == PlayerCohortComparisonStatus.AVAILABLE
             }
         ) {
             return PlayerAnalysisResponse(PlayerAnalysisResponseStatus.INSUFFICIENT_COMPARISON_DATA, null)

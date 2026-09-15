@@ -97,7 +97,7 @@ Riot API의 원본 Match DTO와 서비스 내부에서 사용하는 모델을 �
 가공된 Match/통계 데이터를 이용해 분석 feature를 만든다. 현재는 개인 요약용 `PlayerAnalysisFeature`, peer
 comparison의 사용자 측 입력인 `PlayerComparisonContext`, 그리고 exact cohort benchmark와 결합한
 `PlayerComparisonFeature`가 구현되어 있다. `PlayerComparisonFeature`는 현재 Ranked Solo rank와 대상 사용자의
-`(championId, position)`별 통계를 기준으로 benchmark availability와 numeric difference를 결정한다.
+position 및 `(championId, position)`별 통계를 각각 같은 scope benchmark와 연결해 availability와 numeric difference를 결정한다.
 `PlayerAnalysisService`는 AVAILABLE comparison이 하나라도 있을 때만 `PlayerAnalysisGenerator`를 정확히 한 번 호출해
 `PlayerAnalysisResult`를 만든다. OpenAI prompt와 SDK DTO는 infrastructure에만 둔다.
 
@@ -376,14 +376,14 @@ PUUID로 조회한 현재 `RANKED_SOLO_5x5` tier/division 및 그 조회 시각�
 damage share 공식을 재사용한다. 이 단계는 `PeerBenchmarkQueryService`를 호출하지 않는다.
 
 `PlayerComparisonFeatureService`는 `PlayerComparisonContextService`와 `PeerBenchmarkQueryService`를 조합한다.
-rank가 있으면 KR Ranked Solo의 `region / queueId / tier / division / position / championId` exact cohort만 만들고,
+rank가 있으면 KR Ranked Solo의 position cohort와 champion-position exact cohort를 각각 만들고,
 `findBenchmarkExcludingPlayer`로 대상 사용자의 own `BenchmarkSample`을 PostgreSQL aggregate에서 제외한다. 이
 excluded aggregate로 각 cohort의 사용자 표본·benchmark availability를 판정한 뒤 `AVAILABLE`일 때만 7개 metric의
 numeric difference를 계산한다. rank가 없으면 query 없이 `UNRANKED` comparison을 만든다.
-`PlayerAnalysisService`는 이 feature의 AVAILABLE 항목만 OpenAI adapter로 전달하고, 다른 status는 최소 요약만
-전달한다. PUUID는 aggregate exclusion에만 사용하며 OpenAI input으로 전달하지 않는다. player percentile rank는
-계획 상태다. 상세 contract와 statistical limit은 [Player Comparison Feature v0.1](ai/player-comparison-feature-v0.1.md)을
-따른다.
+`PlayerAnalysisService`는 이 feature의 AVAILABLE 항목만 OpenAI adapter로 전달하고, 다른 status는 전달하지 않는다.
+PUUID는 aggregate exclusion에만 사용하며 OpenAI input으로 전달하지 않는다. player percentile rank는
+계획 상태다. 상세 contract와 statistical limit은 [Player Comparison Feature v0.2](ai/player-comparison-feature-v0.2.md)와
+[Player Analysis v0.2](ai/player-analysis-v0.2.md)를 따른다.
 
 #### Benchmark Scope v0.2
 
@@ -395,13 +395,29 @@ ADR-008은 이 section의 v0.1 single-exact-cohort 설명을 대체한다. `Benc
 `PlayerComparisonFeatureService`는 statistical unit마다 comparison 하나를 만들고 target-PUUID exclusion을 적용한
 같은 PostgreSQL aggregate를 query한다. Insufficient champion-position benchmark를 position benchmark로 조용히
 대체하지 않는다. 기존 30 samples / 10 unique players availability policy는 scope별 exclusion 후 평가한다. Coverage
-report에는 두 scope가 포함된다. 현재 OpenAI adapter는 의도적으로 `CHAMPION_POSITION` comparison만 선택하며
-role-level prompt semantics는 다음 작업으로 미룬다.
+report에는 두 scope가 포함된다. OpenAI adapter는 `AVAILABLE`인 두 scope를 모두 전달하며,
+scope별 role-level/champion-specific prompt semantics와 no-fallback 정책을 명시적으로 강제한다.
 
 `POSITION`은 champion mix가 포함된 role-level baseline이며 champion-specific skill baseline이 아니다. 두 scope는
 계속 match-level이고 patch-aware하지 않으며 heavy contributor의 영향을 받을 수 있다. Player percentile이나
 top-X-percent claim을 만들지 않는다. [ADR-008](adr/008-use-explicit-benchmark-scopes.md)과
 [Peer Benchmark v0.2](benchmark/peer-benchmark-v0.2.md)를 참고한다.
+
+#### Multi-scope AI 분석
+
+`PlayerAnalysisService`는 `AVAILABLE` 상태인 모든 `PlayerCohortComparison`을 한 번의 분석 요청 대상으로
+취급한다. `PlayerAnalysisInputMapper`는 AVAILABLE comparison만 결정적인 scope 순서, 즉 `POSITION` 후
+`CHAMPION_POSITION`으로 전달한다. 모든 입력 comparison은 `scope`를 명시하며, `championId`는 `POSITION`에서만
+null이고 `CHAMPION_POSITION`에서는 필수다. application model은 benchmark cohort의 position과 champion identity가
+입력 comparison과 같은지 검증한다.
+
+`POSITION`은 champion mix를 포함하는 역할 수준의 경기 단위 benchmark다. 사용자 metric은 해당 position의 모든 경기 평균이다.
+`CHAMPION_POSITION`은 해당 champion과 position으로 제한된 champion별 경기 단위 benchmark다. 두 scope는 fallback이
+아닌 독립적인 분석 근거다. prompt는 scope 사이 숫자 혼합, POSITION 데이터로 champion별 claim 생성,
+CHAMPION_POSITION 데이터의 position 전체 일반화를 금지한다. 사용 불가 comparison은 AI provider에 전달하지 않는다.
+
+provider 입력에는 PUUID, Riot ID, match ID, raw Riot JSON, API key, cache value, DB entity가 없다.
+`PlayerAnalysisResult`와 REST analysis response는 변경하지 않으며, 필요하면 생성된 근거 텍스트에서 scope를 표현한다.
 
 #### BenchmarkSample
 

@@ -31,7 +31,12 @@ class PlayerAnalysisServiceTest {
 
     @Test
     fun `does not call the generator when the user is unranked`() {
-        stubFeature(feature(rankContext = null, statuses = listOf(PlayerCohortComparisonStatus.UNRANKED)))
+        stubFeature(
+            PlayerComparisonFeature(
+                rankContext = null,
+                comparisons = listOf(unrankedPositionComparison()),
+            ),
+        )
 
         val response = service.analyze(GAME_NAME, TAG_LINE, 0, 20)
 
@@ -41,72 +46,32 @@ class PlayerAnalysisServiceTest {
     }
 
     @Test
-    fun `does not call the generator when only user sample insufficient cohorts exist`() {
-        stubFeature(feature(statuses = listOf(PlayerCohortComparisonStatus.INSUFFICIENT_USER_SAMPLE)))
+    fun `calls the generator exactly once when only POSITION is available`() {
+        assertAnalyzedWithSingleGeneratorCall(feature(positionAvailable()))
+    }
+
+    @Test
+    fun `calls the generator exactly once when only CHAMPION_POSITION is available`() {
+        assertAnalyzedWithSingleGeneratorCall(feature(championPositionAvailable()))
+    }
+
+    @Test
+    fun `calls the generator exactly once when both scopes are available`() {
+        assertAnalyzedWithSingleGeneratorCall(feature(positionAvailable(), championPositionAvailable()))
+    }
+
+    @Test
+    fun `does not call the generator when neither scope is available`() {
+        stubFeature(feature(positionInsufficient(), championPositionInsufficient()))
 
         val response = service.analyze(GAME_NAME, TAG_LINE, 0, 20)
 
         assertEquals(PlayerAnalysisResponseStatus.INSUFFICIENT_COMPARISON_DATA, response.status)
+        assertEquals(null, response.analysis)
         verifyNoInteractions(playerAnalysisInputMapper, playerAnalysisGenerator)
     }
 
-    @Test
-    fun `does not call the generator when only benchmark unavailable cohorts exist`() {
-        stubFeature(
-            feature(
-                statuses =
-                    listOf(
-                        PlayerCohortComparisonStatus.BENCHMARK_NO_DATA,
-                        PlayerCohortComparisonStatus.BENCHMARK_INSUFFICIENT_SAMPLE,
-                    ),
-            ),
-        )
-
-        val response = service.analyze(GAME_NAME, TAG_LINE, 0, 20)
-
-        assertEquals(PlayerAnalysisResponseStatus.INSUFFICIENT_COMPARISON_DATA, response.status)
-        verifyNoInteractions(playerAnalysisInputMapper, playerAnalysisGenerator)
-    }
-
-    @Test
-    fun `does not call the existing generator when only a POSITION comparison is available`() {
-        val positionCohort = BenchmarkCohort.position("KR", 420, "GOLD", "I", "MIDDLE")
-        val feature =
-            PlayerComparisonFeature(
-                rankContext = RANK_CONTEXT,
-                comparisons =
-                    listOf(
-                        PlayerCohortComparison(
-                            scope = BenchmarkScope.POSITION,
-                            position = "MIDDLE",
-                            championId = null,
-                            userGames = 5,
-                            status = PlayerCohortComparisonStatus.AVAILABLE,
-                            benchmarkCohort = positionCohort,
-                            benchmarkSampleCount = 30,
-                            benchmarkUniquePlayerCount = 10,
-                            metrics = metrics(),
-                        ),
-                    ),
-            )
-        stubFeature(feature)
-
-        val response = service.analyze(GAME_NAME, TAG_LINE, 0, 20)
-
-        assertEquals(PlayerAnalysisResponseStatus.INSUFFICIENT_COMPARISON_DATA, response.status)
-        verifyNoInteractions(playerAnalysisInputMapper, playerAnalysisGenerator)
-    }
-
-    @Test
-    fun `calls the generator exactly once when one or more cohorts are available`() {
-        val feature =
-            feature(
-                statuses =
-                    listOf(
-                        PlayerCohortComparisonStatus.AVAILABLE,
-                        PlayerCohortComparisonStatus.INSUFFICIENT_USER_SAMPLE,
-                    ),
-            )
+    private fun assertAnalyzedWithSingleGeneratorCall(feature: PlayerComparisonFeature) {
         val input = analysisInput()
         val result = PlayerAnalysisResult("요약", emptyList(), emptyList(), emptyList(), emptyList())
         stubFeature(feature)
@@ -126,47 +91,76 @@ class PlayerAnalysisServiceTest {
         `when`(playerComparisonFeatureService.buildFeature(GAME_NAME, TAG_LINE, 0, 20)).thenReturn(feature)
     }
 
-    private fun feature(
-        rankContext: PlayerRankContext? = RANK_CONTEXT,
-        statuses: List<PlayerCohortComparisonStatus>,
-    ): PlayerComparisonFeature =
+    private fun feature(vararg comparisons: PlayerCohortComparison): PlayerComparisonFeature =
         PlayerComparisonFeature(
-            rankContext = rankContext,
-            comparisons =
-                statuses.mapIndexed { index, status ->
-                    comparison(status = status, championId = 100 + index)
-                },
+            rankContext = RANK_CONTEXT,
+            comparisons = comparisons.toList(),
         )
 
-    private fun comparison(
-        status: PlayerCohortComparisonStatus,
-        championId: Int,
-    ): PlayerCohortComparison {
-        val cohort = BenchmarkCohort.championPosition("KR", 420, "GOLD", "I", "MIDDLE", championId)
-        return PlayerCohortComparison(
-            scope = BenchmarkScope.CHAMPION_POSITION,
-            championId = championId,
+    private fun positionAvailable(): PlayerCohortComparison =
+        PlayerCohortComparison(
+            scope = BenchmarkScope.POSITION,
             position = "MIDDLE",
-            userGames = 5,
-            status = status,
-            benchmarkCohort = if (status == PlayerCohortComparisonStatus.UNRANKED) null else cohort,
-            benchmarkSampleCount =
-                when (status) {
-                    PlayerCohortComparisonStatus.AVAILABLE,
-                    PlayerCohortComparisonStatus.BENCHMARK_INSUFFICIENT_SAMPLE,
-                    -> 10
-                    else -> 0
-                },
-            benchmarkUniquePlayerCount =
-                when (status) {
-                    PlayerCohortComparisonStatus.AVAILABLE,
-                    PlayerCohortComparisonStatus.BENCHMARK_INSUFFICIENT_SAMPLE,
-                    -> 5
-                    else -> 0
-                },
-            metrics = if (status == PlayerCohortComparisonStatus.AVAILABLE) metrics() else null,
+            championId = null,
+            userGames = 8,
+            status = PlayerCohortComparisonStatus.AVAILABLE,
+            benchmarkCohort = BenchmarkCohort.position("KR", 420, "GOLD", "I", "MIDDLE"),
+            benchmarkSampleCount = 30,
+            benchmarkUniquePlayerCount = 10,
+            metrics = metrics(),
         )
-    }
+
+    private fun championPositionAvailable(): PlayerCohortComparison =
+        PlayerCohortComparison(
+            scope = BenchmarkScope.CHAMPION_POSITION,
+            position = "MIDDLE",
+            championId = 103,
+            userGames = 5,
+            status = PlayerCohortComparisonStatus.AVAILABLE,
+            benchmarkCohort = BenchmarkCohort.championPosition("KR", 420, "GOLD", "I", "MIDDLE", 103),
+            benchmarkSampleCount = 30,
+            benchmarkUniquePlayerCount = 10,
+            metrics = metrics(),
+        )
+
+    private fun positionInsufficient(): PlayerCohortComparison =
+        PlayerCohortComparison(
+            scope = BenchmarkScope.POSITION,
+            position = "MIDDLE",
+            championId = null,
+            userGames = 4,
+            status = PlayerCohortComparisonStatus.INSUFFICIENT_USER_SAMPLE,
+            benchmarkCohort = BenchmarkCohort.position("KR", 420, "GOLD", "I", "MIDDLE"),
+            benchmarkSampleCount = 30,
+            benchmarkUniquePlayerCount = 10,
+            metrics = null,
+        )
+
+    private fun championPositionInsufficient(): PlayerCohortComparison =
+        PlayerCohortComparison(
+            scope = BenchmarkScope.CHAMPION_POSITION,
+            position = "MIDDLE",
+            championId = 103,
+            userGames = 4,
+            status = PlayerCohortComparisonStatus.BENCHMARK_INSUFFICIENT_SAMPLE,
+            benchmarkCohort = BenchmarkCohort.championPosition("KR", 420, "GOLD", "I", "MIDDLE", 103),
+            benchmarkSampleCount = 10,
+            benchmarkUniquePlayerCount = 5,
+            metrics = null,
+        )
+
+    private fun unrankedPositionComparison(): PlayerCohortComparison =
+        PlayerCohortComparison(
+            scope = BenchmarkScope.POSITION,
+            position = "MIDDLE",
+            championId = null,
+            userGames = 4,
+            status = PlayerCohortComparisonStatus.UNRANKED,
+            benchmarkCohort = null,
+            benchmarkSampleCount = 0,
+            benchmarkUniquePlayerCount = 0,
+            metrics = null,
+        )
 
     private fun metrics(): PlayerComparisonMetrics =
         PlayerComparisonMetrics(
@@ -183,13 +177,14 @@ class PlayerAnalysisServiceTest {
 
     private fun analysisInput(): PlayerAnalysisInput =
         PlayerAnalysisInput(
-            availableComparisons =
+            comparisons =
                 listOf(
-                    AvailablePlayerCohortComparison(
-                        championId = 103,
+                    AnalysisComparisonInput(
+                        scope = BenchmarkScope.POSITION,
                         position = "MIDDLE",
+                        championId = null,
                         userGames = 5,
-                        benchmarkCohort = PlayerAnalysisBenchmarkCohort("KR", 420, "GOLD", "I", "MIDDLE", 103),
+                        benchmarkCohort = PlayerAnalysisBenchmarkCohort("KR", 420, "GOLD", "I", "MIDDLE", null),
                         benchmarkSampleCount = 30,
                         benchmarkUniquePlayerCount = 10,
                         metrics =
@@ -208,7 +203,6 @@ class PlayerAnalysisServiceTest {
                             ),
                     ),
                 ),
-            excludedComparisonSummary = emptyList(),
             analysisLimitations = listOf(PlayerAnalysisLimitation("MATCH_LEVEL_BENCHMARK", "match-level")),
         )
 
