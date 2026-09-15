@@ -442,6 +442,30 @@ slice다. 이 단계의 `SampledRankedPlayer`는 수집 시점의 rank context�
 production-quality benchmark로 표현하지 않는다. 여러 division/page와 sampling policy는 실제 benchmark 품질을 높이는
 별도 결정이다.
 
+### 제한된 개발용 Benchmark Seed
+
+Benchmark module은 개발 전용 opt-in manual seed test도 제공한다. 이는 제한된 League-V4 page 범위와 player 및
+match 예산을 받아 KR `RANKED_SOLO_5x5` / queue 420으로 수집 범위를 고정하고, 중복을 제거한
+`SampledRankedPlayer` 목록을 기존 `BenchmarkMatchCollectionService`에 전달한다. public endpoint,
+`ApplicationRunner`, scheduler, Spring Batch job, retry loop, sleep, rate limiter 또는 schema 변경은 추가하지 않는다.
+
+`RankedPlayerDiscoveryService.discoverPaged`는 요청한 1-based page를 순서대로 조회하고 최초의 빈 page에서
+중단한다. 각 page의 PUUID를 정렬하고 그 결정적인 순서에서 처음 나타난 PUUID만 유지한다. player 예산은 unique
+player에 적용한다. 기존 non-paged discovery method는 기존 호출자를 위해 유지한다. discovery와 collection 모두
+manual seed에서 Riot 429를 terminal condition으로 처리한다. 이후 discovery page 또는 새로운 collection 요청을
+시작하지 않으며, 유효한 `Retry-After` 초 값은 `BenchmarkSeedResult`에 포함하고 응답 전에 저장된 sample은 유지한다.
+
+`BenchmarkCohortCoverageQueryService`는 comparison query가 아닌 내부 개발용 read model이다. repository는 필수
+region/queue/tier/division scope에서 PostgreSQL `GROUP BY region, queue_id, tier, division, position, champion_id`와
+`COUNT(*)`, `COUNT(DISTINCT puuid)`를 사용한다. corpus를 JVM으로 읽거나 metric distribution을 다시 계산하지 않는다.
+service는 `BenchmarkAvailabilityPolicy`를 재사용하고, 남은 sample 및 unique-player 수를 AVAILABLE 상태, unique player
+수, sample 수, position, champion ID 순으로 정렬해 반환한다.
+
+coverage는 제외할 target player 없이 전체 exact-cohort corpus를 기준으로 계산한다. 따라서 선택한 analysis target에
+대해 `findBenchmarkExcludingPlayer(cohort, targetPuuid)`가 부족한 상태여도 coverage는 AVAILABLE일 수 있다.
+comparison flow는 반드시 exclusion 결과를 다시 확인해야 한다. 제한된 seed와 coverage report는 convenience sampling
+pipeline만 검증하며 corpus의 대표성이나 운영 준비 상태를 보장하지 않는다.
+
 ## 9. AI Analysis Architecture
 
 AI 기능의 기본 원칙은 **계산과 설명을 분리하는 것**이다.

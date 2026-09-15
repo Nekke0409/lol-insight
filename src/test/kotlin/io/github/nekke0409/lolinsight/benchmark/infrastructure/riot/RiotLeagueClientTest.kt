@@ -109,6 +109,21 @@ class RiotLeagueClientTest {
     }
 
     @Test
+    fun `finds PUUIDs from the explicitly requested League page`() {
+        server
+            .expect(
+                requestTo(
+                    "https://kr.api.riotgames.com/lol/league/v4/entries/RANKED_SOLO_5x5/GOLD/I?page=3",
+                ),
+            ).andRespond(jsonResponse("[{\"puuid\":\"page-three-puuid\"}]"))
+
+        val puuids = client.findRankedPlayerPuuidsOnPage(tier = "GOLD", division = "I", page = 3)
+
+        assertEquals(listOf("page-three-puuid"), puuids)
+        server.verify()
+    }
+
+    @Test
     fun `looks up a player rank by PUUID and selects the Ranked Solo entry instead of Flex`() {
         server
             .expect(

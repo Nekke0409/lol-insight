@@ -38,22 +38,34 @@ class RiotLeagueClient(
         var page = FIRST_PAGE
 
         while (puuids.size < playerLimit) {
-            val entries = findRankedEntries(tier, division, page)
-            if (entries.isEmpty()) {
+            val pagePuuids = findRankedPlayerPuuidsOnPage(tier, division, page)
+            if (pagePuuids.isEmpty()) {
                 break
             }
 
-            entries.forEach { entry ->
+            pagePuuids.forEach { puuid ->
                 if (puuids.size == playerLimit) {
                     return puuids
                 }
 
-                puuids += entry.puuid
+                puuids += puuid
             }
             page += 1
         }
 
         return puuids
+    }
+
+    fun findRankedPlayerPuuidsOnPage(
+        tier: String,
+        division: String,
+        page: Int,
+    ): List<String> {
+        require(tier.isNotBlank()) { "tier must not be blank" }
+        require(division.isNotBlank()) { "division must not be blank" }
+        require(page > 0) { "page must be positive" }
+
+        return findRankedEntries(tier, division, page).map(RiotLeagueEntryDto::puuid)
     }
 
     private fun findRankedEntries(

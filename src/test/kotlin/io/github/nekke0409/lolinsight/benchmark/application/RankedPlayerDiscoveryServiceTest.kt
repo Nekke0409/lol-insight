@@ -4,6 +4,7 @@ import io.github.nekke0409.lolinsight.benchmark.infrastructure.riot.RiotLeagueCl
 import io.github.nekke0409.lolinsight.global.riot.RiotApiResponseException
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito.mock
+import org.mockito.Mockito.never
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.`when`
 import org.springframework.http.HttpStatus
@@ -13,6 +14,7 @@ import java.time.ZoneOffset
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertSame
+import kotlin.test.assertTrue
 
 class RankedPlayerDiscoveryServiceTest {
     private val riotLeagueClient = mock(RiotLeagueClient::class.java)
@@ -62,5 +64,75 @@ class RankedPlayerDiscoveryServiceTest {
 
         assertSame(rateLimitException, thrown)
         verify(riotLeagueClient).findRankedPlayerPuuids("GOLD", "I", 10)
+    }
+
+    @Test
+    fun `traverses the requested page range and stops at an empty page`() {
+        `when`(riotLeagueClient.findRankedPlayerPuuidsOnPage("GOLD", "I", 2)).thenReturn(listOf("puuid-2"))
+        `when`(riotLeagueClient.findRankedPlayerPuuidsOnPage("GOLD", "I", 3)).thenReturn(listOf("puuid-3"))
+        `when`(riotLeagueClient.findRankedPlayerPuuidsOnPage("GOLD", "I", 4)).thenReturn(emptyList())
+
+        val result =
+            service.discoverPaged(
+                tier = "GOLD",
+                division = "I",
+                startPage = 2,
+                pageCount = 4,
+                playerLimit = 10,
+            )
+
+        assertEquals(listOf("puuid-2", "puuid-3"), result.players.map { it.puuid })
+        assertEquals(2, result.discoveredPlayers)
+        assertEquals(2, result.uniquePlayers)
+        assertEquals(3, result.pagesProcessed)
+        verify(riotLeagueClient).findRankedPlayerPuuidsOnPage("GOLD", "I", 2)
+        verify(riotLeagueClient).findRankedPlayerPuuidsOnPage("GOLD", "I", 3)
+        verify(riotLeagueClient).findRankedPlayerPuuidsOnPage("GOLD", "I", 4)
+        verify(riotLeagueClient, never()).findRankedPlayerPuuidsOnPage("GOLD", "I", 5)
+    }
+
+    @Test
+    fun `deduplicates PUUIDs in source order and applies the player limit to unique players`() {
+        `when`(riotLeagueClient.findRankedPlayerPuuidsOnPage("GOLD", "I", 2))
+            .thenReturn(listOf("puuid-2", "puuid-1"))
+        `when`(riotLeagueClient.findRankedPlayerPuuidsOnPage("GOLD", "I", 3))
+            .thenReturn(listOf("puuid-1", "puuid-3", "puuid-4"))
+
+        val result =
+            service.discoverPaged(
+                tier = "GOLD",
+                division = "I",
+                startPage = 2,
+                pageCount = 3,
+                playerLimit = 3,
+            )
+
+        assertEquals(listOf("puuid-1", "puuid-2", "puuid-3"), result.players.map { it.puuid })
+        assertEquals(4, result.discoveredPlayers)
+        assertEquals(3, result.uniquePlayers)
+        assertEquals(2, result.pagesProcessed)
+        verify(riotLeagueClient, never()).findRankedPlayerPuuidsOnPage("GOLD", "I", 4)
+    }
+
+    @Test
+    fun `stops the requested page traversal after a rate limit response`() {
+        val rateLimitException = RiotApiResponseException(HttpStatus.TOO_MANY_REQUESTS, "rate limited", 7)
+        `when`(riotLeagueClient.findRankedPlayerPuuidsOnPage("GOLD", "I", 2)).thenReturn(listOf("puuid-2"))
+        `when`(riotLeagueClient.findRankedPlayerPuuidsOnPage("GOLD", "I", 3)).thenThrow(rateLimitException)
+
+        val result =
+            service.discoverPaged(
+                tier = "GOLD",
+                division = "I",
+                startPage = 2,
+                pageCount = 3,
+                playerLimit = 10,
+            )
+
+        assertEquals(listOf("puuid-2"), result.players.map { it.puuid })
+        assertEquals(1, result.pagesProcessed)
+        assertTrue(result.rateLimitStopped)
+        assertEquals(7, result.retryAfterSeconds)
+        verify(riotLeagueClient, never()).findRankedPlayerPuuidsOnPage("GOLD", "I", 4)
     }
 }

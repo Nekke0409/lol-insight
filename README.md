@@ -137,6 +137,51 @@ endpoint, startup runner, scheduler 없이 application service로만 제공됩�
 `BenchmarkSample` persistence integration test는 Testcontainers PostgreSQL을 사용하므로 Docker daemon이
 실행 중이어야 합니다.
 
+## 제한된 Benchmark Seed (개발 전용)
+
+`BenchmarkSeedManualSmokeTest`는 소량의 제한된 Benchmark sample을 추가하기 위한 명시적 opt-in 개발용 harness다.
+이는 public endpoint, startup runner, scheduler, crawler 또는 운영 수집 정책이 아니다. 수집 범위는 KR
+`RANKED_SOLO_5x5` / queue 420으로 고정하며, Riot 요청 전에 tier, division, page 범위, player 예산,
+player당 match 예산을 모두 받는다.
+
+먼저 local PostgreSQL 및 Redis 의존성을 실행하고 application 연결 변수와 Riot key를 설정한 뒤, 의도적으로 작은
+범위를 선택한다. 첫 실행은 일반적으로 page 하나, 최대 player 10명, player당 match 5건을 사용한다.
+
+```powershell
+docker compose up -d
+$env:POSTGRES_HOST = "localhost"
+$env:POSTGRES_PORT = "5432"
+$env:POSTGRES_DB = "lol_insight"
+$env:POSTGRES_USER = "lol_insight"
+$env:POSTGRES_PASSWORD = "lol-insight-local"
+$env:REDIS_HOST = "localhost"
+$env:REDIS_PORT = "6379"
+$env:RIOT_API_KEY = "your-development-riot-api-key"
+$env:RUN_BENCHMARK_SEED = "true"
+$env:BENCHMARK_SEED_TIER = "GOLD"
+$env:BENCHMARK_SEED_DIVISION = "I"
+$env:BENCHMARK_SEED_START_PAGE = "1"
+$env:BENCHMARK_SEED_PAGE_COUNT = "1"
+$env:BENCHMARK_SEED_PLAYER_LIMIT = "10"
+$env:BENCHMARK_SEED_MATCHES_PER_PLAYER = "5"
+.\gradlew.bat test --tests "*BenchmarkSeedManualSmokeTest" --no-daemon
+```
+
+`RUN_BENCHMARK_SEED`를 제외한 모든 `BENCHMARK_SEED_*` 값은 위의 작은 기본값을 사용한다. 전자는 반드시 정확히
+`true`여야 한다. 잘못된 값은 seed가 Riot 요청을 보내기 전에 거부한다. 일반 `gradle test` 실행은
+`RUN_BENCHMARK_SEED=true`와 `RIOT_API_KEY`가 모두 없으면 이 test를 비활성화하므로 Riot을 호출하지 않는다.
+
+seed는 요청한 1-based League-V4 page만 순회하고 빈 page에서 멈춘다. 각 page의 PUUID를 정렬해 처리 순서를
+결정적으로 유지하며, 각 PUUID는 기존 collector에 최대 한 번만 전달한다. Riot 429가 발생하면 retry나 sleep 없이
+run을 중단한다. 이후 discovery page와 새로운 collection 작업은 시작하지 않지만, 이미 저장된 sample은 유지한다.
+manual 출력은 Riot key, PUUID 목록, Match ID 목록을 절대 포함하지 않고 total과 일부 cohort coverage row만 보고한다.
+
+coverage는 저장된 전체 corpus를 exact cohort(`region`, `queueId`, `tier`, `division`, `position`, `championId`)로
+grouping하고 기존 30 samples / 10 unique players availability policy를 적용한다. 이는 대표성 있는 운영 benchmark의
+근거가 아니라 개발용 후보를 찾기 위한 운영 정보다. coverage에는 미래 analysis target을 제외하지 않는다. target을
+선택한 뒤 `/analysis`를 실행하려면 `findBenchmarkExcludingPlayer(cohort, targetPuuid)` 결과도 `AVAILABLE`인지
+확인해야 한다. threshold에 정확히 맞는 row보다 30/10보다 충분한 여유가 있는 row를 우선한다.
+
 ## Development Smoke Procedure
 
 실제 development Riot key로 작은 수집을 확인할 때는 IDE의 dev-only evaluation 또는 임시 local harness에서

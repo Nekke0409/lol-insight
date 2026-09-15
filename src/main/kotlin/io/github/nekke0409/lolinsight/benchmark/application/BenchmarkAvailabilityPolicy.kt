@@ -28,4 +28,16 @@ class BenchmarkAvailabilityPolicy(
             BenchmarkAvailability.INSUFFICIENT_SAMPLE
         }
     }
+
+    fun samplesNeeded(sampleCount: Long): Long {
+        require(sampleCount >= 0) { "sampleCount cannot be negative" }
+
+        return (properties.minimumSampleCount - sampleCount).coerceAtLeast(0)
+    }
+
+    fun uniquePlayersNeeded(uniquePlayerCount: Long): Long {
+        require(uniquePlayerCount >= 0) { "uniquePlayerCount cannot be negative" }
+
+        return (properties.minimumUniquePlayerCount - uniquePlayerCount).coerceAtLeast(0)
+    }
 }
