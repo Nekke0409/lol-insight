@@ -7,6 +7,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 @EnabledIfEnvironmentVariable(named = "RUN_OPENAI_SMOKE_TEST", matches = "true")
+@EnabledIfEnvironmentVariable(named = "OPENAI_API_KEY", matches = ".+")
 class OpenAiPlayerAnalysisManualSmokeTest {
     @Test
     fun `generates a Korean analysis from a deterministic fixture`() {
