@@ -369,18 +369,20 @@ ranked player source
     -> PlayerComparisonFeature (implemented)
 ```
 
-`PlayerComparisonContext`는 `PlayerAnalysisFeature`와 별개의 comparison-ready 사용자 입력이다. PUUID로 조회한
-현재 `RANKED_SOLO_5x5` tier/division과 그 조회 시각을 담고, rank가 없으면 `rankContext = null`로 정상 표현한다.
-대상 사용자의 Match 표본은 `(championId, position)`별로 분리하고, `MatchParticipantMetricsCalculator`의 KDA,
-CS/min, gold/min, damage/min, vision/min, kill participation, damage share 공식을 재사용한다. 이 단계는
-`PeerBenchmarkQueryService`를 호출하지 않는다.
+`PlayerComparisonContext`는 `PlayerAnalysisFeature`와 별개의 comparison-ready 사용자 입력이다. 대상 PUUID와
+PUUID로 조회한 현재 `RANKED_SOLO_5x5` tier/division 및 그 조회 시각을 담고, rank가 없으면 `rankContext = null`로
+정상 표현한다. 대상 사용자의 Match 표본은 `(championId, position)`별로 분리하고,
+`MatchParticipantMetricsCalculator`의 KDA, CS/min, gold/min, damage/min, vision/min, kill participation,
+damage share 공식을 재사용한다. 이 단계는 `PeerBenchmarkQueryService`를 호출하지 않는다.
 
 `PlayerComparisonFeatureService`는 `PlayerComparisonContextService`와 `PeerBenchmarkQueryService`를 조합한다.
 rank가 있으면 KR Ranked Solo의 `region / queueId / tier / division / position / championId` exact cohort만 만들고,
-각 cohort의 사용자 표본·benchmark availability를 판정한 뒤 `AVAILABLE`일 때만 7개 metric의 numeric difference를
-계산한다. rank가 없으면 query 없이 `UNRANKED` comparison을 만든다. `PlayerAnalysisService`는 이 feature의
-AVAILABLE 항목만 OpenAI adapter로 전달하고, 다른 status는 최소 요약만 전달한다. player percentile rank는 계획
-상태다. 상세 contract와 statistical limit은 [Player Comparison Feature v0.1](ai/player-comparison-feature-v0.1.md)을
+`findBenchmarkExcludingPlayer`로 대상 사용자의 own `BenchmarkSample`을 PostgreSQL aggregate에서 제외한다. 이
+excluded aggregate로 각 cohort의 사용자 표본·benchmark availability를 판정한 뒤 `AVAILABLE`일 때만 7개 metric의
+numeric difference를 계산한다. rank가 없으면 query 없이 `UNRANKED` comparison을 만든다.
+`PlayerAnalysisService`는 이 feature의 AVAILABLE 항목만 OpenAI adapter로 전달하고, 다른 status는 최소 요약만
+전달한다. PUUID는 aggregate exclusion에만 사용하며 OpenAI input으로 전달하지 않는다. player percentile rank는
+계획 상태다. 상세 contract와 statistical limit은 [Player Comparison Feature v0.1](ai/player-comparison-feature-v0.1.md)을
 따른다.
 
 #### BenchmarkSample
@@ -414,15 +416,19 @@ patch/gameVersion과 freshness window는 아직 cohort에 포함하지 않는다
 
 #### Match-level PeerBenchmark Aggregate
 
-`PeerBenchmarkQueryService.findBenchmark(cohort)`는 raw `benchmark_sample`을 PostgreSQL에서 on-demand로 읽는다.
-`BenchmarkSampleAggregateRepository`가 `COUNT(*)`, `COUNT(DISTINCT puuid)`, `AVG`와 `percentile_cont`를 실행하며
-JPA Entity를 application layer에 반환하지 않는다. `PeerBenchmark`는 KDA, CS/min, gold/min, damage/min, vision/min,
-kill participation, damage share 각각의 mean, median, p25, p75, p90 threshold를 보유한다.
+`PeerBenchmarkQueryService.findBenchmark(cohort)`는 raw `benchmark_sample`의 전체 exact cohort를 PostgreSQL에서
+on-demand로 읽는다. Player comparison은 별도의
+`findBenchmarkExcludingPlayer(cohort, targetPuuid)`를 사용한다. `BenchmarkSampleAggregateRepository`가
+`COUNT(*)`, `COUNT(DISTINCT puuid)`, `AVG`와 `percentile_cont`를 실행하며, exclusion query는 같은 SQL predicate에
+`puuid <> :excludedPuuid`를 추가해 모든 aggregate statistic에서 target의 own sample을 제외한다. JPA Entity를
+application layer에 반환하지 않는다. `PeerBenchmark`는 KDA, CS/min, gold/min, damage/min, vision/min, kill
+participation, damage share 각각의 mean, median, p25, p75, p90 threshold를 보유한다.
 
 이는 cohort의 **match-level observation distribution**이다. p90은 sample metric의 90th percentile threshold이지
 플레이어의 상위 10%나 사용자 percentile rank가 아니다. 한 sampled player가 여러 유효 Match를 제공하면 여러
 observation으로 분포에 기여하므로 `sampleCount`와 `uniquePlayerCount`를 분리한다. availability는 0건의 `NO_DATA`,
-휴리스틱(기본 30 samples 및 10 unique players) 미달의 `INSUFFICIENT_SAMPLE`, 그 외 `AVAILABLE`로 구분한다.
+휴리스틱(기본 30 samples 및 10 unique players) 미달의 `INSUFFICIENT_SAMPLE`, 그 외 `AVAILABLE`로 구분한다. Player
+comparison에서는 own sample exclusion 후의 count로 availability를 다시 평가한다.
 
 v0.1은 aggregate table, materialized view, Redis aggregate cache 없이 correctness를 먼저 검증한다. `gameVersion`과
 `gameStartTimestamp`는 저장하지만 patch-aware cohort나 retention policy는 아직 없다. 따라서 오래된 sample이 누적되면

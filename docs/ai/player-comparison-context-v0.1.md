@@ -24,6 +24,7 @@ The current implementation intentionally stops before creating a `BenchmarkCohor
 | Field | Meaning |
 | --- | --- |
 | `player` | Resolved Riot ID (`gameName`, `tagLine`) for display and provider-independent identification. |
+| `targetPuuid` | Backend-only target-player identity used by `PlayerComparisonFeature` to exclude own `BenchmarkSample` rows. It is not an LLM input. |
 | `rankContext` | Current `RANKED_SOLO_5x5` `tier`, `division`, and `capturedAt`; `null` when the player has no Solo entry. |
 | `sample` | Requested Match count and the target-player Match count used in cohort statistics. |
 | `cohortStatistics` | Deterministically ordered `PlayerCohortStatistics` entries grouped by exact `championId + position`. |
@@ -57,4 +58,4 @@ team-relative formulas. Results are sorted by games descending, then position an
 benchmark comparison data. `PlayerComparisonContext` is the separate comparison-ready model.
 
 This version excludes benchmark querying, benchmark differences, percentile ranks, “top X%” claims, LLM calls, a public
-comparison endpoint, changes to benchmark collection or aggregate queries, RankSnapshot persistence, and Timeline data.
+comparison endpoint, changes to benchmark collection, RankSnapshot persistence, and Timeline data.

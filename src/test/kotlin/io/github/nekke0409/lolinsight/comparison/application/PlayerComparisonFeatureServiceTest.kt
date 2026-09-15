@@ -48,7 +48,7 @@ class PlayerComparisonFeatureServiceTest {
         val statistics = statistics(games = 4)
         val cohort = cohort(statistics)
         stubContext(cohortStatistics = listOf(statistics))
-        `when`(peerBenchmarkQueryService.findBenchmark(cohort)).thenReturn(availableResult(cohort))
+        `when`(peerBenchmarkQueryService.findBenchmarkExcludingPlayer(cohort, TARGET_PUUID)).thenReturn(availableResult(cohort))
 
         val comparison = service.buildFeature("Hide on bush", "KR1", 0, 20).comparisons.single()
 
@@ -56,7 +56,7 @@ class PlayerComparisonFeatureServiceTest {
         assertEquals(30L, comparison.benchmarkSampleCount)
         assertEquals(10L, comparison.benchmarkUniquePlayerCount)
         assertNull(comparison.metrics)
-        verify(peerBenchmarkQueryService).findBenchmark(cohort)
+        verify(peerBenchmarkQueryService).findBenchmarkExcludingPlayer(cohort, TARGET_PUUID)
     }
 
     @Test
@@ -64,7 +64,7 @@ class PlayerComparisonFeatureServiceTest {
         val statistics = statistics(games = 5)
         val cohort = cohort(statistics)
         stubContext(cohortStatistics = listOf(statistics))
-        `when`(peerBenchmarkQueryService.findBenchmark(cohort))
+        `when`(peerBenchmarkQueryService.findBenchmarkExcludingPlayer(cohort, TARGET_PUUID))
             .thenReturn(PeerBenchmarkResult(BenchmarkAvailability.NO_DATA, 0, 0, null))
 
         val comparison = service.buildFeature("Hide on bush", "KR1", 0, 20).comparisons.single()
@@ -79,7 +79,7 @@ class PlayerComparisonFeatureServiceTest {
         val statistics = statistics(games = 5)
         val cohort = cohort(statistics)
         stubContext(cohortStatistics = listOf(statistics))
-        `when`(peerBenchmarkQueryService.findBenchmark(cohort))
+        `when`(peerBenchmarkQueryService.findBenchmarkExcludingPlayer(cohort, TARGET_PUUID))
             .thenReturn(PeerBenchmarkResult(BenchmarkAvailability.INSUFFICIENT_SAMPLE, 4, 2, null))
 
         val comparison = service.buildFeature("Hide on bush", "KR1", 0, 20).comparisons.single()
@@ -95,7 +95,8 @@ class PlayerComparisonFeatureServiceTest {
         val statistics = statistics(games = 5)
         val expectedCohort = cohort(statistics)
         stubContext(cohortStatistics = listOf(statistics))
-        `when`(peerBenchmarkQueryService.findBenchmark(expectedCohort)).thenReturn(availableResult(expectedCohort))
+        `when`(peerBenchmarkQueryService.findBenchmarkExcludingPlayer(expectedCohort, TARGET_PUUID))
+            .thenReturn(availableResult(expectedCohort))
 
         val comparison = service.buildFeature("Hide on bush", "KR1", 0, 20).comparisons.single()
 
@@ -122,7 +123,7 @@ class PlayerComparisonFeatureServiceTest {
             assertEquals(7.0, metric.benchmarkP75, TOLERANCE)
             assertEquals(7.4, metric.benchmarkP90, TOLERANCE)
         }
-        verify(peerBenchmarkQueryService).findBenchmark(expectedCohort)
+        verify(peerBenchmarkQueryService).findBenchmarkExcludingPlayer(expectedCohort, TARGET_PUUID)
         verifyNoMoreInteractions(peerBenchmarkQueryService)
     }
 
@@ -135,7 +136,7 @@ class PlayerComparisonFeatureServiceTest {
         stubContext(cohortStatistics = statistics)
         statistics.forEach { statistics ->
             val cohort = cohort(statistics)
-            `when`(peerBenchmarkQueryService.findBenchmark(cohort)).thenReturn(availableResult(cohort))
+            `when`(peerBenchmarkQueryService.findBenchmarkExcludingPlayer(cohort, TARGET_PUUID)).thenReturn(availableResult(cohort))
         }
 
         val comparisons = service.buildFeature("Hide on bush", "KR1", 0, 20).comparisons
@@ -158,6 +159,7 @@ class PlayerComparisonFeatureServiceTest {
             .thenReturn(
                 PlayerComparisonContext(
                     player = PlayerComparisonContextPlayer("Hide on bush", "KR1"),
+                    targetPuuid = TARGET_PUUID,
                     rankContext = rankContext,
                     sample = PlayerComparisonContextSample(requestedCount = 20, analyzedCount = cohortStatistics.sumOf { it.games }),
                     cohortStatistics = cohortStatistics,
@@ -218,6 +220,7 @@ class PlayerComparisonFeatureServiceTest {
     }
 
     private companion object {
+        const val TARGET_PUUID = "target-puuid"
         val RANK_CONTEXT = PlayerRankContext("GOLD", "I", Instant.parse("2026-09-14T01:23:45Z"))
         const val TOLERANCE = 0.000001
     }

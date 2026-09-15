@@ -3,8 +3,10 @@
 ## Scope
 
 v0.1 `PeerBenchmark` is an on-demand PostgreSQL aggregate over stored `BenchmarkSample` rows. It is an
-application/domain read model; no JPA entity is returned outside the persistence boundary. The query entry point is
-`PeerBenchmarkQueryService.findBenchmark(cohort)`. There is no public REST endpoint in this version.
+application/domain read model; no JPA entity is returned outside the persistence boundary.
+`PeerBenchmarkQueryService.findBenchmark(cohort)` reads the complete cohort corpus, while
+`findBenchmarkExcludingPlayer(cohort, puuid)` is the explicit player-comparison query. There is no public REST
+endpoint in this version.
 
 The exact cohort key is:
 
@@ -17,12 +19,13 @@ one. Tier-wide aggregation needs a separate sampling policy that deliberately co
 
 ## User-side comparison input
 
-`PlayerComparisonContext` is the implemented provider-independent user input for `PlayerComparisonFeature`. It contains the
-user's current `RANKED_SOLO_5x5` tier/division and capture time, plus target-player Match metrics grouped by the same
-`championId + position` dimensions. A player without a Ranked Solo entry has `rankContext = null`; this is not a Riot
-failure. The context deliberately does not invoke `PeerBenchmarkQueryService`, construct a `BenchmarkCohort`, apply a
-minimum-user-games policy, calculate a difference, or claim a percentile. Those responsibilities belong to
-`PlayerComparisonFeatureService`; see [Player Comparison Context v0.1](../ai/player-comparison-context-v0.1.md) and
+`PlayerComparisonContext` is the implemented provider-independent user input for `PlayerComparisonFeature`. It retains the
+target PUUID for Backend-only aggregate exclusion, the user's current `RANKED_SOLO_5x5` tier/division and capture time,
+plus target-player Match metrics grouped by the same `championId + position` dimensions. A player without a Ranked Solo
+entry has `rankContext = null`; this is not a Riot failure. The context deliberately does not invoke
+`PeerBenchmarkQueryService`, construct a `BenchmarkCohort`, apply a minimum-user-games policy, calculate a difference,
+or claim a percentile. Those responsibilities belong to `PlayerComparisonFeatureService`; see
+[Player Comparison Context v0.1](../ai/player-comparison-context-v0.1.md) and
 [Player Comparison Feature v0.1](../ai/player-comparison-feature-v0.1.md) for the separate contracts.
 
 ## Observation unit and output
@@ -68,9 +71,12 @@ validity. The existing local smoke shape of four samples from two players is the
 ## Query and storage policy
 
 The persistence query runs `COUNT(*)`, `COUNT(DISTINCT puuid)`, `AVG` and PostgreSQL `percentile_cont` directly on
-`benchmark_sample`. It does not load all samples into the JVM to sort them. v0.1 intentionally has no aggregate table,
-materialized view, scheduler, retention job, or Redis aggregate cache. Those choices can be reconsidered after data
-volume and query latency are measured.
+`benchmark_sample`. It does not load all samples into the JVM to sort them. The player-comparison query adds
+`puuid <> :excludedPuuid` to the exact-cohort predicate, so the target player's own samples are excluded from every
+count, mean and percentile calculation. Availability is then evaluated from that excluded aggregate; excluding every
+matching sample is normal `NO_DATA`. v0.1 intentionally has no aggregate table, materialized view, scheduler,
+retention job, or Redis aggregate cache. Those choices can be reconsidered after data volume and query latency are
+measured.
 
 `gameVersion` and `gameStartTimestamp` are already retained on each sample, but v0.1 does not filter on them. The
 aggregate is not patch-aware, so old and new patches can mix as data accumulates. A production benchmark needs a

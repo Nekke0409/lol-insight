@@ -4,10 +4,15 @@ import io.github.nekke0409.lolinsight.rank.application.PlayerRankContext
 
 data class PlayerComparisonContext(
     val player: PlayerComparisonContextPlayer,
+    val targetPuuid: String,
     val rankContext: PlayerRankContext?,
     val sample: PlayerComparisonContextSample,
     val cohortStatistics: List<PlayerCohortStatistics>,
-)
+) {
+    init {
+        require(targetPuuid.isNotBlank()) { "targetPuuid must not be blank" }
+    }
+}
 
 data class PlayerComparisonContextPlayer(
     val gameName: String,

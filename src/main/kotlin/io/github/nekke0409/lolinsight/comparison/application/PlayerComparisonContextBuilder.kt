@@ -24,6 +24,7 @@ class PlayerComparisonContextBuilder {
 
         return PlayerComparisonContext(
             player = PlayerComparisonContextPlayer(player.gameName, player.tagLine),
+            targetPuuid = targetPuuid,
             rankContext = rankContext,
             sample = PlayerComparisonContextSample(requestedCount = requestedCount, analyzedCount = cohortStatistics.sumOf { it.games }),
             cohortStatistics = cohortStatistics,

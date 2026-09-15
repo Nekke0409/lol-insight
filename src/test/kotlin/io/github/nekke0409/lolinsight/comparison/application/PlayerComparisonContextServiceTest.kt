@@ -44,6 +44,7 @@ class PlayerComparisonContextServiceTest {
         verify(playerMatchHistoryLoader).loadRecentMatches("Hide on bush", "KR1", 5, 20)
         verify(playerRankLookupService).findCurrentRankContext("target-puuid")
         assertEquals(PlayerComparisonContextPlayer("Hide on bush", "KR1"), context.player)
+        assertEquals("target-puuid", context.targetPuuid)
         assertEquals(PlayerComparisonContextSample(requestedCount = 20, analyzedCount = 0), context.sample)
         assertTrue(context.cohortStatistics.isEmpty())
     }

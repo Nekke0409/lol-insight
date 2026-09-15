@@ -27,17 +27,22 @@ class PlayerComparisonFeatureService(
             rankContext = context.rankContext,
             comparisons =
                 context.rankContext?.let { rankContext ->
-                    comparisons.toRankedComparisons(rankContext)
+                    comparisons.toRankedComparisons(rankContext, context.targetPuuid)
                 } ?: comparisons.map { statistics -> statistics.toUnrankedComparison() },
         )
     }
 
-    private fun List<PlayerCohortStatistics>.toRankedComparisons(rankContext: PlayerRankContext): List<PlayerCohortComparison> {
+    private fun List<PlayerCohortStatistics>.toRankedComparisons(
+        rankContext: PlayerRankContext,
+        targetPuuid: String,
+    ): List<PlayerCohortComparison> {
         val cohortsByStatistics = associateWith { statistics -> statistics.toBenchmarkCohort(rankContext) }
         val benchmarkResultsByCohort =
             cohortsByStatistics.values
                 .distinct()
-                .associateWith(peerBenchmarkQueryService::findBenchmark)
+                .associateWith { cohort ->
+                    peerBenchmarkQueryService.findBenchmarkExcludingPlayer(cohort, targetPuuid)
+                }
 
         return map { statistics ->
             val cohort = checkNotNull(cohortsByStatistics[statistics])

@@ -26,6 +26,7 @@ import org.testcontainers.postgresql.PostgreSQLContainer
 import java.time.Instant
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 
 @DataJpaTest(
     properties = [
@@ -60,10 +61,53 @@ class PlayerComparisonFeatureServiceIntegrationTest {
                 .map { index -> metricSample(index) }
                 .map(BenchmarkSample::toEntity),
         )
+        stubContext(TARGET_PUUID)
+
+        val feature = playerComparisonFeatureService.buildFeature("Hide on bush", "KR1", 0, 20)
+
+        val comparison = feature.comparisons.single()
+        assertEquals(PlayerCohortComparisonStatus.AVAILABLE, comparison.status)
+        assertEquals(COHORT, comparison.benchmarkCohort)
+        assertEquals(30L, comparison.benchmarkSampleCount)
+        assertEquals(10L, comparison.benchmarkUniquePlayerCount)
+        val metrics = assertNotNull(comparison.metrics)
+        assertEquals(7.2, metrics.kda.playerValue, TOLERANCE)
+        assertEquals(15.5, metrics.kda.benchmarkMean, TOLERANCE)
+        assertEquals(15.5, metrics.kda.benchmarkMedian, TOLERANCE)
+        assertEquals(-8.3, metrics.kda.differenceFromMean, TOLERANCE)
+        assertEquals(-8.3, metrics.kda.differenceFromMedian, TOLERANCE)
+    }
+
+    @Test
+    fun `re-evaluates availability after removing target player samples from the aggregate`() {
+        benchmarkSampleJpaRepository.saveAllAndFlush(
+            (
+                (1..5).map { index -> metricSample(index, TARGET_PUUID) } +
+                    (1..29).map { index -> metricSample(index, "peer-player-${(index - 1) % 9}") }
+            ).map(BenchmarkSample::toEntity),
+        )
+        stubContext(TARGET_PUUID)
+
+        val comparison = playerComparisonFeatureService.buildFeature("Hide on bush", "KR1", 0, 20).comparisons.single()
+
+        assertEquals(PlayerCohortComparisonStatus.BENCHMARK_INSUFFICIENT_SAMPLE, comparison.status)
+        assertEquals(29L, comparison.benchmarkSampleCount)
+        assertEquals(9L, comparison.benchmarkUniquePlayerCount)
+        assertNull(comparison.metrics)
+    }
+
+    @TestConfiguration(proxyBeanMethods = false)
+    class ContextServiceStubConfiguration {
+        @Bean
+        fun playerComparisonContextService(): PlayerComparisonContextService = mock(PlayerComparisonContextService::class.java)
+    }
+
+    private fun stubContext(targetPuuid: String) {
         `when`(playerComparisonContextService.buildContext("Hide on bush", "KR1", 0, 20))
             .thenReturn(
                 PlayerComparisonContext(
                     player = PlayerComparisonContextPlayer("Hide on bush", "KR1"),
+                    targetPuuid = targetPuuid,
                     rankContext = RANK_CONTEXT,
                     sample = PlayerComparisonContextSample(requestedCount = 20, analyzedCount = 5),
                     cohortStatistics =
@@ -85,33 +129,16 @@ class PlayerComparisonFeatureServiceIntegrationTest {
                         ),
                 ),
             )
-
-        val feature = playerComparisonFeatureService.buildFeature("Hide on bush", "KR1", 0, 20)
-
-        val comparison = feature.comparisons.single()
-        assertEquals(PlayerCohortComparisonStatus.AVAILABLE, comparison.status)
-        assertEquals(COHORT, comparison.benchmarkCohort)
-        assertEquals(30L, comparison.benchmarkSampleCount)
-        assertEquals(10L, comparison.benchmarkUniquePlayerCount)
-        val metrics = assertNotNull(comparison.metrics)
-        assertEquals(7.2, metrics.kda.playerValue, TOLERANCE)
-        assertEquals(15.5, metrics.kda.benchmarkMean, TOLERANCE)
-        assertEquals(15.5, metrics.kda.benchmarkMedian, TOLERANCE)
-        assertEquals(-8.3, metrics.kda.differenceFromMean, TOLERANCE)
-        assertEquals(-8.3, metrics.kda.differenceFromMedian, TOLERANCE)
     }
 
-    @TestConfiguration(proxyBeanMethods = false)
-    class ContextServiceStubConfiguration {
-        @Bean
-        fun playerComparisonContextService(): PlayerComparisonContextService = mock(PlayerComparisonContextService::class.java)
-    }
-
-    private fun metricSample(index: Int): BenchmarkSample {
+    private fun metricSample(
+        index: Int,
+        puuid: String = "available-player-${index % 10}",
+    ): BenchmarkSample {
         val metricValue = index.toDouble()
         return BenchmarkSample(
             matchId = "KR_available-$index",
-            puuid = "available-player-${index % 10}",
+            puuid = puuid,
             region = COHORT.region,
             queueId = COHORT.queueId,
             tier = COHORT.tier,
@@ -136,6 +163,7 @@ class PlayerComparisonFeatureServiceIntegrationTest {
     }
 
     private companion object {
+        const val TARGET_PUUID = "target-puuid"
         val COHORT =
             BenchmarkCohort(
                 region = "KR",

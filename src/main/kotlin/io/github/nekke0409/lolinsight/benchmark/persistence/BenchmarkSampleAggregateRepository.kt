@@ -13,20 +13,39 @@ import java.sql.ResultSet
 class BenchmarkSampleAggregateRepository(
     private val jdbcTemplate: NamedParameterJdbcTemplate,
 ) {
-    fun findBenchmark(cohort: BenchmarkCohort): PeerBenchmark? =
+    fun findBenchmark(cohort: BenchmarkCohort): PeerBenchmark? = queryBenchmark(cohort, AGGREGATE_SQL)
+
+    fun findBenchmarkExcludingPlayer(
+        cohort: BenchmarkCohort,
+        excludedPuuid: String,
+    ): PeerBenchmark? =
+        queryBenchmark(
+            cohort = cohort,
+            sql = AGGREGATE_EXCLUDING_PLAYER_SQL,
+            parameters = aggregateParameters(cohort).addValue("excludedPuuid", excludedPuuid),
+        )
+
+    private fun queryBenchmark(
+        cohort: BenchmarkCohort,
+        sql: String,
+        parameters: MapSqlParameterSource = aggregateParameters(cohort),
+    ): PeerBenchmark? =
         jdbcTemplate.query(
-            AGGREGATE_SQL,
-            MapSqlParameterSource(
-                mapOf(
-                    "region" to cohort.region,
-                    "queueId" to cohort.queueId,
-                    "tier" to cohort.tier,
-                    "division" to cohort.division,
-                    "position" to cohort.position,
-                    "championId" to cohort.championId,
-                ),
-            ),
+            sql,
+            parameters,
             ResultSetExtractor { resultSet -> resultSet.toPeerBenchmark(cohort) },
+        )
+
+    private fun aggregateParameters(cohort: BenchmarkCohort): MapSqlParameterSource =
+        MapSqlParameterSource(
+            mapOf(
+                "region" to cohort.region,
+                "queueId" to cohort.queueId,
+                "tier" to cohort.tier,
+                "division" to cohort.division,
+                "position" to cohort.position,
+                "championId" to cohort.championId,
+            ),
         )
 
     private fun ResultSet.toPeerBenchmark(cohort: BenchmarkCohort): PeerBenchmark? {
@@ -145,6 +164,12 @@ class BenchmarkSampleAggregateRepository(
               AND division = :division
               AND position = :position
               AND champion_id = :championId
+            """.trimIndent()
+
+        val AGGREGATE_EXCLUDING_PLAYER_SQL =
+            """
+            $AGGREGATE_SQL
+              AND puuid <> :excludedPuuid
             """.trimIndent()
     }
 }

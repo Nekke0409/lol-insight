@@ -77,6 +77,52 @@ class PeerBenchmarkQueryServiceIntegrationTest {
     }
 
     @Test
+    fun `PostgreSQL aggregate excludes the target player from every benchmark statistic`() {
+        benchmarkSampleJpaRepository.saveAllAndFlush(
+            listOf(
+                metricSample("player-a-1", "player-a", TARGET_COHORT, 100.0),
+                metricSample("player-a-2", "player-a", TARGET_COHORT, 200.0),
+                metricSample("player-b-1", "player-b", TARGET_COHORT, 1.0),
+                metricSample("player-b-2", "player-b", TARGET_COHORT, 2.0),
+                metricSample("player-c-1", "player-c", TARGET_COHORT, 3.0),
+                metricSample("player-c-2", "player-c", TARGET_COHORT, 4.0),
+            ).map(BenchmarkSample::toEntity),
+        )
+
+        val excludingPlayerA =
+            requireNotNull(
+                benchmarkSampleAggregateRepository.findBenchmarkExcludingPlayer(TARGET_COHORT, "player-a"),
+            )
+        val resultExcludingPlayerA = peerBenchmarkQueryService.findBenchmarkExcludingPlayer(TARGET_COHORT, "player-a")
+        val excludingPlayerB =
+            requireNotNull(
+                benchmarkSampleAggregateRepository.findBenchmarkExcludingPlayer(TARGET_COHORT, "player-b"),
+            )
+
+        assertEquals(4L, excludingPlayerA.sampleCount)
+        assertEquals(2L, excludingPlayerA.uniquePlayerCount)
+        assertDistribution(expectedDistribution(1.0), excludingPlayerA.kda)
+        assertDistribution(expectedDistribution(10.0), excludingPlayerA.csPerMinute)
+        assertDistribution(expectedDistribution(100.0), excludingPlayerA.goldPerMinute)
+        assertDistribution(expectedDistribution(1_000.0), excludingPlayerA.damagePerMinute)
+        assertDistribution(expectedDistribution(0.1), excludingPlayerA.visionPerMinute)
+        assertDistribution(expectedDistribution(0.01), excludingPlayerA.killParticipation)
+        assertDistribution(expectedDistribution(0.001), excludingPlayerA.damageShare)
+        assertEquals(BenchmarkAvailability.INSUFFICIENT_SAMPLE, resultExcludingPlayerA.status)
+        assertEquals(4L, resultExcludingPlayerA.sampleCount)
+        assertEquals(2L, resultExcludingPlayerA.uniquePlayerCount)
+        assertNull(resultExcludingPlayerA.benchmark)
+
+        assertEquals(4L, excludingPlayerB.sampleCount)
+        assertEquals(2L, excludingPlayerB.uniquePlayerCount)
+        assertEquals(76.75, excludingPlayerB.kda.mean, TOLERANCE)
+        assertEquals(52.0, excludingPlayerB.kda.median, TOLERANCE)
+        assertEquals(3.75, excludingPlayerB.kda.p25, TOLERANCE)
+        assertEquals(125.0, excludingPlayerB.kda.p75, TOLERANCE)
+        assertEquals(170.0, excludingPlayerB.kda.p90, TOLERANCE)
+    }
+
+    @Test
     fun `returns no data insufficient sample and available according to the configured policy`() {
         benchmarkSampleJpaRepository.saveAllAndFlush(targetSamples().map(BenchmarkSample::toEntity))
 
@@ -113,6 +159,51 @@ class PeerBenchmarkQueryServiceIntegrationTest {
         assertEquals(10L, available.uniquePlayerCount)
         val availableBenchmark = assertNotNull(available.benchmark)
         assertEquals(AVAILABLE_COHORT, availableBenchmark.cohort)
+    }
+
+    @Test
+    fun `re-evaluates availability after excluding the target player`() {
+        benchmarkSampleJpaRepository.saveAllAndFlush(
+            (
+                (1..5).map { index -> metricSample("target-$index", "target-player", TARGET_COHORT, index.toDouble()) } +
+                    (1..29).map { index ->
+                        metricSample(
+                            matchSuffix = "peer-$index",
+                            puuid = "peer-player-${(index - 1) % 9}",
+                            cohort = TARGET_COHORT,
+                            metricValue = index.toDouble(),
+                        )
+                    }
+            ).map(BenchmarkSample::toEntity),
+        )
+
+        val fullCorpus = peerBenchmarkQueryService.findBenchmark(TARGET_COHORT)
+        val excludingTarget = peerBenchmarkQueryService.findBenchmarkExcludingPlayer(TARGET_COHORT, "target-player")
+
+        assertEquals(BenchmarkAvailability.AVAILABLE, fullCorpus.status)
+        assertEquals(34L, fullCorpus.sampleCount)
+        assertEquals(10L, fullCorpus.uniquePlayerCount)
+        assertEquals(BenchmarkAvailability.INSUFFICIENT_SAMPLE, excludingTarget.status)
+        assertEquals(29L, excludingTarget.sampleCount)
+        assertEquals(9L, excludingTarget.uniquePlayerCount)
+        assertNull(excludingTarget.benchmark)
+    }
+
+    @Test
+    fun `returns no data when every matching sample belongs to the excluded player`() {
+        benchmarkSampleJpaRepository.saveAllAndFlush(
+            listOf(
+                metricSample("target-only-1", "target-player", TARGET_COHORT, 1.0),
+                metricSample("target-only-2", "target-player", TARGET_COHORT, 2.0),
+            ).map(BenchmarkSample::toEntity),
+        )
+
+        val result = peerBenchmarkQueryService.findBenchmarkExcludingPlayer(TARGET_COHORT, "target-player")
+
+        assertEquals(BenchmarkAvailability.NO_DATA, result.status)
+        assertEquals(0L, result.sampleCount)
+        assertEquals(0L, result.uniquePlayerCount)
+        assertNull(result.benchmark)
     }
 
     private fun targetSamples(): List<BenchmarkSample> =

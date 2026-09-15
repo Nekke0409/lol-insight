@@ -26,6 +26,7 @@ class PlayerComparisonContextBuilderTest {
         val context = buildContext(sampleMatches())
 
         assertEquals(PlayerComparisonContextPlayer("Hide on bush", "KR1"), context.player)
+        assertEquals(TARGET_PUUID, context.targetPuuid)
         assertEquals(rankContext, context.rankContext)
         assertEquals(PlayerComparisonContextSample(requestedCount = 20, analyzedCount = 4), context.sample)
         assertEquals(

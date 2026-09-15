@@ -10,7 +10,7 @@ comparison availability와 metric difference를 결정하며, LLM은 이 feature
 ```text
 PlayerComparisonContext
     -> exact BenchmarkCohort
-    -> PeerBenchmarkQueryService.findBenchmark(...)
+    -> PeerBenchmarkQueryService.findBenchmarkExcludingPlayer(...)
     -> eligibility and difference calculation
     -> PlayerComparisonFeature
 ```
@@ -32,6 +32,10 @@ championId = PlayerCohortStatistics.championId
 예를 들어 GOLD I, MIDDLE, Ahri(103) 사용자는 `KR / 420 / GOLD / I / MIDDLE / 103`만 조회한다.
 다른 division, tier 전체, position 또는 champion으로 fallback하지 않는다. `rankContext`가 `null`이면
 exact cohort를 만들 수 없으므로 benchmark query를 실행하지 않는다.
+
+`PlayerComparisonContext.targetPuuid`는 이 exact cohort query에만 전달한다. `PlayerComparisonFeatureService`는
+`findBenchmarkExcludingPlayer(cohort, targetPuuid)`를 사용하므로 대상 사용자의 own `BenchmarkSample`은 peer
+distribution에 포함되지 않는다. PUUID는 feature나 `PlayerAnalysisInput`으로 전달하지 않는다.
 
 ## Comparison model
 
@@ -75,9 +79,12 @@ Feature와 context의 cohort 순서는 `userGames` 내림차순, `position` 오�
 | Benchmark availability policy 미달 | `BENCHMARK_INSUFFICIENT_SAMPLE` |
 | 사용자와 benchmark 모두 충분 | `AVAILABLE` |
 
-`PeerBenchmarkQueryService`의 기존 availability policy는 `NO_DATA`, `INSUFFICIENT_SAMPLE`, `AVAILABLE`을
-제공한다. 기본값은 sample 30건과 unique player 10명이며, 4 samples / 2 players인 local smoke data는
-`INSUFFICIENT_SAMPLE`으로 유지된다. 이 feature는 해당 policy나 aggregate SQL을 변경하지 않는다.
+`PeerBenchmarkQueryService`는 `NO_DATA`, `INSUFFICIENT_SAMPLE`, `AVAILABLE`을 제공한다. Player comparison은
+대상 사용자를 제외한 aggregate의 sample/unique player count로 이 policy를 다시 평가한다. 따라서 전체 cohort가
+AVAILABLE이어도 own sample 제외 후 30 samples 또는 10 unique players 미만이면
+`BENCHMARK_INSUFFICIENT_SAMPLE`이 된다. 모든 matching sample이 대상 사용자의 것이면 `NO_DATA`이며,
+feature에서는 `BENCHMARK_NO_DATA`로 매핑한다. 기본값은 sample 30건과 unique player 10명이며, 4 samples / 2
+players인 local smoke data는 `INSUFFICIENT_SAMPLE`으로 유지된다.
 
 사용자 표본이 부족해도 rank가 있으면 exact cohort query는 수행하고 benchmark counts를 전달한다. 다만
 사용자 상태가 우선하므로 metric comparison은 생성하지 않는다.
@@ -111,8 +118,8 @@ backend feature만으로 skill rating, MMR, rank percentile 또는 일반적인 
 
 ## Out of scope and future work
 
-이 버전은 Riot collection, benchmark aggregate SQL/threshold, representative sampling, player-level benchmark,
-percentile rank, LLM/OpenAI, REST endpoint, timeline/rank history, benchmark cache를 변경하지 않는다.
+이 버전은 Riot collection, benchmark threshold, representative sampling, player-level benchmark, percentile rank,
+LLM/OpenAI, REST endpoint, timeline/rank history, benchmark cache를 변경하지 않는다.
 
 향후 player-level benchmark는 peer별로 충분히 비교 가능한 Match를 먼저 집계한 뒤 peer-player distribution을
 구성해야 한다. 그때도 percentile 정의, sample balancing과 product 표현은 별도 정책과 검증을 거쳐야 한다.
