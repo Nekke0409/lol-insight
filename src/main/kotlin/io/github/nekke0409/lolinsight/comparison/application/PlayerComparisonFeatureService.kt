@@ -4,6 +4,7 @@ import io.github.nekke0409.lolinsight.benchmark.application.PeerBenchmarkQuerySe
 import io.github.nekke0409.lolinsight.benchmark.domain.BenchmarkAvailability
 import io.github.nekke0409.lolinsight.benchmark.domain.BenchmarkCohort
 import io.github.nekke0409.lolinsight.benchmark.domain.BenchmarkMetricDistribution
+import io.github.nekke0409.lolinsight.benchmark.domain.BenchmarkScope
 import io.github.nekke0409.lolinsight.benchmark.domain.PeerBenchmark
 import io.github.nekke0409.lolinsight.benchmark.domain.PeerBenchmarkResult
 import io.github.nekke0409.lolinsight.rank.application.PlayerRankContext
@@ -21,18 +22,22 @@ class PlayerComparisonFeatureService(
         count: Int,
     ): PlayerComparisonFeature {
         val context = playerComparisonContextService.buildContext(gameName, tagLine, start, count)
-        val comparisons = context.cohortStatistics.sortedWith(COHORT_STATISTICS_ORDER)
+        val statistics = context.toScopedStatistics().sortedWith(SCOPED_STATISTICS_ORDER)
 
         return PlayerComparisonFeature(
             rankContext = context.rankContext,
             comparisons =
                 context.rankContext?.let { rankContext ->
-                    comparisons.toRankedComparisons(rankContext, context.targetPuuid)
-                } ?: comparisons.map { statistics -> statistics.toUnrankedComparison() },
+                    statistics.toRankedComparisons(rankContext, context.targetPuuid)
+                } ?: statistics.map { statistics -> statistics.toUnrankedComparison() },
         )
     }
 
-    private fun List<PlayerCohortStatistics>.toRankedComparisons(
+    private fun PlayerComparisonContext.toScopedStatistics(): List<ScopedPlayerStatistics> =
+        positionStatistics.map(ScopedPlayerStatistics::from) +
+            championPositionStatistics.map(ScopedPlayerStatistics::from)
+
+    private fun List<ScopedPlayerStatistics>.toRankedComparisons(
         rankContext: PlayerRankContext,
         targetPuuid: String,
     ): List<PlayerCohortComparison> {
@@ -50,10 +55,11 @@ class PlayerComparisonFeatureService(
         }
     }
 
-    private fun PlayerCohortStatistics.toUnrankedComparison(): PlayerCohortComparison =
+    private fun ScopedPlayerStatistics.toUnrankedComparison(): PlayerCohortComparison =
         PlayerCohortComparison(
-            championId = championId,
+            scope = scope,
             position = position,
+            championId = championId,
             userGames = games,
             status = PlayerCohortComparisonStatus.UNRANKED,
             benchmarkCohort = null,
@@ -62,25 +68,38 @@ class PlayerComparisonFeatureService(
             metrics = null,
         )
 
-    private fun PlayerCohortStatistics.toBenchmarkCohort(rankContext: PlayerRankContext): BenchmarkCohort =
-        BenchmarkCohort(
-            region = KR_REGION,
-            queueId = RANKED_SOLO_QUEUE_ID,
-            tier = rankContext.tier,
-            division = rankContext.division,
-            position = position,
-            championId = championId,
-        )
+    private fun ScopedPlayerStatistics.toBenchmarkCohort(rankContext: PlayerRankContext): BenchmarkCohort =
+        when (scope) {
+            BenchmarkScope.POSITION ->
+                BenchmarkCohort.position(
+                    region = KR_REGION,
+                    queueId = RANKED_SOLO_QUEUE_ID,
+                    tier = rankContext.tier,
+                    division = rankContext.division,
+                    position = position,
+                )
 
-    private fun PlayerCohortStatistics.toComparison(
+            BenchmarkScope.CHAMPION_POSITION ->
+                BenchmarkCohort.championPosition(
+                    region = KR_REGION,
+                    queueId = RANKED_SOLO_QUEUE_ID,
+                    tier = rankContext.tier,
+                    division = rankContext.division,
+                    position = position,
+                    championId = checkNotNull(championId),
+                )
+        }
+
+    private fun ScopedPlayerStatistics.toComparison(
         cohort: BenchmarkCohort,
         benchmarkResult: PeerBenchmarkResult,
     ): PlayerCohortComparison {
         val status = comparisonStatus(benchmarkResult.status)
 
         return PlayerCohortComparison(
-            championId = championId,
+            scope = scope,
             position = position,
+            championId = championId,
             userGames = games,
             status = status,
             benchmarkCohort = cohort,
@@ -93,7 +112,7 @@ class PlayerComparisonFeatureService(
         )
     }
 
-    private fun PlayerCohortStatistics.comparisonStatus(benchmarkAvailability: BenchmarkAvailability): PlayerCohortComparisonStatus {
+    private fun ScopedPlayerStatistics.comparisonStatus(benchmarkAvailability: BenchmarkAvailability): PlayerCohortComparisonStatus {
         if (games < MINIMUM_USER_GAMES_FOR_COMPARISON) {
             return PlayerCohortComparisonStatus.INSUFFICIENT_USER_SAMPLE
         }
@@ -105,7 +124,7 @@ class PlayerComparisonFeatureService(
         }
     }
 
-    private fun PeerBenchmark.toMetrics(statistics: PlayerCohortStatistics): PlayerComparisonMetrics =
+    private fun PeerBenchmark.toMetrics(statistics: ScopedPlayerStatistics): PlayerComparisonMetrics =
         PlayerComparisonMetrics(
             kda = kda.toMetricComparison(playerValue = statistics.averageKda),
             csPerMinute = csPerMinute.toMetricComparison(playerValue = statistics.averageCsPerMinute),
@@ -128,14 +147,59 @@ class PlayerComparisonFeatureService(
             benchmarkP90 = p90,
         )
 
+    private data class ScopedPlayerStatistics(
+        val scope: BenchmarkScope,
+        val championId: Int?,
+        override val position: String,
+        override val games: Int,
+        override val wins: Int,
+        override val winRate: Double,
+        override val averageKda: Double,
+        override val averageCsPerMinute: Double,
+        override val averageGoldPerMinute: Double,
+        override val averageDamagePerMinute: Double,
+        override val averageVisionPerMinute: Double,
+        override val averageKillParticipation: Double,
+        override val averageDamageShare: Double,
+    ) : PlayerScopeStatistics {
+        companion object {
+            fun from(statistics: PlayerPositionStatistics): ScopedPlayerStatistics = from(BenchmarkScope.POSITION, null, statistics)
+
+            fun from(statistics: PlayerChampionPositionStatistics): ScopedPlayerStatistics =
+                from(BenchmarkScope.CHAMPION_POSITION, statistics.championId, statistics)
+
+            private fun from(
+                scope: BenchmarkScope,
+                championId: Int?,
+                statistics: PlayerScopeStatistics,
+            ): ScopedPlayerStatistics =
+                ScopedPlayerStatistics(
+                    scope = scope,
+                    championId = championId,
+                    position = statistics.position,
+                    games = statistics.games,
+                    wins = statistics.wins,
+                    winRate = statistics.winRate,
+                    averageKda = statistics.averageKda,
+                    averageCsPerMinute = statistics.averageCsPerMinute,
+                    averageGoldPerMinute = statistics.averageGoldPerMinute,
+                    averageDamagePerMinute = statistics.averageDamagePerMinute,
+                    averageVisionPerMinute = statistics.averageVisionPerMinute,
+                    averageKillParticipation = statistics.averageKillParticipation,
+                    averageDamageShare = statistics.averageDamageShare,
+                )
+        }
+    }
+
     private companion object {
         const val KR_REGION = "KR"
         const val RANKED_SOLO_QUEUE_ID = 420
         const val MINIMUM_USER_GAMES_FOR_COMPARISON = 5
 
-        val COHORT_STATISTICS_ORDER =
-            compareByDescending<PlayerCohortStatistics> { it.games }
+        val SCOPED_STATISTICS_ORDER =
+            compareBy<ScopedPlayerStatistics> { it.scope }
+                .thenByDescending { it.games }
                 .thenBy { it.position }
-                .thenBy { it.championId }
+                .thenBy { it.championId ?: 0 }
     }
 }

@@ -2,6 +2,7 @@ package io.github.nekke0409.lolinsight.benchmark.persistence
 
 import io.github.nekke0409.lolinsight.benchmark.domain.BenchmarkCohort
 import io.github.nekke0409.lolinsight.benchmark.domain.BenchmarkMetricDistribution
+import io.github.nekke0409.lolinsight.benchmark.domain.BenchmarkScope
 import io.github.nekke0409.lolinsight.benchmark.domain.PeerBenchmark
 import org.springframework.jdbc.core.ResultSetExtractor
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource
@@ -13,7 +14,7 @@ import java.sql.ResultSet
 class BenchmarkSampleAggregateRepository(
     private val jdbcTemplate: NamedParameterJdbcTemplate,
 ) {
-    fun findBenchmark(cohort: BenchmarkCohort): PeerBenchmark? = queryBenchmark(cohort, AGGREGATE_SQL)
+    fun findBenchmark(cohort: BenchmarkCohort): PeerBenchmark? = queryBenchmark(cohort, aggregateSql(cohort))
 
     fun findBenchmarkExcludingPlayer(
         cohort: BenchmarkCohort,
@@ -21,7 +22,7 @@ class BenchmarkSampleAggregateRepository(
     ): PeerBenchmark? =
         queryBenchmark(
             cohort = cohort,
-            sql = AGGREGATE_EXCLUDING_PLAYER_SQL,
+            sql = "${aggregateSql(cohort)}\n  AND puuid <> :excludedPuuid",
             parameters = aggregateParameters(cohort).addValue("excludedPuuid", excludedPuuid),
         )
 
@@ -116,8 +117,14 @@ class BenchmarkSampleAggregateRepository(
         )
     }
 
+    private fun aggregateSql(cohort: BenchmarkCohort): String =
+        when (cohort.scope) {
+            BenchmarkScope.POSITION -> POSITION_AGGREGATE_SQL
+            BenchmarkScope.CHAMPION_POSITION -> CHAMPION_POSITION_AGGREGATE_SQL
+        }
+
     private companion object {
-        val AGGREGATE_SQL =
+        val AGGREGATE_SELECT =
             """
             SELECT
                 COUNT(*) AS sample_count,
@@ -158,18 +165,22 @@ class BenchmarkSampleAggregateRepository(
                 percentile_cont(0.75) WITHIN GROUP (ORDER BY damage_share) AS damage_share_p75,
                 percentile_cont(0.9) WITHIN GROUP (ORDER BY damage_share) AS damage_share_p90
             FROM benchmark_sample
+            """.trimIndent()
+
+        val POSITION_AGGREGATE_SQL =
+            """
+            $AGGREGATE_SELECT
             WHERE region = :region
               AND queue_id = :queueId
               AND tier = :tier
               AND division = :division
               AND position = :position
-              AND champion_id = :championId
             """.trimIndent()
 
-        val AGGREGATE_EXCLUDING_PLAYER_SQL =
+        val CHAMPION_POSITION_AGGREGATE_SQL =
             """
-            $AGGREGATE_SQL
-              AND puuid <> :excludedPuuid
+            $POSITION_AGGREGATE_SQL
+              AND champion_id = :championId
             """.trimIndent()
     }
 }

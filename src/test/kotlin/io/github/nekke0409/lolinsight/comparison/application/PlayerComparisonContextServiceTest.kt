@@ -46,6 +46,7 @@ class PlayerComparisonContextServiceTest {
         assertEquals(PlayerComparisonContextPlayer("Hide on bush", "KR1"), context.player)
         assertEquals("target-puuid", context.targetPuuid)
         assertEquals(PlayerComparisonContextSample(requestedCount = 20, analyzedCount = 0), context.sample)
-        assertTrue(context.cohortStatistics.isEmpty())
+        assertTrue(context.positionStatistics.isEmpty())
+        assertTrue(context.championPositionStatistics.isEmpty())
     }
 }

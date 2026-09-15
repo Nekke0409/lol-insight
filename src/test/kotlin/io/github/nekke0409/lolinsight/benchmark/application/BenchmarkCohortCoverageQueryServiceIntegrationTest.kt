@@ -4,6 +4,7 @@ import io.github.nekke0409.lolinsight.benchmark.domain.BenchmarkAvailability
 import io.github.nekke0409.lolinsight.benchmark.domain.BenchmarkCohort
 import io.github.nekke0409.lolinsight.benchmark.domain.BenchmarkCohortCoverageScope
 import io.github.nekke0409.lolinsight.benchmark.domain.BenchmarkSample
+import io.github.nekke0409.lolinsight.benchmark.domain.BenchmarkScope
 import io.github.nekke0409.lolinsight.benchmark.persistence.BenchmarkCohortCoverageRepository
 import io.github.nekke0409.lolinsight.benchmark.persistence.BenchmarkSampleJpaRepository
 import io.github.nekke0409.lolinsight.benchmark.persistence.toEntity
@@ -42,7 +43,7 @@ class BenchmarkCohortCoverageQueryServiceIntegrationTest {
     private lateinit var benchmarkCohortCoverageQueryService: BenchmarkCohortCoverageQueryService
 
     @Test
-    fun `groups exact cohorts in PostgreSQL calculates gaps and orders coverage deterministically`() {
+    fun `reports both position and champion-position coverage from PostgreSQL`() {
         benchmarkSampleJpaRepository.saveAllAndFlush(
             (
                 samples("available", 30, 10, TARGET_COHORT) +
@@ -58,36 +59,32 @@ class BenchmarkCohortCoverageQueryServiceIntegrationTest {
 
         val coverage = benchmarkCohortCoverageQueryService.findCoverage(TARGET_SCOPE)
 
-        assertEquals(
-            listOf(
-                TARGET_COHORT,
-                TARGET_COHORT.copy(championId = 55),
-                TARGET_COHORT.copy(championId = 84),
-                TARGET_COHORT.copy(position = "TOP", championId = 84),
-            ),
-            coverage.map { it.cohort },
-        )
+        assertEquals(6, coverage.size)
 
-        val available = coverage[0]
-        assertEquals(30, available.sampleCount)
-        assertEquals(10, available.uniquePlayerCount)
-        assertEquals(BenchmarkAvailability.AVAILABLE, available.availability)
-        assertEquals(0, available.samplesNeeded)
-        assertEquals(0, available.uniquePlayersNeeded)
+        val positionMiddle = coverage.single { it.cohort.scope == BenchmarkScope.POSITION && it.cohort.position == "MIDDLE" }
+        assertEquals(null, positionMiddle.cohort.championId)
+        assertEquals(79, positionMiddle.sampleCount)
+        assertEquals(27, positionMiddle.uniquePlayerCount)
+        assertEquals(BenchmarkAvailability.AVAILABLE, positionMiddle.availability)
+        assertEquals(0, positionMiddle.samplesNeeded)
+        assertEquals(0, positionMiddle.uniquePlayersNeeded)
 
-        val near = coverage[1]
-        assertEquals(25, near.sampleCount)
-        assertEquals(9, near.uniquePlayerCount)
-        assertEquals(BenchmarkAvailability.INSUFFICIENT_SAMPLE, near.availability)
-        assertEquals(5, near.samplesNeeded)
-        assertEquals(1, near.uniquePlayersNeeded)
+        val positionTop = coverage.single { it.cohort.scope == BenchmarkScope.POSITION && it.cohort.position == "TOP" }
+        assertEquals(24, positionTop.sampleCount)
+        assertEquals(8, positionTop.uniquePlayerCount)
+        assertEquals(BenchmarkAvailability.INSUFFICIENT_SAMPLE, positionTop.availability)
+        assertEquals(6, positionTop.samplesNeeded)
+        assertEquals(2, positionTop.uniquePlayersNeeded)
 
-        val partial = coverage[2]
-        assertEquals(24, partial.sampleCount)
-        assertEquals(8, partial.uniquePlayerCount)
-        assertEquals(BenchmarkAvailability.INSUFFICIENT_SAMPLE, partial.availability)
-        assertEquals(6, partial.samplesNeeded)
-        assertEquals(2, partial.uniquePlayersNeeded)
+        val championMiddle =
+            coverage.single {
+                it.cohort.scope == BenchmarkScope.CHAMPION_POSITION && it.cohort.position == "MIDDLE" && it.cohort.championId == 55
+            }
+        assertEquals(25, championMiddle.sampleCount)
+        assertEquals(9, championMiddle.uniquePlayerCount)
+        assertEquals(BenchmarkAvailability.INSUFFICIENT_SAMPLE, championMiddle.availability)
+        assertEquals(5, championMiddle.samplesNeeded)
+        assertEquals(1, championMiddle.uniquePlayersNeeded)
     }
 
     private fun samples(
@@ -105,7 +102,7 @@ class BenchmarkCohortCoverageQueryServiceIntegrationTest {
                 tier = cohort.tier,
                 division = cohort.division,
                 rankCapturedAt = RANK_CAPTURED_AT,
-                championId = cohort.championId,
+                championId = checkNotNull(cohort.championId),
                 position = cohort.position,
                 gameVersion = "16.18.1",
                 gameStartTimestamp = GAME_STARTED_AT,
@@ -126,6 +123,7 @@ class BenchmarkCohortCoverageQueryServiceIntegrationTest {
     private companion object {
         val TARGET_COHORT =
             BenchmarkCohort(
+                scope = BenchmarkScope.CHAMPION_POSITION,
                 region = "KR",
                 queueId = 420,
                 tier = "GOLD",

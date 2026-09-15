@@ -5,6 +5,7 @@ import io.github.nekke0409.lolinsight.benchmark.application.BenchmarkAvailabilit
 import io.github.nekke0409.lolinsight.benchmark.application.PeerBenchmarkQueryService
 import io.github.nekke0409.lolinsight.benchmark.domain.BenchmarkCohort
 import io.github.nekke0409.lolinsight.benchmark.domain.BenchmarkSample
+import io.github.nekke0409.lolinsight.benchmark.domain.BenchmarkScope
 import io.github.nekke0409.lolinsight.benchmark.persistence.BenchmarkSampleAggregateRepository
 import io.github.nekke0409.lolinsight.benchmark.persistence.BenchmarkSampleJpaRepository
 import io.github.nekke0409.lolinsight.benchmark.persistence.toEntity
@@ -110,10 +111,11 @@ class PlayerComparisonFeatureServiceIntegrationTest {
                     targetPuuid = targetPuuid,
                     rankContext = RANK_CONTEXT,
                     sample = PlayerComparisonContextSample(requestedCount = 20, analyzedCount = 5),
-                    cohortStatistics =
+                    positionStatistics = emptyList(),
+                    championPositionStatistics =
                         listOf(
-                            PlayerCohortStatistics(
-                                championId = COHORT.championId,
+                            PlayerChampionPositionStatistics(
+                                championId = checkNotNull(COHORT.championId),
                                 position = COHORT.position,
                                 games = 5,
                                 wins = 3,
@@ -144,7 +146,7 @@ class PlayerComparisonFeatureServiceIntegrationTest {
             tier = COHORT.tier,
             division = COHORT.division,
             rankCapturedAt = RANK_CAPTURED_AT,
-            championId = COHORT.championId,
+            championId = checkNotNull(COHORT.championId),
             position = COHORT.position,
             gameVersion = "16.18.1",
             gameStartTimestamp = GAME_STARTED_AT,
@@ -166,6 +168,7 @@ class PlayerComparisonFeatureServiceIntegrationTest {
         const val TARGET_PUUID = "target-puuid"
         val COHORT =
             BenchmarkCohort(
+                scope = BenchmarkScope.CHAMPION_POSITION,
                 region = "KR",
                 queueId = 420,
                 tier = "GOLD",

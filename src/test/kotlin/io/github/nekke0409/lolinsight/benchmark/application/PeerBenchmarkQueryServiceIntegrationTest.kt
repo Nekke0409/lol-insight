@@ -4,6 +4,7 @@ import io.github.nekke0409.lolinsight.benchmark.domain.BenchmarkAvailability
 import io.github.nekke0409.lolinsight.benchmark.domain.BenchmarkCohort
 import io.github.nekke0409.lolinsight.benchmark.domain.BenchmarkMetricDistribution
 import io.github.nekke0409.lolinsight.benchmark.domain.BenchmarkSample
+import io.github.nekke0409.lolinsight.benchmark.domain.BenchmarkScope
 import io.github.nekke0409.lolinsight.benchmark.persistence.BenchmarkSampleAggregateRepository
 import io.github.nekke0409.lolinsight.benchmark.persistence.BenchmarkSampleJpaRepository
 import io.github.nekke0409.lolinsight.benchmark.persistence.toEntity
@@ -123,6 +124,47 @@ class PeerBenchmarkQueryServiceIntegrationTest {
     }
 
     @Test
+    fun `POSITION aggregate includes all champions in the position and excludes other cohort dimensions`() {
+        val positionCohort = BenchmarkCohort.position("KR", 420, "GOLD", "I", "MIDDLE")
+        benchmarkSampleJpaRepository.saveAllAndFlush(
+            listOf(
+                metricSample("ahri", "player-a", TARGET_COHORT, 1.0),
+                metricSample("akali", "player-b", TARGET_COHORT.copy(championId = 84), 3.0),
+                metricSample("top", "player-c", TARGET_COHORT.copy(position = "TOP"), 100.0),
+                metricSample("other-division", "player-d", TARGET_COHORT.copy(division = "II"), 100.0),
+            ).map(BenchmarkSample::toEntity),
+        )
+
+        val benchmark = requireNotNull(benchmarkSampleAggregateRepository.findBenchmark(positionCohort))
+
+        assertEquals(BenchmarkScope.POSITION, benchmark.cohort.scope)
+        assertEquals(null, benchmark.cohort.championId)
+        assertEquals(2L, benchmark.sampleCount)
+        assertEquals(2L, benchmark.uniquePlayerCount)
+        assertEquals(2.0, benchmark.kda.mean, TOLERANCE)
+        assertEquals(2.0, benchmark.kda.median, TOLERANCE)
+    }
+
+    @Test
+    fun `POSITION aggregate applies target player exclusion before recomputing counts and distributions`() {
+        val positionCohort = BenchmarkCohort.position("KR", 420, "GOLD", "I", "MIDDLE")
+        benchmarkSampleJpaRepository.saveAllAndFlush(
+            listOf(
+                metricSample("target-ahri", "target-player", TARGET_COHORT, 100.0),
+                metricSample("peer-akali", "peer-a", TARGET_COHORT.copy(championId = 84), 1.0),
+                metricSample("peer-syndra", "peer-b", TARGET_COHORT.copy(championId = 134), 3.0),
+            ).map(BenchmarkSample::toEntity),
+        )
+
+        val benchmark = requireNotNull(benchmarkSampleAggregateRepository.findBenchmarkExcludingPlayer(positionCohort, "target-player"))
+
+        assertEquals(2L, benchmark.sampleCount)
+        assertEquals(2L, benchmark.uniquePlayerCount)
+        assertEquals(2.0, benchmark.kda.mean, TOLERANCE)
+        assertEquals(2.0, benchmark.kda.median, TOLERANCE)
+    }
+
+    @Test
     fun `returns no data insufficient sample and available according to the configured policy`() {
         benchmarkSampleJpaRepository.saveAllAndFlush(targetSamples().map(BenchmarkSample::toEntity))
 
@@ -153,12 +195,19 @@ class PeerBenchmarkQueryServiceIntegrationTest {
         )
 
         val available = peerBenchmarkQueryService.findBenchmark(AVAILABLE_COHORT)
+        val positionAvailable =
+            peerBenchmarkQueryService.findBenchmark(
+                BenchmarkCohort.position("KR", 420, "GOLD", "I", "MIDDLE"),
+            )
 
         assertEquals(BenchmarkAvailability.AVAILABLE, available.status)
         assertEquals(30L, available.sampleCount)
         assertEquals(10L, available.uniquePlayerCount)
         val availableBenchmark = assertNotNull(available.benchmark)
         assertEquals(AVAILABLE_COHORT, availableBenchmark.cohort)
+        assertEquals(BenchmarkAvailability.AVAILABLE, positionAvailable.status)
+        assertEquals(34L, positionAvailable.sampleCount)
+        assertEquals(12L, positionAvailable.uniquePlayerCount)
     }
 
     @Test
@@ -228,7 +277,7 @@ class PeerBenchmarkQueryServiceIntegrationTest {
             tier = cohort.tier,
             division = cohort.division,
             rankCapturedAt = RANK_CAPTURED_AT,
-            championId = cohort.championId,
+            championId = checkNotNull(cohort.championId),
             position = cohort.position,
             gameVersion = "16.18.1",
             gameStartTimestamp = GAME_STARTED_AT,
@@ -268,6 +317,7 @@ class PeerBenchmarkQueryServiceIntegrationTest {
     private companion object {
         val TARGET_COHORT =
             BenchmarkCohort(
+                scope = BenchmarkScope.CHAMPION_POSITION,
                 region = "KR",
                 queueId = 420,
                 tier = "GOLD",

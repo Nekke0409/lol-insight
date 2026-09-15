@@ -4,6 +4,7 @@ import io.github.nekke0409.lolinsight.benchmark.application.PeerBenchmarkQuerySe
 import io.github.nekke0409.lolinsight.benchmark.domain.BenchmarkAvailability
 import io.github.nekke0409.lolinsight.benchmark.domain.BenchmarkCohort
 import io.github.nekke0409.lolinsight.benchmark.domain.BenchmarkMetricDistribution
+import io.github.nekke0409.lolinsight.benchmark.domain.BenchmarkScope
 import io.github.nekke0409.lolinsight.benchmark.domain.PeerBenchmark
 import io.github.nekke0409.lolinsight.benchmark.domain.PeerBenchmarkResult
 import io.github.nekke0409.lolinsight.rank.application.PlayerRankContext
@@ -28,174 +29,127 @@ class PlayerComparisonFeatureServiceTest {
         )
 
     @Test
-    fun `returns UNRANKED comparisons without querying benchmarks when the user has no Solo rank`() {
-        val statistics = statistics(games = 5)
-        stubContext(rankContext = null, cohortStatistics = listOf(statistics))
+    fun `returns separate unranked comparisons for each scope without querying benchmarks`() {
+        stubContext(rankContext = null)
 
-        val feature = service.buildFeature("Hide on bush", "KR1", 0, 20)
+        val comparisons = service.buildFeature(GAME_NAME, TAG_LINE, 0, 20).comparisons
 
-        assertEquals(null, feature.rankContext)
-        assertEquals(PlayerCohortComparisonStatus.UNRANKED, feature.comparisons.single().status)
-        assertEquals(0L, feature.comparisons.single().benchmarkSampleCount)
-        assertEquals(0L, feature.comparisons.single().benchmarkUniquePlayerCount)
-        assertNull(feature.comparisons.single().benchmarkCohort)
-        assertNull(feature.comparisons.single().metrics)
+        assertEquals(listOf(BenchmarkScope.POSITION, BenchmarkScope.CHAMPION_POSITION), comparisons.map { it.scope })
+        assertEquals(listOf(null, 103), comparisons.map { it.championId })
+        assertEquals(listOf(PlayerCohortComparisonStatus.UNRANKED, PlayerCohortComparisonStatus.UNRANKED), comparisons.map { it.status })
+        assertTrueNoBenchmark(comparisons)
         verifyNoInteractions(peerBenchmarkQueryService)
     }
 
     @Test
-    fun `returns INSUFFICIENT_USER_SAMPLE before using an available benchmark for metric comparisons`() {
-        val statistics = statistics(games = 4)
-        val cohort = cohort(statistics)
-        stubContext(cohortStatistics = listOf(statistics))
-        `when`(peerBenchmarkQueryService.findBenchmarkExcludingPlayer(cohort, TARGET_PUUID)).thenReturn(availableResult(cohort))
+    fun `joins each user statistical unit only to its matching benchmark scope without fallback`() {
+        val positionStatistics = positionStats(games = 6, averageKda = 4.0)
+        val championStatistics = championPositionStats(games = 3, averageKda = 8.0)
+        val positionCohort = positionCohort(positionStatistics)
+        val championCohort = championPositionCohort(championStatistics)
+        stubContext(positionStatistics = listOf(positionStatistics), championPositionStatistics = listOf(championStatistics))
+        `when`(peerBenchmarkQueryService.findBenchmarkExcludingPlayer(positionCohort, TARGET_PUUID))
+            .thenReturn(availableResult(positionCohort))
+        `when`(peerBenchmarkQueryService.findBenchmarkExcludingPlayer(championCohort, TARGET_PUUID))
+            .thenReturn(PeerBenchmarkResult(BenchmarkAvailability.INSUFFICIENT_SAMPLE, 23, 5, null))
 
-        val comparison = service.buildFeature("Hide on bush", "KR1", 0, 20).comparisons.single()
+        val comparisons = service.buildFeature(GAME_NAME, TAG_LINE, 0, 20).comparisons
 
-        assertEquals(PlayerCohortComparisonStatus.INSUFFICIENT_USER_SAMPLE, comparison.status)
-        assertEquals(30L, comparison.benchmarkSampleCount)
-        assertEquals(10L, comparison.benchmarkUniquePlayerCount)
-        assertNull(comparison.metrics)
-        verify(peerBenchmarkQueryService).findBenchmarkExcludingPlayer(cohort, TARGET_PUUID)
-    }
+        val positionComparison = comparisons.single { it.scope == BenchmarkScope.POSITION }
+        assertEquals(PlayerCohortComparisonStatus.AVAILABLE, positionComparison.status)
+        assertEquals(null, positionComparison.championId)
+        assertEquals(4.0, assertNotNull(positionComparison.metrics).kda.playerValue)
 
-    @Test
-    fun `maps no benchmark data to BENCHMARK_NO_DATA`() {
-        val statistics = statistics(games = 5)
-        val cohort = cohort(statistics)
-        stubContext(cohortStatistics = listOf(statistics))
-        `when`(peerBenchmarkQueryService.findBenchmarkExcludingPlayer(cohort, TARGET_PUUID))
-            .thenReturn(PeerBenchmarkResult(BenchmarkAvailability.NO_DATA, 0, 0, null))
+        val championComparison = comparisons.single { it.scope == BenchmarkScope.CHAMPION_POSITION }
+        assertEquals(PlayerCohortComparisonStatus.INSUFFICIENT_USER_SAMPLE, championComparison.status)
+        assertEquals(103, championComparison.championId)
+        assertEquals(23L, championComparison.benchmarkSampleCount)
+        assertEquals(5L, championComparison.benchmarkUniquePlayerCount)
+        assertNull(championComparison.metrics)
 
-        val comparison = service.buildFeature("Hide on bush", "KR1", 0, 20).comparisons.single()
-
-        assertEquals(PlayerCohortComparisonStatus.BENCHMARK_NO_DATA, comparison.status)
-        assertEquals(cohort, comparison.benchmarkCohort)
-        assertNull(comparison.metrics)
-    }
-
-    @Test
-    fun `maps insufficient benchmark samples to BENCHMARK_INSUFFICIENT_SAMPLE`() {
-        val statistics = statistics(games = 5)
-        val cohort = cohort(statistics)
-        stubContext(cohortStatistics = listOf(statistics))
-        `when`(peerBenchmarkQueryService.findBenchmarkExcludingPlayer(cohort, TARGET_PUUID))
-            .thenReturn(PeerBenchmarkResult(BenchmarkAvailability.INSUFFICIENT_SAMPLE, 4, 2, null))
-
-        val comparison = service.buildFeature("Hide on bush", "KR1", 0, 20).comparisons.single()
-
-        assertEquals(PlayerCohortComparisonStatus.BENCHMARK_INSUFFICIENT_SAMPLE, comparison.status)
-        assertEquals(4L, comparison.benchmarkSampleCount)
-        assertEquals(2L, comparison.benchmarkUniquePlayerCount)
-        assertNull(comparison.metrics)
-    }
-
-    @Test
-    fun `uses the exact cohort and maps every available metric with backend calculated differences`() {
-        val statistics = statistics(games = 5)
-        val expectedCohort = cohort(statistics)
-        stubContext(cohortStatistics = listOf(statistics))
-        `when`(peerBenchmarkQueryService.findBenchmarkExcludingPlayer(expectedCohort, TARGET_PUUID))
-            .thenReturn(availableResult(expectedCohort))
-
-        val comparison = service.buildFeature("Hide on bush", "KR1", 0, 20).comparisons.single()
-
-        assertEquals(PlayerCohortComparisonStatus.AVAILABLE, comparison.status)
-        assertEquals(expectedCohort, comparison.benchmarkCohort)
-        assertEquals(30L, comparison.benchmarkSampleCount)
-        assertEquals(10L, comparison.benchmarkUniquePlayerCount)
-        val metrics = assertNotNull(comparison.metrics)
-        listOf(
-            metrics.kda,
-            metrics.csPerMinute,
-            metrics.goldPerMinute,
-            metrics.damagePerMinute,
-            metrics.visionPerMinute,
-            metrics.killParticipation,
-            metrics.damageShare,
-        ).forEach { metric ->
-            assertEquals(7.2, metric.playerValue, TOLERANCE)
-            assertEquals(6.7, metric.benchmarkMean, TOLERANCE)
-            assertEquals(6.8, metric.benchmarkMedian, TOLERANCE)
-            assertEquals(0.5, metric.differenceFromMean, TOLERANCE)
-            assertEquals(0.4, metric.differenceFromMedian, TOLERANCE)
-            assertEquals(6.3, metric.benchmarkP25, TOLERANCE)
-            assertEquals(7.0, metric.benchmarkP75, TOLERANCE)
-            assertEquals(7.4, metric.benchmarkP90, TOLERANCE)
-        }
-        verify(peerBenchmarkQueryService).findBenchmarkExcludingPlayer(expectedCohort, TARGET_PUUID)
+        verify(peerBenchmarkQueryService).findBenchmarkExcludingPlayer(positionCohort, TARGET_PUUID)
+        verify(peerBenchmarkQueryService).findBenchmarkExcludingPlayer(championCohort, TARGET_PUUID)
         verifyNoMoreInteractions(peerBenchmarkQueryService)
     }
 
     @Test
-    fun `orders comparisons by user games position and champion regardless of context input order`() {
-        val middleAhri = statistics(championId = 103, position = "MIDDLE", games = 8)
-        val middleGaren = statistics(championId = 86, position = "MIDDLE", games = 5)
-        val topAhri = statistics(championId = 103, position = "TOP", games = 5)
-        val statistics = listOf(topAhri, middleGaren, middleAhri)
-        stubContext(cohortStatistics = statistics)
-        statistics.forEach { statistics ->
-            val cohort = cohort(statistics)
-            `when`(peerBenchmarkQueryService.findBenchmarkExcludingPlayer(cohort, TARGET_PUUID)).thenReturn(availableResult(cohort))
-        }
+    fun `uses each scope's own user averages for available metric comparisons`() {
+        val positionStatistics = positionStats(games = 6, averageKda = 4.0)
+        val championStatistics = championPositionStats(games = 5, averageKda = 8.0)
+        val positionCohort = positionCohort(positionStatistics)
+        val championCohort = championPositionCohort(championStatistics)
+        stubContext(positionStatistics = listOf(positionStatistics), championPositionStatistics = listOf(championStatistics))
+        `when`(peerBenchmarkQueryService.findBenchmarkExcludingPlayer(positionCohort, TARGET_PUUID))
+            .thenReturn(availableResult(positionCohort))
+        `when`(peerBenchmarkQueryService.findBenchmarkExcludingPlayer(championCohort, TARGET_PUUID))
+            .thenReturn(availableResult(championCohort))
 
-        val comparisons = service.buildFeature("Hide on bush", "KR1", 0, 20).comparisons
+        val comparisons = service.buildFeature(GAME_NAME, TAG_LINE, 0, 20).comparisons
 
-        assertEquals(
-            listOf(
-                middleAhri.championId to middleAhri.position,
-                middleGaren.championId to middleGaren.position,
-                topAhri.championId to topAhri.position,
-            ),
-            comparisons.map { it.championId to it.position },
-        )
+        assertEquals(4.0, assertNotNull(comparisons[0].metrics).kda.playerValue)
+        assertEquals(8.0, assertNotNull(comparisons[1].metrics).kda.playerValue)
     }
 
     private fun stubContext(
         rankContext: PlayerRankContext? = RANK_CONTEXT,
-        cohortStatistics: List<PlayerCohortStatistics>,
+        positionStatistics: List<PlayerPositionStatistics> = listOf(positionStats()),
+        championPositionStatistics: List<PlayerChampionPositionStatistics> = listOf(championPositionStats()),
     ) {
-        `when`(playerComparisonContextService.buildContext("Hide on bush", "KR1", 0, 20))
+        `when`(playerComparisonContextService.buildContext(GAME_NAME, TAG_LINE, 0, 20))
             .thenReturn(
                 PlayerComparisonContext(
-                    player = PlayerComparisonContextPlayer("Hide on bush", "KR1"),
+                    player = PlayerComparisonContextPlayer(GAME_NAME, TAG_LINE),
                     targetPuuid = TARGET_PUUID,
                     rankContext = rankContext,
-                    sample = PlayerComparisonContextSample(requestedCount = 20, analyzedCount = cohortStatistics.sumOf { it.games }),
-                    cohortStatistics = cohortStatistics,
+                    sample = PlayerComparisonContextSample(requestedCount = 20, analyzedCount = 8),
+                    positionStatistics = positionStatistics,
+                    championPositionStatistics = championPositionStatistics,
                 ),
             )
     }
 
-    private fun statistics(
-        championId: Int = 103,
-        position: String = "MIDDLE",
-        games: Int,
-    ): PlayerCohortStatistics =
-        PlayerCohortStatistics(
-            championId = championId,
-            position = position,
+    private fun positionStats(
+        games: Int = 5,
+        averageKda: Double = 7.2,
+    ): PlayerPositionStatistics =
+        PlayerPositionStatistics(
+            position = "MIDDLE",
             games = games,
             wins = games - 1,
             winRate = (games - 1).toDouble() / games,
-            averageKda = 7.2,
+            averageKda = averageKda,
             averageCsPerMinute = 7.2,
             averageGoldPerMinute = 7.2,
             averageDamagePerMinute = 7.2,
             averageVisionPerMinute = 7.2,
-            averageKillParticipation = 7.2,
-            averageDamageShare = 7.2,
+            averageKillParticipation = 0.72,
+            averageDamageShare = 0.72,
         )
 
-    private fun cohort(statistics: PlayerCohortStatistics): BenchmarkCohort =
-        BenchmarkCohort(
-            region = "KR",
-            queueId = 420,
-            tier = "GOLD",
-            division = "I",
-            position = statistics.position,
-            championId = statistics.championId,
+    private fun championPositionStats(
+        games: Int = 5,
+        averageKda: Double = 7.2,
+    ): PlayerChampionPositionStatistics =
+        PlayerChampionPositionStatistics(
+            championId = 103,
+            position = "MIDDLE",
+            games = games,
+            wins = games - 1,
+            winRate = (games - 1).toDouble() / games,
+            averageKda = averageKda,
+            averageCsPerMinute = 7.2,
+            averageGoldPerMinute = 7.2,
+            averageDamagePerMinute = 7.2,
+            averageVisionPerMinute = 7.2,
+            averageKillParticipation = 0.72,
+            averageDamageShare = 0.72,
         )
+
+    private fun positionCohort(statistics: PlayerPositionStatistics): BenchmarkCohort =
+        BenchmarkCohort.position("KR", 420, "GOLD", "I", statistics.position)
+
+    private fun championPositionCohort(statistics: PlayerChampionPositionStatistics): BenchmarkCohort =
+        BenchmarkCohort.championPosition("KR", 420, "GOLD", "I", statistics.position, statistics.championId)
 
     private fun availableResult(cohort: BenchmarkCohort): PeerBenchmarkResult {
         val distribution = BenchmarkMetricDistribution(mean = 6.7, median = 6.8, p25 = 6.3, p75 = 7.0, p90 = 7.4)
@@ -219,9 +173,19 @@ class PlayerComparisonFeatureServiceTest {
         )
     }
 
+    private fun assertTrueNoBenchmark(comparisons: List<PlayerCohortComparison>) {
+        comparisons.forEach { comparison ->
+            assertNull(comparison.benchmarkCohort)
+            assertEquals(0, comparison.benchmarkSampleCount)
+            assertEquals(0, comparison.benchmarkUniquePlayerCount)
+            assertNull(comparison.metrics)
+        }
+    }
+
     private companion object {
+        const val GAME_NAME = "Hide on bush"
+        const val TAG_LINE = "KR1"
         const val TARGET_PUUID = "target-puuid"
         val RANK_CONTEXT = PlayerRankContext("GOLD", "I", Instant.parse("2026-09-14T01:23:45Z"))
-        const val TOLERANCE = 0.000001
     }
 }

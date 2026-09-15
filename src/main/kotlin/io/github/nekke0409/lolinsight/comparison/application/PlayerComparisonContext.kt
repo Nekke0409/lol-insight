@@ -7,7 +7,8 @@ data class PlayerComparisonContext(
     val targetPuuid: String,
     val rankContext: PlayerRankContext?,
     val sample: PlayerComparisonContextSample,
-    val cohortStatistics: List<PlayerCohortStatistics>,
+    val positionStatistics: List<PlayerPositionStatistics>,
+    val championPositionStatistics: List<PlayerChampionPositionStatistics>,
 ) {
     init {
         require(targetPuuid.isNotBlank()) { "targetPuuid must not be blank" }
@@ -24,36 +25,90 @@ data class PlayerComparisonContextSample(
     val analyzedCount: Int,
 )
 
-data class PlayerCohortStatistics(
+sealed interface PlayerScopeStatistics {
+    val position: String
+    val games: Int
+    val wins: Int
+    val winRate: Double
+    val averageKda: Double
+    val averageCsPerMinute: Double
+    val averageGoldPerMinute: Double
+    val averageDamagePerMinute: Double
+    val averageVisionPerMinute: Double
+    val averageKillParticipation: Double
+    val averageDamageShare: Double
+}
+
+data class PlayerPositionStatistics(
+    override val position: String,
+    override val games: Int,
+    override val wins: Int,
+    override val winRate: Double,
+    override val averageKda: Double,
+    override val averageCsPerMinute: Double,
+    override val averageGoldPerMinute: Double,
+    override val averageDamagePerMinute: Double,
+    override val averageVisionPerMinute: Double,
+    override val averageKillParticipation: Double,
+    override val averageDamageShare: Double,
+) : PlayerScopeStatistics {
+    init {
+        validate(position, games, wins, metricValues())
+    }
+
+    private fun metricValues(): List<Double> =
+        listOf(
+            winRate,
+            averageKda,
+            averageCsPerMinute,
+            averageGoldPerMinute,
+            averageDamagePerMinute,
+            averageVisionPerMinute,
+            averageKillParticipation,
+            averageDamageShare,
+        )
+}
+
+data class PlayerChampionPositionStatistics(
     val championId: Int,
-    val position: String,
-    val games: Int,
-    val wins: Int,
-    val winRate: Double,
-    val averageKda: Double,
-    val averageCsPerMinute: Double,
-    val averageGoldPerMinute: Double,
-    val averageDamagePerMinute: Double,
-    val averageVisionPerMinute: Double,
-    val averageKillParticipation: Double,
-    val averageDamageShare: Double,
-) {
+    override val position: String,
+    override val games: Int,
+    override val wins: Int,
+    override val winRate: Double,
+    override val averageKda: Double,
+    override val averageCsPerMinute: Double,
+    override val averageGoldPerMinute: Double,
+    override val averageDamagePerMinute: Double,
+    override val averageVisionPerMinute: Double,
+    override val averageKillParticipation: Double,
+    override val averageDamageShare: Double,
+) : PlayerScopeStatistics {
     init {
         require(championId > 0) { "championId must be positive" }
-        require(position.isNotBlank()) { "position must not be blank" }
-        require(games > 0) { "games must be positive" }
-        require(wins in 0..games) { "wins must be between zero and games" }
-        require(
-            listOf(
-                winRate,
-                averageKda,
-                averageCsPerMinute,
-                averageGoldPerMinute,
-                averageDamagePerMinute,
-                averageVisionPerMinute,
-                averageKillParticipation,
-                averageDamageShare,
-            ).all(Double::isFinite),
-        ) { "cohort statistics must be finite" }
+        validate(position, games, wins, metricValues())
     }
+
+    private fun metricValues(): List<Double> =
+        listOf(
+            winRate,
+            averageKda,
+            averageCsPerMinute,
+            averageGoldPerMinute,
+            averageDamagePerMinute,
+            averageVisionPerMinute,
+            averageKillParticipation,
+            averageDamageShare,
+        )
+}
+
+private fun validate(
+    position: String,
+    games: Int,
+    wins: Int,
+    metricValues: List<Double>,
+) {
+    require(position.isNotBlank()) { "position must not be blank" }
+    require(games > 0) { "games must be positive" }
+    require(wins in 0..games) { "wins must be between zero and games" }
+    require(metricValues.all(Double::isFinite)) { "cohort statistics must be finite" }
 }

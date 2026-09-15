@@ -1,6 +1,7 @@
 package io.github.nekke0409.lolinsight.analysis.application
 
 import io.github.nekke0409.lolinsight.benchmark.domain.BenchmarkCohort
+import io.github.nekke0409.lolinsight.benchmark.domain.BenchmarkScope
 import io.github.nekke0409.lolinsight.comparison.application.MetricComparison
 import io.github.nekke0409.lolinsight.comparison.application.PlayerCohortComparison
 import io.github.nekke0409.lolinsight.comparison.application.PlayerCohortComparisonStatus
@@ -64,6 +65,35 @@ class PlayerAnalysisInputMapperTest {
         assertFalse(serialized.contains("rawMatch", ignoreCase = true))
     }
 
+    @Test
+    fun `keeps POSITION comparisons out of the existing OpenAI input contract`() {
+        val positionCohort = BenchmarkCohort.position("KR", 420, "GOLD", "I", "MIDDLE")
+        val feature =
+            PlayerComparisonFeature(
+                rankContext = PlayerRankContext("GOLD", "I", Instant.parse("2026-09-14T01:23:45Z")),
+                comparisons =
+                    listOf(
+                        PlayerCohortComparison(
+                            scope = BenchmarkScope.POSITION,
+                            position = "MIDDLE",
+                            championId = null,
+                            userGames = 7,
+                            status = PlayerCohortComparisonStatus.AVAILABLE,
+                            benchmarkCohort = positionCohort,
+                            benchmarkSampleCount = 30,
+                            benchmarkUniquePlayerCount = 10,
+                            metrics = metrics(),
+                        ),
+                        availableComparison(),
+                    ),
+            )
+
+        val input = mapper.map(feature)
+
+        assertEquals(listOf(103), input.availableComparisons.map { it.championId })
+        assertEquals(emptyList(), input.excludedComparisonSummary)
+    }
+
     private fun feature(): PlayerComparisonFeature =
         PlayerComparisonFeature(
             rankContext = PlayerRankContext("GOLD", "I", Instant.parse("2026-09-14T01:23:45Z")),
@@ -71,11 +101,12 @@ class PlayerAnalysisInputMapperTest {
                 listOf(
                     availableComparison(),
                     PlayerCohortComparison(
+                        scope = BenchmarkScope.CHAMPION_POSITION,
                         championId = 99,
                         position = "TOP",
                         userGames = 4,
                         status = PlayerCohortComparisonStatus.INSUFFICIENT_USER_SAMPLE,
-                        benchmarkCohort = BenchmarkCohort("KR", 420, "GOLD", "I", "TOP", 99),
+                        benchmarkCohort = BenchmarkCohort.championPosition("KR", 420, "GOLD", "I", "TOP", 99),
                         benchmarkSampleCount = 30,
                         benchmarkUniquePlayerCount = 10,
                         metrics = null,
@@ -85,23 +116,26 @@ class PlayerAnalysisInputMapperTest {
 
     private fun availableComparison(): PlayerCohortComparison =
         PlayerCohortComparison(
+            scope = BenchmarkScope.CHAMPION_POSITION,
             championId = 103,
             position = "MIDDLE",
             userGames = 7,
             status = PlayerCohortComparisonStatus.AVAILABLE,
-            benchmarkCohort = BenchmarkCohort("KR", 420, "GOLD", "I", "MIDDLE", 103),
+            benchmarkCohort = BenchmarkCohort.championPosition("KR", 420, "GOLD", "I", "MIDDLE", 103),
             benchmarkSampleCount = 30,
             benchmarkUniquePlayerCount = 10,
-            metrics =
-                PlayerComparisonMetrics(
-                    kda = metric(),
-                    csPerMinute = metric(),
-                    goldPerMinute = metric(),
-                    damagePerMinute = metric(),
-                    visionPerMinute = metric(),
-                    killParticipation = metric(),
-                    damageShare = metric(),
-                ),
+            metrics = metrics(),
+        )
+
+    private fun metrics(): PlayerComparisonMetrics =
+        PlayerComparisonMetrics(
+            kda = metric(),
+            csPerMinute = metric(),
+            goldPerMinute = metric(),
+            damagePerMinute = metric(),
+            visionPerMinute = metric(),
+            killParticipation = metric(),
+            damageShare = metric(),
         )
 
     private fun metric(): MetricComparison = MetricComparison(7.2, 6.7, 6.8, 0.5, 0.4, 6.3, 7.0, 7.4)

@@ -27,7 +27,8 @@ class BenchmarkCohortCoverageQueryService(
                 compareBy<BenchmarkCohortCoverage> { it.availability != BenchmarkAvailability.AVAILABLE }
                     .thenByDescending(BenchmarkCohortCoverage::uniquePlayerCount)
                     .thenByDescending(BenchmarkCohortCoverage::sampleCount)
+                    .thenBy { it.cohort.scope }
                     .thenBy { it.cohort.position }
-                    .thenBy { it.cohort.championId },
+                    .thenBy { it.cohort.championId ?: 0 },
             )
 }

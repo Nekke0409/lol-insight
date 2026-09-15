@@ -1,5 +1,6 @@
 package io.github.nekke0409.lolinsight.analysis.application
 
+import io.github.nekke0409.lolinsight.benchmark.domain.BenchmarkScope
 import io.github.nekke0409.lolinsight.comparison.application.MetricComparison
 import io.github.nekke0409.lolinsight.comparison.application.PlayerCohortComparison
 import io.github.nekke0409.lolinsight.comparison.application.PlayerCohortComparisonStatus
@@ -12,6 +13,7 @@ class PlayerAnalysisInputMapper {
     fun map(feature: PlayerComparisonFeature): PlayerAnalysisInput {
         val availableComparisons =
             feature.comparisons
+                .filter { it.scope == BenchmarkScope.CHAMPION_POSITION }
                 .filter { it.status == PlayerCohortComparisonStatus.AVAILABLE }
                 .map(::toAvailableComparison)
 
@@ -19,6 +21,7 @@ class PlayerAnalysisInputMapper {
             availableComparisons = availableComparisons,
             excludedComparisonSummary =
                 feature.comparisons
+                    .filter { it.scope == BenchmarkScope.CHAMPION_POSITION }
                     .filter { it.status != PlayerCohortComparisonStatus.AVAILABLE }
                     .map(::toExcludedComparison),
             analysisLimitations = ANALYSIS_LIMITATIONS,
@@ -27,10 +30,12 @@ class PlayerAnalysisInputMapper {
 
     private fun toAvailableComparison(comparison: PlayerCohortComparison): AvailablePlayerCohortComparison {
         val cohort = checkNotNull(comparison.benchmarkCohort)
+        val championId = checkNotNull(comparison.championId)
+        val benchmarkChampionId = checkNotNull(cohort.championId)
         val metrics = checkNotNull(comparison.metrics)
 
         return AvailablePlayerCohortComparison(
-            championId = comparison.championId,
+            championId = championId,
             position = comparison.position,
             userGames = comparison.userGames,
             benchmarkCohort =
@@ -40,7 +45,7 @@ class PlayerAnalysisInputMapper {
                     tier = cohort.tier,
                     division = cohort.division,
                     position = cohort.position,
-                    championId = cohort.championId,
+                    championId = benchmarkChampionId,
                 ),
             benchmarkSampleCount = comparison.benchmarkSampleCount,
             benchmarkUniquePlayerCount = comparison.benchmarkUniquePlayerCount,
@@ -50,7 +55,7 @@ class PlayerAnalysisInputMapper {
 
     private fun toExcludedComparison(comparison: PlayerCohortComparison): ExcludedPlayerCohortComparison =
         ExcludedPlayerCohortComparison(
-            championId = comparison.championId,
+            championId = checkNotNull(comparison.championId),
             position = comparison.position,
             userGames = comparison.userGames,
             status = comparison.status.name,

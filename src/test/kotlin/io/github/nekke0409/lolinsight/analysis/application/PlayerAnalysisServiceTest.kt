@@ -1,6 +1,7 @@
 package io.github.nekke0409.lolinsight.analysis.application
 
 import io.github.nekke0409.lolinsight.benchmark.domain.BenchmarkCohort
+import io.github.nekke0409.lolinsight.benchmark.domain.BenchmarkScope
 import io.github.nekke0409.lolinsight.comparison.application.MetricComparison
 import io.github.nekke0409.lolinsight.comparison.application.PlayerCohortComparison
 import io.github.nekke0409.lolinsight.comparison.application.PlayerCohortComparisonStatus
@@ -68,6 +69,35 @@ class PlayerAnalysisServiceTest {
     }
 
     @Test
+    fun `does not call the existing generator when only a POSITION comparison is available`() {
+        val positionCohort = BenchmarkCohort.position("KR", 420, "GOLD", "I", "MIDDLE")
+        val feature =
+            PlayerComparisonFeature(
+                rankContext = RANK_CONTEXT,
+                comparisons =
+                    listOf(
+                        PlayerCohortComparison(
+                            scope = BenchmarkScope.POSITION,
+                            position = "MIDDLE",
+                            championId = null,
+                            userGames = 5,
+                            status = PlayerCohortComparisonStatus.AVAILABLE,
+                            benchmarkCohort = positionCohort,
+                            benchmarkSampleCount = 30,
+                            benchmarkUniquePlayerCount = 10,
+                            metrics = metrics(),
+                        ),
+                    ),
+            )
+        stubFeature(feature)
+
+        val response = service.analyze(GAME_NAME, TAG_LINE, 0, 20)
+
+        assertEquals(PlayerAnalysisResponseStatus.INSUFFICIENT_COMPARISON_DATA, response.status)
+        verifyNoInteractions(playerAnalysisInputMapper, playerAnalysisGenerator)
+    }
+
+    @Test
     fun `calls the generator exactly once when one or more cohorts are available`() {
         val feature =
             feature(
@@ -112,8 +142,9 @@ class PlayerAnalysisServiceTest {
         status: PlayerCohortComparisonStatus,
         championId: Int,
     ): PlayerCohortComparison {
-        val cohort = BenchmarkCohort("KR", 420, "GOLD", "I", "MIDDLE", championId)
+        val cohort = BenchmarkCohort.championPosition("KR", 420, "GOLD", "I", "MIDDLE", championId)
         return PlayerCohortComparison(
+            scope = BenchmarkScope.CHAMPION_POSITION,
             championId = championId,
             position = "MIDDLE",
             userGames = 5,

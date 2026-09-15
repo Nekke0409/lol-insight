@@ -1,6 +1,7 @@
 package io.github.nekke0409.lolinsight.comparison.application
 
 import io.github.nekke0409.lolinsight.benchmark.domain.BenchmarkCohort
+import io.github.nekke0409.lolinsight.benchmark.domain.BenchmarkScope
 import io.github.nekke0409.lolinsight.rank.application.PlayerRankContext
 
 data class PlayerComparisonFeature(
@@ -24,15 +25,17 @@ data class PlayerComparisonFeature(
 
     private companion object {
         val COMPARISON_ORDER =
-            compareByDescending<PlayerCohortComparison> { it.userGames }
+            compareBy<PlayerCohortComparison> { it.scope }
+                .thenByDescending { it.userGames }
                 .thenBy { it.position }
-                .thenBy { it.championId }
+                .thenBy { it.championId ?: 0 }
     }
 }
 
 data class PlayerCohortComparison(
-    val championId: Int,
+    val scope: BenchmarkScope,
     val position: String,
+    val championId: Int?,
     val userGames: Int,
     val status: PlayerCohortComparisonStatus,
     val benchmarkCohort: BenchmarkCohort?,
@@ -41,7 +44,6 @@ data class PlayerCohortComparison(
     val metrics: PlayerComparisonMetrics?,
 ) {
     init {
-        require(championId > 0) { "championId must be positive" }
         require(position.isNotBlank()) { "position must not be blank" }
         require(userGames > 0) { "userGames must be positive" }
         require(benchmarkSampleCount >= 0) { "benchmarkSampleCount cannot be negative" }
@@ -50,7 +52,16 @@ data class PlayerCohortComparison(
             "benchmarkUniquePlayerCount cannot exceed benchmarkSampleCount"
         }
 
+        when (scope) {
+            BenchmarkScope.POSITION -> require(championId == null) { "POSITION scope must not include championId" }
+            BenchmarkScope.CHAMPION_POSITION ->
+                require(championId != null && championId > 0) {
+                    "CHAMPION_POSITION scope requires a positive championId"
+                }
+        }
+
         if (benchmarkCohort != null) {
+            require(benchmarkCohort.scope == scope) { "benchmark cohort scope must match comparison scope" }
             require(benchmarkCohort.position == position) { "benchmark cohort position must match comparison position" }
             require(benchmarkCohort.championId == championId) { "benchmark cohort championId must match comparison championId" }
         }

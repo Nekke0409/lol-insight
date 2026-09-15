@@ -17,17 +17,15 @@ class PlayerComparisonContextBuilder {
         matches: List<Match>,
         rankContext: PlayerRankContext?,
     ): PlayerComparisonContext {
-        val cohortStatistics =
-            matches
-                .mapNotNull { match -> match.toObservationFor(targetPuuid) }
-                .toCohortStatistics()
+        val observations = matches.mapNotNull { match -> match.toObservationFor(targetPuuid) }
 
         return PlayerComparisonContext(
             player = PlayerComparisonContextPlayer(player.gameName, player.tagLine),
             targetPuuid = targetPuuid,
             rankContext = rankContext,
-            sample = PlayerComparisonContextSample(requestedCount = requestedCount, analyzedCount = cohortStatistics.sumOf { it.games }),
-            cohortStatistics = cohortStatistics,
+            sample = PlayerComparisonContextSample(requestedCount = requestedCount, analyzedCount = observations.size),
+            positionStatistics = observations.toPositionStatistics(),
+            championPositionStatistics = observations.toChampionPositionStatistics(),
         )
     }
 
@@ -39,38 +37,87 @@ class PlayerComparisonContextBuilder {
         )
     }
 
-    private fun List<CohortObservation>.toCohortStatistics(): List<PlayerCohortStatistics> =
-        groupBy { observation -> CohortKey(observation.participant.champion.id, observation.participant.position) }
-            .map { (cohort, observations) ->
-                PlayerCohortStatistics(
-                    championId = cohort.championId,
-                    position = cohort.position,
-                    games = observations.size,
-                    wins = observations.count { it.metrics.won },
-                    winRate = observations.count { it.metrics.won }.toDouble() / observations.size,
-                    averageKda = observations.meanOf { it.metrics.kda },
-                    averageCsPerMinute = observations.meanOf { it.metrics.csPerMinute },
-                    averageGoldPerMinute = observations.meanOf { it.metrics.goldPerMinute },
-                    averageDamagePerMinute = observations.meanOf { it.metrics.damagePerMinute },
-                    averageVisionPerMinute = observations.meanOf { it.metrics.visionPerMinute },
-                    averageKillParticipation = observations.meanOf { it.metrics.killParticipation },
-                    averageDamageShare = observations.meanOf { it.metrics.damageShare },
-                )
-            }.sortedWith(
-                compareByDescending<PlayerCohortStatistics> { it.games }
+    private fun List<CohortObservation>.toPositionStatistics(): List<PlayerPositionStatistics> =
+        groupBy { it.participant.position }
+            .map { (position, observations) -> observations.toStatistics().toPositionStatistics(position) }
+            .sortedWith(compareByDescending<PlayerPositionStatistics> { it.games }.thenBy { it.position })
+
+    private fun List<CohortObservation>.toChampionPositionStatistics(): List<PlayerChampionPositionStatistics> =
+        groupBy { observation -> ChampionPositionKey(observation.participant.champion.id, observation.participant.position) }
+            .map { (cohort, observations) -> observations.toStatistics().toChampionPositionStatistics(cohort) }
+            .sortedWith(
+                compareByDescending<PlayerChampionPositionStatistics> { it.games }
                     .thenBy { it.position }
                     .thenBy { it.championId },
             )
 
     private fun List<CohortObservation>.meanOf(selector: (CohortObservation) -> Double): Double = sumOf(selector) / size
 
+    private fun List<CohortObservation>.toStatistics(): PlayerScopeStatisticsValues =
+        PlayerScopeStatisticsValues(
+            games = size,
+            wins = count { it.metrics.won },
+            winRate = count { it.metrics.won }.toDouble() / size,
+            averageKda = meanOf { it.metrics.kda },
+            averageCsPerMinute = meanOf { it.metrics.csPerMinute },
+            averageGoldPerMinute = meanOf { it.metrics.goldPerMinute },
+            averageDamagePerMinute = meanOf { it.metrics.damagePerMinute },
+            averageVisionPerMinute = meanOf { it.metrics.visionPerMinute },
+            averageKillParticipation = meanOf { it.metrics.killParticipation },
+            averageDamageShare = meanOf { it.metrics.damageShare },
+        )
+
+    private fun PlayerScopeStatisticsValues.toPositionStatistics(position: String): PlayerPositionStatistics =
+        PlayerPositionStatistics(
+            position = position,
+            games = games,
+            wins = wins,
+            winRate = winRate,
+            averageKda = averageKda,
+            averageCsPerMinute = averageCsPerMinute,
+            averageGoldPerMinute = averageGoldPerMinute,
+            averageDamagePerMinute = averageDamagePerMinute,
+            averageVisionPerMinute = averageVisionPerMinute,
+            averageKillParticipation = averageKillParticipation,
+            averageDamageShare = averageDamageShare,
+        )
+
+    private fun PlayerScopeStatisticsValues.toChampionPositionStatistics(cohort: ChampionPositionKey): PlayerChampionPositionStatistics =
+        PlayerChampionPositionStatistics(
+            championId = cohort.championId,
+            position = cohort.position,
+            games = games,
+            wins = wins,
+            winRate = winRate,
+            averageKda = averageKda,
+            averageCsPerMinute = averageCsPerMinute,
+            averageGoldPerMinute = averageGoldPerMinute,
+            averageDamagePerMinute = averageDamagePerMinute,
+            averageVisionPerMinute = averageVisionPerMinute,
+            averageKillParticipation = averageKillParticipation,
+            averageDamageShare = averageDamageShare,
+        )
+
     private data class CohortObservation(
         val participant: MatchParticipant,
         val metrics: MatchParticipantMetrics,
     )
 
-    private data class CohortKey(
+    private data class ChampionPositionKey(
         val championId: Int,
         val position: String,
+    )
+
+    private data class PlayerScopeStatisticsValues(
+        val games: Int,
+        val wins: Int,
+        val winRate: Double,
+        val averageKda: Double,
+        val averageCsPerMinute: Double,
+        val averageGoldPerMinute: Double,
+        val averageDamagePerMinute: Double,
+        val averageVisionPerMinute: Double,
+        val averageKillParticipation: Double,
+        val averageDamageShare: Double,
     )
 }

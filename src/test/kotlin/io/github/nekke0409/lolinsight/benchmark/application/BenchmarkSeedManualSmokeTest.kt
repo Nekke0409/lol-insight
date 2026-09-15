@@ -40,7 +40,8 @@ class BenchmarkSeedManualSmokeTest {
         )
         coverage.take(MAX_REPORTED_COHORTS).forEach { cohortCoverage ->
             println(
-                "Coverage: position=${cohortCoverage.cohort.position}, championId=${cohortCoverage.cohort.championId}, " +
+                "Coverage: scope=${cohortCoverage.cohort.scope}, position=${cohortCoverage.cohort.position}, " +
+                    "championId=${cohortCoverage.cohort.championId}, " +
                     "sampleCount=${cohortCoverage.sampleCount}, uniquePlayerCount=${cohortCoverage.uniquePlayerCount}, " +
                     "availability=${cohortCoverage.availability}, samplesNeeded=${cohortCoverage.samplesNeeded}, " +
                     "uniquePlayersNeeded=${cohortCoverage.uniquePlayersNeeded}",

@@ -22,7 +22,7 @@ class PlayerComparisonContextBuilderTest {
     private val rankContext = PlayerRankContext("GOLD", "I", Instant.parse("2026-09-14T01:23:45Z"))
 
     @Test
-    fun `aggregates only the target player by the exact champion and position cohort`() {
+    fun `aggregates only the target player by position and champion-position`() {
         val context = buildContext(sampleMatches())
 
         assertEquals(PlayerComparisonContextPlayer("Hide on bush", "KR1"), context.player)
@@ -31,7 +31,38 @@ class PlayerComparisonContextBuilderTest {
         assertEquals(PlayerComparisonContextSample(requestedCount = 20, analyzedCount = 4), context.sample)
         assertEquals(
             listOf(
-                PlayerCohortStatistics(
+                PlayerPositionStatistics(
+                    position = "MIDDLE",
+                    games = 3,
+                    wins = 2,
+                    winRate = 2.0 / 3.0,
+                    averageKda = 14.0 / 3.0,
+                    averageCsPerMinute = 7.0,
+                    averageGoldPerMinute = 500.0,
+                    averageDamagePerMinute = 2_900.0 / 3.0,
+                    averageVisionPerMinute = 7.0 / 6.0,
+                    averageKillParticipation = 2.0 / 3.0,
+                    averageDamageShare = 1.0,
+                ),
+                PlayerPositionStatistics(
+                    position = "TOP",
+                    games = 1,
+                    wins = 1,
+                    winRate = 1.0,
+                    averageKda = 4.0,
+                    averageCsPerMinute = 5.0,
+                    averageGoldPerMinute = 400.0,
+                    averageDamagePerMinute = 800.0,
+                    averageVisionPerMinute = 1.0,
+                    averageKillParticipation = 1.0,
+                    averageDamageShare = 1.0,
+                ),
+            ),
+            context.positionStatistics,
+        )
+        assertEquals(
+            listOf(
+                PlayerChampionPositionStatistics(
                     championId = 103,
                     position = "MIDDLE",
                     games = 2,
@@ -45,7 +76,7 @@ class PlayerComparisonContextBuilderTest {
                     averageKillParticipation = 0.5,
                     averageDamageShare = 1.0,
                 ),
-                PlayerCohortStatistics(
+                PlayerChampionPositionStatistics(
                     championId = 86,
                     position = "MIDDLE",
                     games = 1,
@@ -59,7 +90,7 @@ class PlayerComparisonContextBuilderTest {
                     averageKillParticipation = 1.0,
                     averageDamageShare = 1.0,
                 ),
-                PlayerCohortStatistics(
+                PlayerChampionPositionStatistics(
                     championId = 103,
                     position = "TOP",
                     games = 1,
@@ -74,7 +105,7 @@ class PlayerComparisonContextBuilderTest {
                     averageDamageShare = 1.0,
                 ),
             ),
-            context.cohortStatistics,
+            context.championPositionStatistics,
         )
         assertTrue(allDoubleValues(context).all(Double::isFinite))
     }
@@ -87,7 +118,8 @@ class PlayerComparisonContextBuilderTest {
         val reversedContext = buildContext(matches.reversed(), rankContext = null)
 
         assertEquals(null, context.rankContext)
-        assertEquals(context.cohortStatistics, reversedContext.cohortStatistics)
+        assertEquals(context.positionStatistics, reversedContext.positionStatistics)
+        assertEquals(context.championPositionStatistics, reversedContext.championPositionStatistics)
     }
 
     private fun buildContext(
@@ -251,7 +283,7 @@ class PlayerComparisonContextBuilderTest {
         )
 
     private fun allDoubleValues(context: PlayerComparisonContext): List<Double> =
-        context.cohortStatistics.flatMap {
+        (context.positionStatistics + context.championPositionStatistics).flatMap {
             listOf(
                 it.winRate,
                 it.averageKda,

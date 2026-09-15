@@ -23,6 +23,14 @@ Riot API endpoint별 routing host와 용도를 빠르게 확인하는 참고 문
 - [`ai/player-analysis-feature-v0.1.md`](ai/player-analysis-feature-v0.1.md): 개인 요약 feature의 범위
 - [`ai/player-comparison-context-v0.1.md`](ai/player-comparison-context-v0.1.md): 향후 peer comparison의 사용자 측 입력
 
+### Peer Benchmark v0.2
+
+- [`benchmark/peer-benchmark-v0.2.md`](benchmark/peer-benchmark-v0.2.md): 명시적인 `POSITION`,
+  `CHAMPION_POSITION` aggregate, coverage, 한계
+- [`ai/player-comparison-context-v0.2.md`](ai/player-comparison-context-v0.2.md): scope에 맞춘 user statistic
+- [`ai/player-comparison-feature-v0.2.md`](ai/player-comparison-feature-v0.2.md): fallback 없는 독립 comparison 결과
+- [`adr/008-use-explicit-benchmark-scopes.md`](adr/008-use-explicit-benchmark-scopes.md): scope 결정 기록
+
 ### Performance Baselines
 
 [`performance/recent-matches-latency-baseline.md`](performance/recent-matches-latency-baseline.md)

@@ -182,6 +182,20 @@ grouping하고 기존 30 samples / 10 unique players availability policy를 적�
 선택한 뒤 `/analysis`를 실행하려면 `findBenchmarkExcludingPlayer(cohort, targetPuuid)` 결과도 `AVAILABLE`인지
 확인해야 한다. threshold에 정확히 맞는 row보다 30/10보다 충분한 여유가 있는 row를 우선한다.
 
+## Peer Benchmark scope v0.2
+
+Peer Benchmark은 `POSITION`(`region / queueId / tier / division / position`)과 `CHAMPION_POSITION`(기존 key에
+`championId` 추가)이라는 두 독립 scope를 제공한다. Player는 scope가 일치하는 comparison을 각각 받으며,
+AVAILABLE role-level 결과가 insufficient champion-specific 결과를 조용히 대체하지 않는다. 기존 availability policy는
+scope별 target-player self-exclusion 후 30 match observations와 10 unique players를 요구한다.
+
+`POSITION`은 해당 role의 champion mix를 포함하므로 role-level baseline으로만 사용한다. Champion-specific skill
+baseline으로 표현하지 않는다. 현재 OpenAI analysis는 계속 champion-position만 사용하며 position-level prompt
+해석은 별도 작업이다. 자세한 내용은 [ADR-008](docs/adr/008-use-explicit-benchmark-scopes.md),
+[Peer Benchmark v0.2](docs/benchmark/peer-benchmark-v0.2.md),
+[Player Comparison Context v0.2](docs/ai/player-comparison-context-v0.2.md),
+[Player Comparison Feature v0.2](docs/ai/player-comparison-feature-v0.2.md)를 참고한다.
+
 ## Development Smoke Procedure
 
 실제 development Riot key로 작은 수집을 확인할 때는 IDE의 dev-only evaluation 또는 임시 local harness에서

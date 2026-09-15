@@ -385,6 +385,24 @@ numeric difference를 계산한다. rank가 없으면 query 없이 `UNRANKED` co
 계획 상태다. 상세 contract와 statistical limit은 [Player Comparison Feature v0.1](ai/player-comparison-feature-v0.1.md)을
 따른다.
 
+#### Benchmark Scope v0.2
+
+ADR-008은 이 section의 v0.1 single-exact-cohort 설명을 대체한다. `BenchmarkScope`는 두 독립 population을
+명시한다. `POSITION`은 `region / queueId / tier / division / position`을 사용하고 `CHAMPION_POSITION`은 여기에
+`championId`를 추가한다. `PlayerComparisonContext`는 같은 per-match source of truth인
+`MatchParticipantMetricsCalculator`로부터 position과 champion-position user statistic을 별도로 만든다.
+
+`PlayerComparisonFeatureService`는 statistical unit마다 comparison 하나를 만들고 target-PUUID exclusion을 적용한
+같은 PostgreSQL aggregate를 query한다. Insufficient champion-position benchmark를 position benchmark로 조용히
+대체하지 않는다. 기존 30 samples / 10 unique players availability policy는 scope별 exclusion 후 평가한다. Coverage
+report에는 두 scope가 포함된다. 현재 OpenAI adapter는 의도적으로 `CHAMPION_POSITION` comparison만 선택하며
+role-level prompt semantics는 다음 작업으로 미룬다.
+
+`POSITION`은 champion mix가 포함된 role-level baseline이며 champion-specific skill baseline이 아니다. 두 scope는
+계속 match-level이고 patch-aware하지 않으며 heavy contributor의 영향을 받을 수 있다. Player percentile이나
+top-X-percent claim을 만들지 않는다. [ADR-008](adr/008-use-explicit-benchmark-scopes.md)과
+[Peer Benchmark v0.2](benchmark/peer-benchmark-v0.2.md)를 참고한다.
+
 #### BenchmarkSample
 
 `BenchmarkSample` 한 건은 여러 경기 평균이 아니라 `(sampled player PUUID, matchId)`로 식별되는 한 경기의
