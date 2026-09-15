@@ -33,11 +33,29 @@ class BenchmarkSeedManualSmokeTest {
 
         println(
             "Benchmark seed: tier=${request.tier}, division=${request.division}, " +
-                "pages=${request.startPage}-${request.startPage + request.pageCount - 1}, " +
+                "requestedStartPage=${result.requestedStartPage}, requestedPageCount=${result.requestedPageCount}, " +
+                "pagesProcessed=${result.pagesProcessed}, discoveredPlayers=${result.discoveredPlayers}, " +
                 "uniquePlayers=${result.uniquePlayers}, createdSamples=${result.createdSamples}, " +
                 "skippedDuplicates=${result.skippedDuplicates}, skippedInvalidSamples=${result.skippedInvalidSamples}, " +
+                "playerMatchListFailures=${result.playerMatchListFailures}, failedMatches=${result.failedMatches}, " +
                 "rateLimitStopped=${result.rateLimitStopped}, retryAfterSeconds=${result.retryAfterSeconds}",
         )
+        result.collectionResult?.let { collectionResult ->
+            println(
+                "Benchmark collection: inputPlayers=${collectionResult.inputPlayers}, " +
+                    "playersProcessed=${collectionResult.playersProcessed}, " +
+                    "discoveredMatchIds=${collectionResult.discoveredMatchIds}, " +
+                    "uniqueMatchIds=${collectionResult.uniqueMatchIds}, " +
+                    "fetchedMatches=${collectionResult.fetchedMatches}, " +
+                    "failedMatches=${collectionResult.failedMatches}, " +
+                    "createdSamples=${collectionResult.createdSamples}, " +
+                    "skippedDuplicates=${collectionResult.skippedDuplicates}, " +
+                    "skippedInvalidSamples=${collectionResult.skippedInvalidSamples}, " +
+                    "playerMatchListFailures=${collectionResult.playerMatchListFailures}, " +
+                    "rateLimitStopped=${collectionResult.rateLimitStopped}, " +
+                    "retryAfterSeconds=${collectionResult.retryAfterSeconds}",
+            )
+        }
         coverage.take(MAX_REPORTED_COHORTS).forEach { cohortCoverage ->
             println(
                 "Coverage: scope=${cohortCoverage.cohort.scope}, position=${cohortCoverage.cohort.position}, " +
