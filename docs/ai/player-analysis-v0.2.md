@@ -21,6 +21,32 @@ Riot API data
     -> PlayerAnalysisResult
 ```
 
+## OpenAI Observability v0.1
+
+OpenAI 어댑터는 이 request/response contract를 바꾸지 않고 best-effort Micrometer 계측을 추가한다.
+`PlayerAnalysisResult`와 `PlayerAnalysisResponse`는 provider-independent를 유지하며, token usage와 provider
+request identifier를 caller에게 노출하지 않는다.
+
+각 생성 결과마다 `ai.generation.requests`는 `provider=openai`, `model`, `outcome`, `error_category`를
+기록한다. `ai.generation.duration`은 호출이 `responses.create(...)`에 도달한 뒤 같은 tag로 provider 호출
+지연 시간을 기록한다. `ai.generation.tokens` counter는 SDK response에 optional `usage()`가 있을 때만
+`token_type=input|output|total`을 기록한다. 성공한 호출은 실제 response model을, 실패한 호출은 configured
+model을 사용한다.
+
+success는 Responses API 호출 완료와 유효한 구조화 출력 매핑을 모두 요구한다. failure category는
+`configuration`, `authentication_permission`, `rate_limit`, `upstream`, `timeout_network`,
+`malformed_structured_output`이다. usage 누락은 failure가 아니다. configuration 실패는 OpenAI 요청을 보내지
+않으므로 provider 호출 timer가 없다. 기존 error mapping과 analysis behavior는 바꾸지 않는다.
+
+metric label은 의도적으로 low cardinality로 유지한다. Riot ID, PUUID, match ID, champion ID, request ID,
+API key는 제외한다. 계측은 raw prompt, request/response JSON, 전체 analysis text, raw usage object도
+log하거나 persist하지 않는다. v0.1은 currency cost를 계산하지 않는다. source of truth는 token count뿐이며
+price/version/currency 정책은 이후로 미룬다.
+
+recorder error는 분석 생성과 격리한다. 이 범위에는 외부 monitoring 호출, metrics exporter, Actuator 노출
+설정, retry, cache, background analysis behavior를 추가하지 않는다. 전체 endpoint 지연 시간은 계속 framework
+HTTP observation을 사용한다.
+
 ## 분석 게이트와 요청 횟수
 
 서비스는 scope와 관계없이 하나 이상의 comparison이 `status == AVAILABLE`이면

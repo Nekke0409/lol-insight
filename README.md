@@ -137,6 +137,37 @@ endpoint, startup runner, scheduler 없이 application service로만 제공됩�
 `BenchmarkSample` persistence integration test는 Testcontainers PostgreSQL을 사용하므로 Docker daemon이
 실행 중이어야 합니다.
 
+## OpenAI Observability v0.1
+
+OpenAI Responses 어댑터는 기존 Micrometer `MeterRegistry`에 provider 호출 메타데이터를 기록한다.
+이는 계측만 추가하는 변경으로, metrics backend·exporter·Actuator endpoint 노출 정책·외부 동기 monitoring
+호출은 추가하지 않는다.
+
+| Meter | Tags | 의미 |
+| --- | --- | --- |
+| `ai.generation.requests` | `provider`, `model`, `outcome`, `error_category` | 분석 생성 결과 한 건. `outcome`은 `success` 또는 `failure`다. |
+| `ai.generation.duration` | `provider`, `model`, `outcome`, `error_category` | `responses.create(...)`까지 도달한 요청의 OpenAI provider 호출 지연 시간이다. |
+| `ai.generation.tokens` | `provider`, `model`, `token_type` | usage가 포함된 성공 응답의 SDK 제공 `input`·`output`·`total` 토큰 카운터다. |
+
+성공한 요청의 `model` tag는 Responses API 응답의 실제 model을 사용한다. 실패한 요청에는 response model이
+없으므로 configured request model을 사용하며, model 자체가 설정되지 않은 configuration 실패에는
+`unconfigured`을 사용한다. 이 값은 request별 데이터가 아닌 deployment configuration이며, 의도적으로
+고정값이 아닌 유일한 tag 값이다.
+
+OpenAI Java SDK의 `StructuredResponse.usage()`는 optional이다. usage가 없는 응답도 성공으로 처리하고
+request count와 latency만 기록한다. v0.1은 currency가 아닌 token count만 기록한다. model price,
+USD/KRW 변환, cost aggregation, billing dashboard는 구현하지 않는다.
+
+success는 OpenAI 호출과 구조화 출력 매핑이 모두 완료된 상태를 뜻한다. failure는 기존 HTTP 오류 매핑을
+유지하면서 `configuration`, `authentication_permission`, `rate_limit`, `upstream`,
+`timeout_network`, `malformed_structured_output`으로 tag한다. configuration 실패는 OpenAI 요청을 보내지
+않으므로 provider latency가 없다.
+
+raw prompt, request/response JSON, 자연어 분석 본문, Riot ID, PUUID, match ID, API key, OpenAI request
+ID, provider usage object은 log·persistence·metric·analysis REST response에 넣지 않는다. recorder 실패는
+분석 결과나 기존 오류 의미를 바꾸지 않도록 격리한다. `/analysis` 전체 HTTP 지연 시간은 generator가 아닌
+framework 제공 HTTP observation으로 측정한다.
+
 ## OpenAI Runtime Configuration
 
 OpenAI 분석의 production 기본 timeout은 `60s`이며 `OPENAI_TIMEOUT`으로 환경별 override할 수 있습니다.

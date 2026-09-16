@@ -103,6 +103,31 @@ position 및 `(championId, position)`별 통계를 각각 같은 scope benchmark
 
 LLM Provider의 요청/응답 형식이 Match나 Player의 핵심 로직에 직접 퍼지지 않도록 한다.
 
+### OpenAI Observability v0.1
+
+OpenAI usage와 지연 시간은 OpenAI infrastructure 어댑터 내부에만 둔다. application 경계는
+`PlayerAnalysisGenerator -> PlayerAnalysisResult`를 유지하며, application model과 REST response에는
+provider usage, provider request identifier, raw provider type을 전달하지 않는다.
+
+어댑터는 provider `openai`의 low-cardinality Micrometer metrics로 요청 결과, provider 호출 지연 시간,
+SDK 제공 input/output/total 토큰 카운터를 기록한다. 성공한 호출은 response의 실제 model을 사용하고,
+실패한 호출은 실제 model을 받을 수 없을 때만 configured model을 사용한다. tag는
+`provider`, `model`, `outcome`, `error_category`, `token_type`으로 제한한다. player, Riot, champion,
+match, request identifier는 tag로 사용하지 않는다.
+
+provider 호출 지연 시간은 `responses.create(...)` 직전에 시작해 구조화 response 매핑 또는 해당 exception이
+발생한 시점에 끝난다. optional SDK `usage()`가 없어도 analysis는 실패하지 않으며 토큰 카운터만 생략한다.
+configuration 실패는 count하지만 OpenAI를 호출하지 않으므로 provider duration은 없다. 기존
+exception-to-HTTP mapping은 바꾸지 않는다.
+
+recorder는 best-effort 방식의 프로세스 내부 component다. 어댑터 경계에서 recorder exception을 무시하며
+분석의 critical path에 외부 monitoring 요청을 추가하지 않는다. 이 프로젝트에는 이미 Actuator와 Micrometer가
+포함되어 있다. exporter, endpoint 노출, Prometheus/Grafana, cost/currency 계산은 별도 운영 결정으로 남긴다.
+전체 endpoint 지연 시간은 generator가 아닌 기존 framework HTTP metric으로 측정한다.
+
+이 계측은 prompt, request JSON, response body, analysis 본문, Riot identifier, OpenAI request ID, API key,
+raw provider usage object을 log하거나 persist하지 않는다.
+
 ### Benchmark
 
 Peer Benchmark는 샘플링한 ranked player의 Ranked Solo Match participant 관측치를 수집하고, cohort별로
