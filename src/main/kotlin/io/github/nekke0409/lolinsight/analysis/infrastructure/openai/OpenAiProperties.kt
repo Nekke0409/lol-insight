@@ -10,8 +10,8 @@ data class OpenAiProperties(
     val apiKey: String = "",
     val model: String = "",
     val timeout: Duration = Duration.ofSeconds(60),
-    val reasoningEffort: String = "",
-    val textVerbosity: String = "",
+    val reasoningEffort: String = "low",
+    val textVerbosity: String = "low",
 ) {
     fun requireConfigured() {
         if (apiKey.isBlank() || model.isBlank()) {
@@ -19,17 +19,20 @@ data class OpenAiProperties(
         }
     }
 
-    fun requestedReasoningEffort(): ReasoningEffort? =
+    fun requestedReasoningEffort(): ReasoningEffort =
         when (reasoningEffort.trim()) {
-            "" -> null
+            "minimal" -> ReasoningEffort.MINIMAL
             "low" -> ReasoningEffort.LOW
+            "medium" -> ReasoningEffort.MEDIUM
+            "high" -> ReasoningEffort.HIGH
             else -> throw OpenAiConfigurationException()
         }
 
-    fun requestedTextVerbosity(): ResponseTextConfig.Verbosity? =
+    fun requestedTextVerbosity(): ResponseTextConfig.Verbosity =
         when (textVerbosity.trim()) {
-            "" -> null
             "low" -> ResponseTextConfig.Verbosity.LOW
+            "medium" -> ResponseTextConfig.Verbosity.MEDIUM
+            "high" -> ResponseTextConfig.Verbosity.HIGH
             else -> throw OpenAiConfigurationException()
         }
 }

@@ -92,7 +92,7 @@ class OpenAiPlayerAnalysisGeneratorTest {
     }
 
     @Test
-    fun `adds low reasoning only for the explicit diagnostic override`() {
+    fun `uses low reasoning by default`() {
         val client = mock(OpenAIClient::class.java)
         val responses = mock(ResponseService::class.java)
         val response = mockStructuredResponse(output(), usage())
@@ -103,7 +103,7 @@ class OpenAiPlayerAnalysisGeneratorTest {
             response
         }
 
-        generator(client, reasoningEffort = "low").generate(TestPlayerAnalysisInput.input())
+        generator(client).generate(TestPlayerAnalysisInput.input())
 
         assertEquals(
             ReasoningEffort.LOW,
@@ -117,7 +117,7 @@ class OpenAiPlayerAnalysisGeneratorTest {
     }
 
     @Test
-    fun `preserves the existing structured output request when text verbosity is unset`() {
+    fun `applies generation defaults while preserving the structured output schema`() {
         val client = mock(OpenAIClient::class.java)
         val responses = mock(ResponseService::class.java)
         val response = mockStructuredResponse(output(), usage())
@@ -129,29 +129,6 @@ class OpenAiPlayerAnalysisGeneratorTest {
         }
 
         generator(client).generate(TestPlayerAnalysisInput.input())
-
-        val text = requireNotNull(capturedParams).rawParams.text().orElseThrow()
-        assertTrue(text.format().isPresent)
-        assertTrue(text._verbosity().isMissing())
-    }
-
-    @Test
-    fun `adds low text verbosity while preserving the structured output schema`() {
-        val client = mock(OpenAIClient::class.java)
-        val responses = mock(ResponseService::class.java)
-        val response = mockStructuredResponse(output(), usage())
-        var capturedParams: StructuredResponseCreateParams<OpenAiPlayerAnalysisOutput>? = null
-        `when`(client.responses()).thenReturn(responses)
-        `when`(responses.create(anyStructuredResponseParams())).thenAnswer { invocation ->
-            capturedParams = invocation.getArgument(0)
-            response
-        }
-
-        generator(
-            client,
-            reasoningEffort = "low",
-            textVerbosity = "low",
-        ).generate(TestPlayerAnalysisInput.input())
 
         val params = requireNotNull(capturedParams).rawParams
         assertEquals(
@@ -258,8 +235,8 @@ class OpenAiPlayerAnalysisGeneratorTest {
     private fun generator(
         client: OpenAIClient,
         observationRecorder: OpenAiAnalysisObservationRecorder = NoOpOpenAiAnalysisObservationRecorder,
-        reasoningEffort: String = "",
-        textVerbosity: String = "",
+        reasoningEffort: String = "low",
+        textVerbosity: String = "low",
     ): OpenAiPlayerAnalysisGenerator =
         OpenAiPlayerAnalysisGenerator(
             properties =

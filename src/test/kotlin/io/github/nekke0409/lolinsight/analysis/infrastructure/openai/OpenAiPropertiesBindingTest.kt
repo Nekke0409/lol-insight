@@ -29,27 +29,30 @@ class OpenAiPropertiesBindingTest {
     }
 
     @Test
-    fun `binds the diagnostic low reasoning override only when explicitly configured`() {
-        assertEquals(null, bindApplicationYamlOpenAiProperties().requestedReasoningEffort())
+    fun `uses low reasoning effort by default and binds a supported override`() {
+        assertEquals(ReasoningEffort.LOW, bindApplicationYamlOpenAiProperties().requestedReasoningEffort())
         assertEquals(
-            ReasoningEffort.LOW,
-            bindApplicationYamlOpenAiProperties("OPENAI_REASONING_EFFORT" to "low").requestedReasoningEffort(),
+            ReasoningEffort.MEDIUM,
+            bindApplicationYamlOpenAiProperties("OPENAI_REASONING_EFFORT" to "medium").requestedReasoningEffort(),
         )
     }
 
     @Test
-    fun `binds the diagnostic low text verbosity override only when explicitly configured`() {
-        assertEquals(null, bindApplicationYamlOpenAiProperties().requestedTextVerbosity())
+    fun `uses low text verbosity by default and binds a supported override`() {
+        assertEquals(ResponseTextConfig.Verbosity.LOW, bindApplicationYamlOpenAiProperties().requestedTextVerbosity())
         assertEquals(
-            ResponseTextConfig.Verbosity.LOW,
-            bindApplicationYamlOpenAiProperties("OPENAI_TEXT_VERBOSITY" to "low").requestedTextVerbosity(),
+            ResponseTextConfig.Verbosity.HIGH,
+            bindApplicationYamlOpenAiProperties("OPENAI_TEXT_VERBOSITY" to "high").requestedTextVerbosity(),
         )
     }
 
     @Test
-    fun `rejects an unsupported text verbosity value`() {
+    fun `rejects unsupported generation settings`() {
         assertFailsWith<OpenAiConfigurationException> {
-            bindApplicationYamlOpenAiProperties("OPENAI_TEXT_VERBOSITY" to "medium").requestedTextVerbosity()
+            bindApplicationYamlOpenAiProperties("OPENAI_REASONING_EFFORT" to "none").requestedReasoningEffort()
+        }
+        assertFailsWith<OpenAiConfigurationException> {
+            bindApplicationYamlOpenAiProperties("OPENAI_TEXT_VERBOSITY" to "verbose").requestedTextVerbosity()
         }
     }
 

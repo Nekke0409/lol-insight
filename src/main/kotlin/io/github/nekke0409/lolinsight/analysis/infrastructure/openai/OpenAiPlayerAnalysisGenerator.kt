@@ -64,18 +64,16 @@ internal class OpenAiPlayerAnalysisGenerator(
                     .instructions(prompt.instructions)
                     .input(prompt.structuredData)
                     .store(false)
-            properties.requestedTextVerbosity()?.let { verbosity ->
-                paramsBuilder.text(
-                    StructuredResponseTextConfig
-                        .builder<OpenAiPlayerAnalysisOutput>()
-                        .format(OpenAiPlayerAnalysisOutput::class.java)
-                        .verbosity(verbosity)
-                        .build(),
-                )
-            } ?: paramsBuilder.text(OpenAiPlayerAnalysisOutput::class.java)
-            properties.requestedReasoningEffort()?.let { effort ->
-                paramsBuilder.reasoning(Reasoning.builder().effort(effort).build())
-            }
+            paramsBuilder.text(
+                StructuredResponseTextConfig
+                    .builder<OpenAiPlayerAnalysisOutput>()
+                    .format(OpenAiPlayerAnalysisOutput::class.java)
+                    .verbosity(properties.requestedTextVerbosity())
+                    .build(),
+            )
+            paramsBuilder.reasoning(
+                Reasoning.builder().effort(properties.requestedReasoningEffort()).build(),
+            )
             val params = paramsBuilder.build()
             providerStartedAt = System.nanoTime()
             val response = client.responses().create(params)

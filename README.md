@@ -25,8 +25,8 @@ Riot의 공식 Ranked Ladder를 대체하는 MMR, ELO 또는 자체 Skill Rating
 | Player statistics | 최근 Match 표본의 KDA, CS/min, DPM, 골드/비전, 킬 관여율, 피해 비중 계산 | player-level benchmark |
 | Analysis feature | 개인 요약용 `PlayerAnalysisFeature`, comparison-ready `PlayerComparisonContext`, deterministic `PlayerComparisonFeature`, 그리고 AVAILABLE cohort만 설명하는 `PlayerAnalysisResult` | locale, result quality evaluation |
 | Redis | 성공한 Match Detail을 7일 TTL로 캐시 | benchmark 전용 Redis 기능은 도입하지 않음 |
-| Persistence | PostgreSQL, JPA, Flyway 기반 `BenchmarkSample` schema, idempotent 저장 진입점, 소규모 collector와 on-demand aggregate query | retention 정책 |
-| LLM | OpenAI Responses API + Structured Outputs, `POST /api/v1/players/{gameName}/{tagLine}/analysis`, provider-independent `PlayerAnalysisGenerator` | result cache/persistence, per-user rate limit, cost observability, multi-provider |
+| Persistence | PostgreSQL, JPA, Flyway 기반 `BenchmarkSample`과 `AnalysisJob` schema, idempotent sample 저장, JSONB analysis snapshot | retention 정책, job crash recovery |
+| LLM | OpenAI Responses API + Structured Outputs, sync `/analysis`와 polling `/analysis-jobs`, provider-independent `PlayerAnalysisGenerator` | result cache, per-user rate limit, cost observability, multi-provider |
 
 ## 현재 아키텍처
 
@@ -93,8 +93,8 @@ Backend는 metric, exact cohort, sample size, 평균·중앙값·match-level per
 현재 사용 중인 기술은 Kotlin, Spring Boot, Spring MVC `RestClient`, PostgreSQL, Spring Data JPA,
 Flyway, Redis, Docker, OpenAI Java SDK입니다. JDK 21을 사용합니다.
 
-OpenAI 연동은 Responses API Structured Outputs를 사용하는 v0.2 다중 scope 분석 경계로 구현되어 있습니다.
-Spring Security, AWS, 다중 LLM Provider, 결과 cache/persistence, 사용자별 AI rate limit과 비용 관측은 후속 기술 방향입니다.
+OpenAI 연동은 Responses API Structured Outputs를 사용하는 v0.2 다중 scope 분석 경계와 v0.1 async job 실행 경계로 구현되어 있습니다.
+Spring Security, AWS, 다중 LLM Provider, 결과 cache, 사용자별 AI rate limit과 비용 관측은 후속 기술 방향입니다.
 
 ## 문서
 
@@ -102,9 +102,11 @@ Spring Security, AWS, 다중 LLM Provider, 결과 cache/persistence, 사용자�
 - [아키텍처](docs/architecture.md): 현재 구현과 향후 설계 경계
 - [ADR](docs/adr/): 장기적인 기술 의사결정
 - [ADR-007](docs/adr/007-use-structured-llm-analysis-boundary.md): Structured LLM 분석 경계 결정
+- [ADR-009](docs/adr/009-introduce-asynchronous-player-analysis-jobs.md): async Player Analysis Job 결정
 - [플레이어 경기 통계 v0.1](docs/statistics/player-match-statistics-v0.1.md): 현재 통계의 계산 기준
 - [플레이어 분석 Feature v0.1](docs/ai/player-analysis-feature-v0.1.md): 현재 provider 독립 feature의 범위
 - [플레이어 분석 v0.2](docs/ai/player-analysis-v0.2.md): 다중 scope OpenAI 분석 게이트, input/output 및 운영 제약
+- [Async Player Analysis Job v0.1](docs/ai/async-player-analysis-jobs-v0.1.md): polling API, lifecycle, transaction 및 recovery 제한
 - [플레이어 비교 컨텍스트 v0.1](docs/ai/player-comparison-context-v0.1.md): peer comparison 사용자 입력의 범위
 - [플레이어 비교 Feature v0.1](docs/ai/player-comparison-feature-v0.1.md): exact benchmark comparison의 범위와 한계
 
@@ -181,11 +183,20 @@ production Spring Boot runtime은 `application.yaml`의 기본값과 환경 변�
 반면 manual OpenAI smoke는 `StandardEnvironment` + `Binder`로 환경 값만 읽으므로
 `OPENAI_MODEL=gpt-5-mini`과 필요한 `OPENAI_TIMEOUT`을 명시해 실행합니다.
 
-기본 reasoning policy는 요청에 값을 보내지 않는 model default를 유지합니다. 제한된 latency 진단에서만
-`OPENAI_REASONING_EFFORT=low`를 process-local로 설정할 수 있으며, 빈 값은 기존 request shape를 유지합니다.
-동일하게 `OPENAI_TEXT_VERBOSITY=low`는 진단에서만 Responses API `text.verbosity`를 명시합니다. 빈 값은
-해당 field 자체를 보내지 않아 기존 Structured Output request와 provider default를 유지합니다. 두 override 모두
-production YAML 기본값, timeout, prompt, schema를 변경하지 않습니다.
+production generation 기본값은 `reasoning.effort=low`, `text.verbosity=low`다. 따라서 기본 요청은 두 field를
+명시적으로 전송한다. `OPENAI_REASONING_EFFORT`는 `minimal`·`low`·`medium`·`high`로, `OPENAI_TEXT_VERBOSITY`는
+`low`·`medium`·`high`로 환경별 override할 수 있으며, 빈 값과 지원하지 않는 값은 configuration error로 거부한다.
+이 정책은 model, prompt, Structured Output schema, `max_output_tokens`, timeout, retry를 변경하지 않는다.
+
+representative 실제 `/analysis` 한 건에서 model default 대비 `low` + `low`는 provider latency를 74.306s에서
+38.153s로 48.7%, endpoint latency를 75.448s에서 40.464s로 46.4%, total tokens를 7,697에서 4,277로 44.4%
+줄였고 quality contract를 유지했다. 단일 표본이며 약 40초의 synchronous UX는 여전히 길므로, 추가 parameter
+tuning 대신 [Async Player Analysis Job v0.1](docs/ai/async-player-analysis-jobs-v0.1.md)으로 HTTP lifecycle을
+분리한다.
+
+`max_output_tokens`는 추가하지 않는다. 이미 설정한 두 generation control만으로 개선이 확인됐고, hard cap은
+reasoning과 visible output을 함께 제한해 Structured Output truncation 위험을 높일 수 있다.
+
 실측과 해석은 [OpenAI reasoning effort latency experiment](docs/performance/openai-reasoning-effort-experiment-2026-09-16.md)를 참고합니다.
 
 ## 제한된 Benchmark Seed (개발 전용)

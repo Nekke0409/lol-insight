@@ -73,12 +73,12 @@ prompt, Structured Output schema, retry `0`을 유지하고, process-local로만
 - `OPENAI_TIMEOUT=90s`
 
 `openai-java` 4.63.1은 Structured Outputs에서도 `StructuredResponseTextConfig`를 통해
-`ResponseTextConfig.Verbosity.LOW`를 설정할 수 있다. 구현은 OpenAI infrastructure 안에만 있으며, 값이 없을
-때는 기존 `text(OpenAiPlayerAnalysisOutput::class.java)` 경로를 그대로 사용해 `text.verbosity` field를
-전송하지 않는다. `low` 외의 값은 기존 reasoning override와 동일하게 configuration error로 거부한다.
+`ResponseTextConfig.Verbosity.LOW`를 설정할 수 있다. 구현은 OpenAI infrastructure 안에만 있으며, 당시에는
+값이 없을 때 기존 `text(OpenAiPlayerAnalysisOutput::class.java)` 경로를 사용해 `text.verbosity` field를
+전송하지 않는 진단 경로였다.
 
-production YAML의 reasoning, verbosity, timeout 기본값은 바꾸지 않았다. `max_output_tokens`도 설정하지 않았다.
-이는 Responses API의 output token budget이 visible output과 reasoning token을 함께 제한하므로, hard cap을
+실험 시점에는 production YAML의 reasoning, verbosity, timeout 기본값을 바꾸지 않았고, `max_output_tokens`도
+설정하지 않았다. 이는 Responses API의 output token budget이 visible output과 reasoning token을 함께 제한하므로, hard cap을
 동시에 바꾸면 verbosity의 latency/quality 영향을 분리할 수 없고 Structured Output truncation 위험도 생기기
 때문이다.
 
@@ -104,13 +104,35 @@ HTTP endpoint는 200을 반환했고, `ai.generation.requests`의 success가 1�
 `gpt-5-mini-2025-08-07`이었다. success 기록은 Structured Output mapping 뒤에만 발생하므로 mapping은
 성공했다. `PlayerAnalysisService`는 provider를 호출한 성공 경로에서만 `ANALYZED` response를 만들며, output
 mapper는 summary와 insight의 모든 필수 field, caveat의 non-null을 요구한다. 따라서 status/analysis와 필수
-field contract도 유지됐다. prompt와 JSON schema는 변경하지 않았고, unit test는 verbosity 미설정 시 field
-생략, `low`에서 reasoning과 verbosity의 동시 설정, 같은 Structured Output schema 보존을 검증한다.
+field contract도 유지됐다. prompt와 JSON schema는 변경하지 않았고, unit test는 기본 `low` + `low`의 동시 설정과
+같은 Structured Output schema 보존을 검증한다.
 
 ### 해석과 다음 결정
 
-verbosity를 낮추면 output과 visible output은 유의미하게 줄고 endpoint latency도 줄었다. 하지만 40.464초는
-synchronous UX 목표로 보기에는 여전히 길다. 따라서 이번 결과는 production default 채택 여부를 결정하지
-않으며, reasoning=`low`와 verbosity=`low`의 production 후보 평가는 별도 결정으로 남긴다. async analysis job
-도입 검토는 계속 권장한다. 이 결과 뒤에는 `max_output_tokens`, prompt 축소, schema 축소를 추가로 반복 실험하지
-않고 sync/async 구조 결정을 우선한다.
+## Production generation policy 채택
+
+### 결정
+
+실험 결과를 production 기본 정책으로 승격해 `reasoning.effort=low`, `text.verbosity=low`를 명시적으로 전송한다.
+`OPENAI_REASONING_EFFORT`와 `OPENAI_TEXT_VERBOSITY`의 환경별 override는 유지한다. 이 변경은 model, prompt,
+Structured Output schema, `max_output_tokens`, timeout, retry, comparison input, metric name/tag contract를 바꾸지 않는다.
+
+### 근거와 결과
+
+representative 실제 `/analysis` 한 건에서 default와 low + low를 비교했다.
+
+| 항목 | Default | Low + Low | 변화 |
+| --- | ---: | ---: | ---: |
+| Provider latency | 74.306s | 38.153s | -36.153s (-48.7%) |
+| Endpoint latency | 75.448s | 40.464s | -34.984s (-46.4%) |
+| Total tokens | 7,697 | 4,277 | -3,420 (-44.4%) |
+
+두 조건은 HTTP 200, `ANALYZED`, Structured Output mapping, 한국어 결과, 필수 field,
+`POSITION`/`CHAMPION_POSITION` 계약과 기존 guardrail을 유지했다.
+
+### 한계와 다음 단계
+
+이 근거는 단일 representative run이며 provider latency에는 변동성이 있다. 약 40초의 synchronous UX는 여전히 길다.
+두 control만으로 충분한 개선을 확인했고 hard `max_output_tokens`는 Structured Output truncation 위험을 높일 수 있으므로
+추가하지 않는다. generation tuning은 여기서 종료하고, 잔여 latency는 parameter tuning이 아니라 async analysis job의
+execution architecture 문제로 별도 검토한다.

@@ -6,6 +6,8 @@ import io.github.nekke0409.lolinsight.analysis.application.PlayerAnalysisInvalid
 import io.github.nekke0409.lolinsight.analysis.application.PlayerAnalysisProviderException
 import io.github.nekke0409.lolinsight.analysis.application.PlayerAnalysisRateLimitException
 import io.github.nekke0409.lolinsight.analysis.application.PlayerAnalysisTransportException
+import io.github.nekke0409.lolinsight.analysis.job.application.AnalysisJobCapacityExceededException
+import io.github.nekke0409.lolinsight.analysis.job.application.AnalysisJobNotFoundException
 import io.github.nekke0409.lolinsight.global.riot.RiotApiEmptyResponseException
 import io.github.nekke0409.lolinsight.global.riot.RiotApiInvalidResponseException
 import io.github.nekke0409.lolinsight.global.riot.RiotApiResponseException
@@ -21,6 +23,14 @@ import org.springframework.web.bind.annotation.RestControllerAdvice
 
 @RestControllerAdvice
 class GlobalExceptionHandler {
+    @ExceptionHandler(AnalysisJobNotFoundException::class)
+    fun handleAnalysisJobNotFoundException(): ProblemDetail =
+        ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, "Analysis job not found.")
+
+    @ExceptionHandler(AnalysisJobCapacityExceededException::class)
+    fun handleAnalysisJobCapacityExceededException(): ProblemDetail =
+        ProblemDetail.forStatusAndDetail(HttpStatus.SERVICE_UNAVAILABLE, "AI analysis is temporarily at capacity.")
+
     @ExceptionHandler(PlayerAnalysisConfigurationException::class)
     fun handlePlayerAnalysisConfigurationException(): ProblemDetail =
         ProblemDetail.forStatusAndDetail(HttpStatus.SERVICE_UNAVAILABLE, "AI analysis is not configured.")

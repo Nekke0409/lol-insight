@@ -30,4 +30,11 @@ openai:
   api-key: ${OPENAI_API_KEY:}
   model: ${OPENAI_MODEL:gpt-5-mini}
   timeout: ${OPENAI_TIMEOUT:60s}
-  text-verbosity: ${OPENAI_TEXT_VERBOSITY:}
+  reasoning-effort: ${OPENAI_REASONING_EFFORT:low}
+  text-verbosity: ${OPENAI_TEXT_VERBOSITY:low}
+
+analysis:
+  jobs:
+    executor:
+      worker-threads: ${ANALYSIS_JOB_WORKER_THREADS:1}
+      queue-capacity: ${ANALYSIS_JOB_QUEUE_CAPACITY:2}

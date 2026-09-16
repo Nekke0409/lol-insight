@@ -59,7 +59,7 @@ flowchart LR
 
 Backend가 서비스의 중심이며 Frontend가 Riot API나 향후 LLM API를 직접 호출하지 않는다.
 
-현재 구현은 Riot Games API, Redis Match Detail cache, `BenchmarkSample`용 PostgreSQL/JPA/Flyway
+현재 구현은 Riot Games API, Redis Match Detail cache, `BenchmarkSample`과 `AnalysisJob`용 PostgreSQL/JPA/Flyway
 persistence 및 OpenAI Responses API Structured Outputs 분석 경계를 사용한다. OpenAI API key가 없는 상태에서도
 애플리케이션은 시작하며, 분석 endpoint를 실제 호출할 때만 명시적인 configuration error를 반환한다.
 
@@ -128,6 +128,43 @@ recorder는 best-effort 방식의 프로세스 내부 component다. 어댑터 �
 
 이 계측은 prompt, request JSON, response body, analysis 본문, Riot identifier, OpenAI request ID, API key,
 raw provider usage object을 log하거나 persist하지 않는다.
+
+### OpenAI generation 기본 정책
+
+production OpenAI 요청은 `reasoning.effort=low`와 `text.verbosity=low`를 명시적으로 전송한다.
+`OPENAI_REASONING_EFFORT`(`minimal`·`low`·`medium`·`high`)와
+`OPENAI_TEXT_VERBOSITY`(`low`·`medium`·`high`)는 환경별 override 경로로 유지하며, 빈 값 또는 지원하지 않는 값은
+기존 configuration error로 처리한다. 이 값은 OpenAI infrastructure 설정에만 있고 application 결과나 REST contract로
+전파되지 않는다.
+
+이 정책은 model, prompt, Structured Output schema, `max_output_tokens`, timeout(`60s`), retry(`maxRetries(0)`),
+metric name/tag contract를 바꾸지 않는다. representative `/analysis` 단일 표본에서 provider latency 48.7%, endpoint
+latency 46.4%, total token 44.4% 감소와 quality contract 유지를 확인했다. 다만 약 40초의 endpoint 지연 시간은
+synchronous UX에 여전히 길며, 이를 위해 async analysis job을 별도 실행 경계로 도입했다.
+
+### Async Player Analysis Job v0.1
+
+기존 동기 `POST /api/v1/players/{gameName}/{tagLine}/analysis`는 유지한다. 새로운
+`POST /api/v1/players/{gameName}/{tagLine}/analysis-jobs`는 `analysis_job` lifecycle row를 commit한 후
+in-memory command를 bounded Spring executor에 제출하고 `202 Accepted` 및 polling Location을 반환한다.
+`GET /api/v1/analysis-jobs/{jobId}`는 `PENDING`, `RUNNING`, `SUCCEEDED`, `FAILED`와 terminal result 또는 safe
+failure code를 조회한다.
+
+worker는 conditional `PENDING -> RUNNING` update로 중복 실행을 막은 뒤, DB transaction 밖에서 기존
+`PlayerAnalysisService`를 호출한다. 성공 snapshot은 provider-independent `PlayerAnalysisResult` JSONB만 저장하며,
+OpenAI SDK type, raw provider response/prompt, token usage, Riot identifier는 저장하지 않는다. lifecycle 전이와
+result/failure 저장은 각각 짧은 transaction이다.
+
+기본 executor는 worker 1개, queue capacity 2개이며 `ANALYSIS_JOB_WORKER_THREADS`,
+`ANALYSIS_JOB_QUEUE_CAPACITY`로 조정한다. queue rejection은 PENDING row를
+`FAILED(CAPACITY_EXCEEDED)` audit row로 전이시키고 POST에 503을 반환한다. async worker는 기존
+OpenAI adapter를 재사용하므로 `ai.generation.*` metrics를 따로 복제하지 않으며 timeout 60초와 retry 0도 바꾸지
+않는다.
+
+이 MVP는 same-process command를 사용하므로 process crash recovery, stale-job recovery, automatic retry, persistent
+queue, ownership authorization이 없다. UUID는 보안 boundary가 아니다. 자세한 contract와 JSONB schema evolution
+제한은 [Async Player Analysis Job v0.1](ai/async-player-analysis-jobs-v0.1.md), 결정 근거는
+[ADR-009](adr/009-introduce-asynchronous-player-analysis-jobs.md)를 따른다.
 
 ### 벤치마크
 

@@ -6,6 +6,10 @@ import io.github.nekke0409.lolinsight.analysis.application.PlayerAnalysisRespons
 import io.github.nekke0409.lolinsight.analysis.application.PlayerAnalysisResponseStatus
 import io.github.nekke0409.lolinsight.analysis.application.PlayerAnalysisResult
 import io.github.nekke0409.lolinsight.analysis.application.PlayerAnalysisService
+import io.github.nekke0409.lolinsight.analysis.job.application.AnalysisJobCapacityExceededException
+import io.github.nekke0409.lolinsight.analysis.job.application.AnalysisJobCreated
+import io.github.nekke0409.lolinsight.analysis.job.application.AnalysisJobService
+import io.github.nekke0409.lolinsight.analysis.job.application.AnalysisJobStatus
 import io.github.nekke0409.lolinsight.global.riot.RiotApiResponseException
 import io.github.nekke0409.lolinsight.global.riot.RiotApiTransportException
 import io.github.nekke0409.lolinsight.global.web.GlobalExceptionHandler
@@ -39,16 +43,24 @@ import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 import org.springframework.test.web.servlet.setup.MockMvcBuilders
 import org.springframework.web.client.RestClientException
 import java.time.Instant
+import java.util.UUID
 
 class PlayerControllerTest {
     private val playerService = mock(PlayerService::class.java)
     private val playerMatchHistoryService = mock(PlayerMatchHistoryService::class.java)
     private val playerMatchStatisticsService = mock(PlayerMatchStatisticsService::class.java)
     private val playerAnalysisService = mock(PlayerAnalysisService::class.java)
+    private val analysisJobService = mock(AnalysisJobService::class.java)
     private val mockMvc: MockMvc =
         MockMvcBuilders
             .standaloneSetup(
-                PlayerController(playerService, playerMatchHistoryService, playerMatchStatisticsService, playerAnalysisService),
+                PlayerController(
+                    playerService,
+                    playerMatchHistoryService,
+                    playerMatchStatisticsService,
+                    playerAnalysisService,
+                    analysisJobService,
+                ),
             ).setControllerAdvice(GlobalExceptionHandler())
             .build()
 
@@ -210,6 +222,41 @@ class PlayerControllerTest {
         mockMvc
             .perform(
                 post("/api/v1/players/{gameName}/{tagLine}/analysis", "Hide on bush", "KR1")
+                    .param("count", "21"),
+            ).andExpect(status().isBadRequest)
+    }
+
+    @Test
+    fun `accepts an asynchronous analysis job and returns its polling location`() {
+        val jobId = UUID.fromString("e8741722-84c8-4d4f-9c1b-09c7a63418cf")
+        `when`(analysisJobService.create("Hide on bush", "KR1", 0, 20))
+            .thenReturn(AnalysisJobCreated(jobId, AnalysisJobStatus.PENDING, Instant.parse("2026-09-16T10:00:00Z")))
+
+        mockMvc
+            .perform(post("/api/v1/players/{gameName}/{tagLine}/analysis-jobs", "Hide on bush", "KR1"))
+            .andExpect(status().isAccepted)
+            .andExpect(header().string(HttpHeaders.LOCATION, "/api/v1/analysis-jobs/$jobId"))
+            .andExpect(jsonPath("$.jobId").value(jobId.toString()))
+            .andExpect(jsonPath("$.status").value("PENDING"))
+            .andExpect(jsonPath("$.createdAt").value("2026-09-16T10:00:00Z"))
+    }
+
+    @Test
+    fun `does not return accepted when analysis job capacity is exhausted`() {
+        `when`(analysisJobService.create("Hide on bush", "KR1", 0, 20))
+            .thenThrow(AnalysisJobCapacityExceededException())
+
+        mockMvc
+            .perform(post("/api/v1/players/{gameName}/{tagLine}/analysis-jobs", "Hide on bush", "KR1"))
+            .andExpect(status().isServiceUnavailable)
+            .andExpect(jsonPath("$.detail").value("AI analysis is temporarily at capacity."))
+    }
+
+    @Test
+    fun `rejects invalid asynchronous analysis job pagination parameters`() {
+        mockMvc
+            .perform(
+                post("/api/v1/players/{gameName}/{tagLine}/analysis-jobs", "Hide on bush", "KR1")
                     .param("count", "21"),
             ).andExpect(status().isBadRequest)
     }

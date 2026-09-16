@@ -146,12 +146,23 @@ $env:OPENAI_TIMEOUT = "45s"
 
 smoke test는 운영 분석 정책을 임의로 변경하지 않는다.
 
-reasoning effort 비교 진단은 동일 fixture에서 `OPENAI_REASONING_EFFORT=low`만 process-local로 설정한다.
-값을 비우면 reasoning field를 보내지 않아 기존 model default request shape를 그대로 사용한다. 이 override는
-production default policy를 변경하지 않으며, 이번 진단에서는 `low`만 허용한다.
+production generation 기본값은 `OPENAI_REASONING_EFFORT`의 `low`, `OPENAI_TEXT_VERBOSITY`의 `low`다. 기본 요청은
+`reasoning.effort`와 `text.verbosity`를 함께 명시하며, `StructuredResponseTextConfig`에는 기존과 같은 output class
+기반 JSON schema를 유지한다. reasoning effort는 `minimal`·`low`·`medium`·`high`, text verbosity는
+`low`·`medium`·`high`로 환경별 override할 수 있다. 빈 값과 지원하지 않는 값은 configuration error로 거부한다.
 
-text verbosity 비교도 `OPENAI_TEXT_VERBOSITY=low`만 process-local로 설정한다. 값이 비어 있으면
-`text.verbosity` field를 보내지 않아 기존 Structured Output request와 provider default를 유지한다. `low`를
-설정하면 OpenAI infrastructure에서만 `StructuredResponseTextConfig`에 같은 output class 기반 JSON schema와
-`ResponseTextConfig.Verbosity.LOW`를 함께 넣는다. 이는 reasoning override와 독립적이며 production default,
-timeout, prompt, schema를 변경하지 않는다.
+이 generation 정책은 model, prompt, schema, `max_output_tokens`, timeout, retry 또는 metric contract를 변경하지 않는다.
+대표 `/analysis` 실측에서 low + low는 quality contract를 유지하면서 endpoint latency를 75.448s에서 40.464s로
+46.4% 줄였다. 그러나 약 40초의 synchronous 응답은 여전히 길므로, 이 endpoint의 다음 성능 단계는 output budget
+재조정이 아니라 async analysis job으로 HTTP lifecycle을 분리하는 것이다.
+
+## Async 실행 경계
+
+generation parameter tuning과 async job은 별개의 결정이다. `POST /api/v1/players/{gameName}/{tagLine}/analysis-jobs`
+worker는 이 문서의 기존 `PlayerAnalysisService -> PlayerAnalysisGenerator` pipeline을 그대로 사용한다. 따라서
+prompt, model, Structured Output schema, OpenAI timeout 60초, retry 0, low/low generation policy, provider metrics는
+변경하지 않는다.
+
+async API는 job lifecycle과 `PlayerAnalysisResult` snapshot을 PostgreSQL에 저장하고 polling으로 반환할 뿐이다. provider
+timeout을 제거하거나 provider retry를 추가하지 않는다. API contract, transaction boundary, JSONB schema evolution 및
+same-process recovery 제한은 [Async Player Analysis Job v0.1](async-player-analysis-jobs-v0.1.md)을 따른다.
