@@ -149,3 +149,9 @@ smoke test는 운영 분석 정책을 임의로 변경하지 않는다.
 reasoning effort 비교 진단은 동일 fixture에서 `OPENAI_REASONING_EFFORT=low`만 process-local로 설정한다.
 값을 비우면 reasoning field를 보내지 않아 기존 model default request shape를 그대로 사용한다. 이 override는
 production default policy를 변경하지 않으며, 이번 진단에서는 `low`만 허용한다.
+
+text verbosity 비교도 `OPENAI_TEXT_VERBOSITY=low`만 process-local로 설정한다. 값이 비어 있으면
+`text.verbosity` field를 보내지 않아 기존 Structured Output request와 provider default를 유지한다. `low`를
+설정하면 OpenAI infrastructure에서만 `StructuredResponseTextConfig`에 같은 output class 기반 JSON schema와
+`ResponseTextConfig.Verbosity.LOW`를 함께 넣는다. 이는 reasoning override와 독립적이며 production default,
+timeout, prompt, schema를 변경하지 않는다.

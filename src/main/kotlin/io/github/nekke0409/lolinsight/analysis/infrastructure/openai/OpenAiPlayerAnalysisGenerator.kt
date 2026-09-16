@@ -13,6 +13,7 @@ import com.openai.models.Reasoning
 import com.openai.models.ResponsesModel
 import com.openai.models.responses.ResponseUsage
 import com.openai.models.responses.StructuredResponseCreateParams
+import com.openai.models.responses.StructuredResponseTextConfig
 import io.github.nekke0409.lolinsight.analysis.application.AnalysisInsight
 import io.github.nekke0409.lolinsight.analysis.application.PlayerAnalysisAuthenticationException
 import io.github.nekke0409.lolinsight.analysis.application.PlayerAnalysisConfigurationException
@@ -63,7 +64,15 @@ internal class OpenAiPlayerAnalysisGenerator(
                     .instructions(prompt.instructions)
                     .input(prompt.structuredData)
                     .store(false)
-                    .text(OpenAiPlayerAnalysisOutput::class.java)
+            properties.requestedTextVerbosity()?.let { verbosity ->
+                paramsBuilder.text(
+                    StructuredResponseTextConfig
+                        .builder<OpenAiPlayerAnalysisOutput>()
+                        .format(OpenAiPlayerAnalysisOutput::class.java)
+                        .verbosity(verbosity)
+                        .build(),
+                )
+            } ?: paramsBuilder.text(OpenAiPlayerAnalysisOutput::class.java)
             properties.requestedReasoningEffort()?.let { effort ->
                 paramsBuilder.reasoning(Reasoning.builder().effort(effort).build())
             }

@@ -59,3 +59,58 @@ baseline output의 62.3%가 reasoning tokens였고, `low`는 reasoning을 크게
 확인하는 것이다. 그 결과도 30~60초 이상이면 async job 도입 근거가 강화된다.
 
 production default timeout과 reasoning policy는 이 실험으로 변경하지 않았다.
+
+## Representative `/analysis` text verbosity 실험
+
+### 목적과 고정 조건
+
+reasoning effort를 `low`로 고정한 representative 실제 `/analysis`에서 visible output 규모가 latency의 다음
+주요 요인인지 한 번만 확인했다. `gpt-5-mini`, 동일 Riot target, `start=0`, `count=20`, 동일 benchmark DB,
+prompt, Structured Output schema, retry `0`을 유지하고, process-local로만 다음 값을 적용했다.
+
+- `OPENAI_REASONING_EFFORT=low`
+- `OPENAI_TEXT_VERBOSITY=low`
+- `OPENAI_TIMEOUT=90s`
+
+`openai-java` 4.63.1은 Structured Outputs에서도 `StructuredResponseTextConfig`를 통해
+`ResponseTextConfig.Verbosity.LOW`를 설정할 수 있다. 구현은 OpenAI infrastructure 안에만 있으며, 값이 없을
+때는 기존 `text(OpenAiPlayerAnalysisOutput::class.java)` 경로를 그대로 사용해 `text.verbosity` field를
+전송하지 않는다. `low` 외의 값은 기존 reasoning override와 동일하게 configuration error로 거부한다.
+
+production YAML의 reasoning, verbosity, timeout 기본값은 바꾸지 않았다. `max_output_tokens`도 설정하지 않았다.
+이는 Responses API의 output token budget이 visible output과 reasoning token을 함께 제한하므로, hard cap을
+동시에 바꾸면 verbosity의 latency/quality 영향을 분리할 수 없고 Structured Output truncation 위험도 생기기
+때문이다.
+
+### 실제 결과
+
+실행 중인 진단 프로세스의 Micrometer 값으로 provider metric 1건과 endpoint metric 1건을 수집했다. raw prompt,
+response, Riot 식별자, Match ID, API key는 기록하지 않았다.
+
+| Metric | Actual default | Actual low reasoning | Actual low reasoning + low verbosity |
+| --- | ---: | ---: | ---: |
+| Provider latency | 74.306s | 47.603s | 38.153s |
+| Endpoint latency | 75.448s | 48.749s | 40.464s |
+| Input tokens | 2,453 | 2,453 | 2,453 |
+| Output tokens | 5,244 | 3,028 | 1,824 |
+| Reasoning tokens | unknown | 448 | 192 |
+| Visible output (`output - reasoning`) | unknown | 2,580 | 1,632 |
+| Total tokens | 7,697 | 5,481 | 4,277 |
+
+`actual-low` 대비 변화는 provider latency `-19.9%`, endpoint latency `-17.0%`, output tokens `-39.8%`,
+visible output `-36.7%`, total tokens `-22.0%`다.
+
+HTTP endpoint는 200을 반환했고, `ai.generation.requests`의 success가 1건이며 actual model은
+`gpt-5-mini-2025-08-07`이었다. success 기록은 Structured Output mapping 뒤에만 발생하므로 mapping은
+성공했다. `PlayerAnalysisService`는 provider를 호출한 성공 경로에서만 `ANALYZED` response를 만들며, output
+mapper는 summary와 insight의 모든 필수 field, caveat의 non-null을 요구한다. 따라서 status/analysis와 필수
+field contract도 유지됐다. prompt와 JSON schema는 변경하지 않았고, unit test는 verbosity 미설정 시 field
+생략, `low`에서 reasoning과 verbosity의 동시 설정, 같은 Structured Output schema 보존을 검증한다.
+
+### 해석과 다음 결정
+
+verbosity를 낮추면 output과 visible output은 유의미하게 줄고 endpoint latency도 줄었다. 하지만 40.464초는
+synchronous UX 목표로 보기에는 여전히 길다. 따라서 이번 결과는 production default 채택 여부를 결정하지
+않으며, reasoning=`low`와 verbosity=`low`의 production 후보 평가는 별도 결정으로 남긴다. async analysis job
+도입 검토는 계속 권장한다. 이 결과 뒤에는 `max_output_tokens`, prompt 축소, schema 축소를 추가로 반복 실험하지
+않고 sync/async 구조 결정을 우선한다.

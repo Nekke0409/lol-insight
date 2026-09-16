@@ -183,6 +183,9 @@ production Spring Boot runtime은 `application.yaml`의 기본값과 환경 변�
 
 기본 reasoning policy는 요청에 값을 보내지 않는 model default를 유지합니다. 제한된 latency 진단에서만
 `OPENAI_REASONING_EFFORT=low`를 process-local로 설정할 수 있으며, 빈 값은 기존 request shape를 유지합니다.
+동일하게 `OPENAI_TEXT_VERBOSITY=low`는 진단에서만 Responses API `text.verbosity`를 명시합니다. 빈 값은
+해당 field 자체를 보내지 않아 기존 Structured Output request와 provider default를 유지합니다. 두 override 모두
+production YAML 기본값, timeout, prompt, schema를 변경하지 않습니다.
 실측과 해석은 [OpenAI reasoning effort latency experiment](docs/performance/openai-reasoning-effort-experiment-2026-09-16.md)를 참고합니다.
 
 ## 제한된 Benchmark Seed (개발 전용)

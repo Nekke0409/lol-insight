@@ -9,6 +9,7 @@ import com.openai.errors.RateLimitException
 import com.openai.errors.UnauthorizedException
 import com.openai.models.ReasoningEffort
 import com.openai.models.ResponsesModel
+import com.openai.models.responses.ResponseTextConfig
 import com.openai.models.responses.ResponseUsage
 import com.openai.models.responses.StructuredResponse
 import com.openai.models.responses.StructuredResponseCreateParams
@@ -116,6 +117,57 @@ class OpenAiPlayerAnalysisGeneratorTest {
     }
 
     @Test
+    fun `preserves the existing structured output request when text verbosity is unset`() {
+        val client = mock(OpenAIClient::class.java)
+        val responses = mock(ResponseService::class.java)
+        val response = mockStructuredResponse(output(), usage())
+        var capturedParams: StructuredResponseCreateParams<OpenAiPlayerAnalysisOutput>? = null
+        `when`(client.responses()).thenReturn(responses)
+        `when`(responses.create(anyStructuredResponseParams())).thenAnswer { invocation ->
+            capturedParams = invocation.getArgument(0)
+            response
+        }
+
+        generator(client).generate(TestPlayerAnalysisInput.input())
+
+        val text = requireNotNull(capturedParams).rawParams.text().orElseThrow()
+        assertTrue(text.format().isPresent)
+        assertTrue(text._verbosity().isMissing())
+    }
+
+    @Test
+    fun `adds low text verbosity while preserving the structured output schema`() {
+        val client = mock(OpenAIClient::class.java)
+        val responses = mock(ResponseService::class.java)
+        val response = mockStructuredResponse(output(), usage())
+        var capturedParams: StructuredResponseCreateParams<OpenAiPlayerAnalysisOutput>? = null
+        `when`(client.responses()).thenReturn(responses)
+        `when`(responses.create(anyStructuredResponseParams())).thenAnswer { invocation ->
+            capturedParams = invocation.getArgument(0)
+            response
+        }
+
+        generator(
+            client,
+            reasoningEffort = "low",
+            textVerbosity = "low",
+        ).generate(TestPlayerAnalysisInput.input())
+
+        val params = requireNotNull(capturedParams).rawParams
+        assertEquals(
+            ReasoningEffort.LOW,
+            params
+                .reasoning()
+                .orElseThrow()
+                .effort()
+                .orElseThrow(),
+        )
+        val text = params.text().orElseThrow()
+        assertEquals(ResponseTextConfig.Verbosity.LOW, text.verbosity().orElseThrow())
+        assertTrue(text.format().isPresent)
+    }
+
+    @Test
     fun `maps missing API configuration without constructing an OpenAI request`() {
         val observationRecorder = RecordingObservationRecorder()
         val generator =
@@ -207,9 +259,16 @@ class OpenAiPlayerAnalysisGeneratorTest {
         client: OpenAIClient,
         observationRecorder: OpenAiAnalysisObservationRecorder = NoOpOpenAiAnalysisObservationRecorder,
         reasoningEffort: String = "",
+        textVerbosity: String = "",
     ): OpenAiPlayerAnalysisGenerator =
         OpenAiPlayerAnalysisGenerator(
-            properties = OpenAiProperties(apiKey = "test-key", model = "gpt-5-mini", reasoningEffort = reasoningEffort),
+            properties =
+                OpenAiProperties(
+                    apiKey = "test-key",
+                    model = "gpt-5-mini",
+                    reasoningEffort = reasoningEffort,
+                    textVerbosity = textVerbosity,
+                ),
             promptFactory = promptFactory,
             clientOverride = client,
             observationRecorder = observationRecorder,

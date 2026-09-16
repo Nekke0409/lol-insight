@@ -17,6 +17,7 @@ class OpenAiPlayerAnalysisManualSmokeTest {
         println(
             "OpenAI manual smoke configuration: " +
                 "model=${properties.model}, reasoningEffort=${properties.reasoningEffort.ifBlank { "default" }}, " +
+                "textVerbosity=${properties.textVerbosity.ifBlank { "default" }}, " +
                 "timeout=${properties.timeout}, maxRetries=0",
         )
         val observationRecorder = DiagnosticObservationRecorder()
