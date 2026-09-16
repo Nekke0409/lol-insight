@@ -29,4 +29,4 @@ riot:
 openai:
   api-key: ${OPENAI_API_KEY:}
   model: ${OPENAI_MODEL:gpt-5-mini}
-  timeout: ${OPENAI_TIMEOUT:20s}
+  timeout: ${OPENAI_TIMEOUT:60s}

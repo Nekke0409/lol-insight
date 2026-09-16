@@ -104,11 +104,17 @@ $env:RUN_OPENAI_SMOKE_TEST = "true"
 ```
 
 manual smoke는 production `OpenAiProperties`와 동일한 Spring Boot binding으로 `OPENAI_TIMEOUT`을 읽는다.
-환경 변수가 없으면 현재 기본값인 `20s`를 사용한다. timeout 가설을 검증할 때만 다음처럼 명시적으로
-override하며, retry 정책(`maxRetries(0)`)은 변경하지 않는다.
+다만 manual smoke의 `StandardEnvironment` + `Binder`는 `application.yaml`의 model 기본값을 자동으로 읽지 않으므로,
+smoke에서는 현재처럼 `OPENAI_MODEL`을 명시한다. production Spring Boot runtime은 `application.yaml` 기본값과
+환경 변수 override를 함께 사용한다.
+
+실제 Responses API smoke에서 20초 timeout은 약 21.4~21.5초에 반복 timeout됐고, 45초에서는 약
+38.258~43.469초에 성공했다. 따라서 MVP의 operational default timeout은 latency SLA가 아니라 이 실측에
+운영상 여유를 더한 `60s`다. `OPENAI_TIMEOUT`으로 필요한 환경에서 override할 수 있다. retry는 비용과
+중복 요청을 제어하기 위해 `maxRetries(0)`을 계속 유지한다.
 
 ```powershell
 $env:OPENAI_TIMEOUT = "45s"
 ```
 
-smoke test는 운영 분석 정책을 변경하지 않는다.
+smoke test는 운영 분석 정책을 임의로 변경하지 않는다.

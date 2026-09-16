@@ -7,7 +7,7 @@ import java.time.Duration
 data class OpenAiProperties(
     val apiKey: String = "",
     val model: String = "",
-    val timeout: Duration = Duration.ofSeconds(20),
+    val timeout: Duration = Duration.ofSeconds(60),
 ) {
     fun requireConfigured() {
         if (apiKey.isBlank() || model.isBlank()) {

@@ -24,6 +24,8 @@ import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.stereotype.Component
 import kotlin.jvm.optionals.getOrNull
 
+internal const val OPENAI_MAX_RETRIES = 0
+
 @Component
 class OpenAiPlayerAnalysisGenerator(
     private val properties: OpenAiProperties,
@@ -38,7 +40,7 @@ class OpenAiPlayerAnalysisGenerator(
                     .builder()
                     .apiKey(properties.apiKey)
                     .timeout(properties.timeout)
-                    .maxRetries(0)
+                    .maxRetries(OPENAI_MAX_RETRIES)
                     .build()
             }
     }

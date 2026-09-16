@@ -137,6 +137,18 @@ endpoint, startup runner, scheduler 없이 application service로만 제공됩�
 `BenchmarkSample` persistence integration test는 Testcontainers PostgreSQL을 사용하므로 Docker daemon이
 실행 중이어야 합니다.
 
+## OpenAI Runtime Configuration
+
+OpenAI 분석의 production 기본 timeout은 `60s`이며 `OPENAI_TIMEOUT`으로 환경별 override할 수 있습니다.
+이는 latency SLA가 아니라 `gpt-5-mini` Responses API Structured Outputs smoke의 실측에 기반한 MVP
+operational default입니다. 20초에서는 실제 요청이 약 21.4~21.5초에 반복 timeout됐고, 45초에서는 약
+38.258~43.469초에 성공했습니다. SDK retry는 비용과 중복 요청을 제어하기 위해 `maxRetries(0)`으로
+유지합니다.
+
+production Spring Boot runtime은 `application.yaml`의 기본값과 환경 변수 override를 함께 사용합니다.
+반면 manual OpenAI smoke는 `StandardEnvironment` + `Binder`로 환경 값만 읽으므로
+`OPENAI_MODEL=gpt-5-mini`과 필요한 `OPENAI_TIMEOUT`을 명시해 실행합니다.
+
 ## 제한된 Benchmark Seed (개발 전용)
 
 `BenchmarkSeedManualSmokeTest`는 소량의 제한된 Benchmark sample을 추가하기 위한 명시적 opt-in 개발용 harness다.

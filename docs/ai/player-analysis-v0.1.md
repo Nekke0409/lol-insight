@@ -79,7 +79,7 @@ distribution이다. 또한 여러 `gameVersion` 표본이 섞일 수 있다.
 ```text
 OPENAI_API_KEY=...
 OPENAI_MODEL=gpt-5-mini
-OPENAI_TIMEOUT=20s
+OPENAI_TIMEOUT=60s
 ```
 
 `OPENAI_MODEL`은 application/business code에 고정하지 않는다. 기본값 `gpt-5-mini`은 비용 민감한
