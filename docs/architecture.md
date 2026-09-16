@@ -110,8 +110,9 @@ OpenAI usage와 지연 시간은 OpenAI infrastructure 어댑터 내부에만 �
 provider usage, provider request identifier, raw provider type을 전달하지 않는다.
 
 어댑터는 provider `openai`의 low-cardinality Micrometer metrics로 요청 결과, provider 호출 지연 시간,
-SDK 제공 input/output/total 토큰 카운터를 기록한다. 성공한 호출은 response의 실제 model을 사용하고,
-실패한 호출은 실제 model을 받을 수 없을 때만 configured model을 사용한다. tag는
+SDK 제공 input/output/total 토큰 카운터와 optional output detail의 reasoning 토큰 카운터를 기록한다.
+output detail이 없으면 analysis와 기존 세 counter는 유지하고 reasoning counter만 생략한다. 성공한 호출은
+response의 실제 model을 사용하고, 실패한 호출은 실제 model을 받을 수 없을 때만 configured model을 사용한다. tag는
 `provider`, `model`, `outcome`, `error_category`, `token_type`으로 제한한다. player, Riot, champion,
 match, request identifier는 tag로 사용하지 않는다.
 

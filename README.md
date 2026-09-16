@@ -147,7 +147,7 @@ OpenAI Responses 어댑터는 기존 Micrometer `MeterRegistry`에 provider 호�
 | --- | --- | --- |
 | `ai.generation.requests` | `provider`, `model`, `outcome`, `error_category` | 분석 생성 결과 한 건. `outcome`은 `success` 또는 `failure`다. |
 | `ai.generation.duration` | `provider`, `model`, `outcome`, `error_category` | `responses.create(...)`까지 도달한 요청의 OpenAI provider 호출 지연 시간이다. |
-| `ai.generation.tokens` | `provider`, `model`, `token_type` | usage가 포함된 성공 응답의 SDK 제공 `input`·`output`·`total` 토큰 카운터다. |
+| `ai.generation.tokens` | `provider`, `model`, `token_type` | usage가 포함된 성공 응답의 SDK 제공 `input`·`output`·`total` 토큰 카운터와, SDK output detail이 있을 때의 `reasoning` 토큰 카운터다. |
 
 성공한 요청의 `model` tag는 Responses API 응답의 실제 model을 사용한다. 실패한 요청에는 response model이
 없으므로 configured request model을 사용하며, model 자체가 설정되지 않은 configuration 실패에는
@@ -155,8 +155,9 @@ OpenAI Responses 어댑터는 기존 Micrometer `MeterRegistry`에 provider 호�
 고정값이 아닌 유일한 tag 값이다.
 
 OpenAI Java SDK의 `StructuredResponse.usage()`는 optional이다. usage가 없는 응답도 성공으로 처리하고
-request count와 latency만 기록한다. v0.1은 currency가 아닌 token count만 기록한다. model price,
-USD/KRW 변환, cost aggregation, billing dashboard는 구현하지 않는다.
+request count와 latency만 기록한다. usage는 있지만 output detail이 없는 경우에도 분석과 기존
+`input`·`output`·`total` counter는 유지하고 `reasoning` counter만 생략한다. v0.1은 currency가 아닌 token
+count만 기록한다. model price, USD/KRW 변환, cost aggregation, billing dashboard는 구현하지 않는다.
 
 success는 OpenAI 호출과 구조화 출력 매핑이 모두 완료된 상태를 뜻한다. failure는 기존 HTTP 오류 매핑을
 유지하면서 `configuration`, `authentication_permission`, `rate_limit`, `upstream`,
@@ -179,6 +180,10 @@ operational default입니다. 20초에서는 실제 요청이 약 21.4~21.5초�
 production Spring Boot runtime은 `application.yaml`의 기본값과 환경 변수 override를 함께 사용합니다.
 반면 manual OpenAI smoke는 `StandardEnvironment` + `Binder`로 환경 값만 읽으므로
 `OPENAI_MODEL=gpt-5-mini`과 필요한 `OPENAI_TIMEOUT`을 명시해 실행합니다.
+
+기본 reasoning policy는 요청에 값을 보내지 않는 model default를 유지합니다. 제한된 latency 진단에서만
+`OPENAI_REASONING_EFFORT=low`를 process-local로 설정할 수 있으며, 빈 값은 기존 request shape를 유지합니다.
+실측과 해석은 [OpenAI reasoning effort latency experiment](docs/performance/openai-reasoning-effort-experiment-2026-09-16.md)를 참고합니다.
 
 ## 제한된 Benchmark Seed (개발 전용)
 

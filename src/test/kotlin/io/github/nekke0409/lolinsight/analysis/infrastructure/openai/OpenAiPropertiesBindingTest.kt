@@ -1,5 +1,6 @@
 package io.github.nekke0409.lolinsight.analysis.infrastructure.openai
 
+import com.openai.models.ReasoningEffort
 import org.junit.jupiter.api.Test
 import org.springframework.boot.env.YamlPropertySourceLoader
 import org.springframework.core.env.SystemEnvironmentPropertySource
@@ -23,6 +24,15 @@ class OpenAiPropertiesBindingTest {
 
         assertEquals(Duration.ofSeconds(45), properties.timeout)
         assertEquals(0, OPENAI_MAX_RETRIES)
+    }
+
+    @Test
+    fun `binds the diagnostic low reasoning override only when explicitly configured`() {
+        assertEquals(null, bindApplicationYamlOpenAiProperties().requestedReasoningEffort())
+        assertEquals(
+            ReasoningEffort.LOW,
+            bindApplicationYamlOpenAiProperties("OPENAI_REASONING_EFFORT" to "low").requestedReasoningEffort(),
+        )
     }
 
     private fun bindApplicationYamlOpenAiProperties(vararg environmentValues: Pair<String, String>): OpenAiProperties {

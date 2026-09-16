@@ -15,7 +15,7 @@ class OpenAiMicrometerObservationRecorderTest {
         recorder.recordSuccess(
             model = MODEL,
             latency = Duration.ofMillis(250),
-            usage = OpenAiTokenUsage(inputTokens = 100, outputTokens = 25, totalTokens = 125),
+            usage = OpenAiTokenUsage(inputTokens = 100, outputTokens = 25, totalTokens = 125, reasoningTokens = 16),
         )
 
         assertEquals(1.0, requestCount(registry, "success", "none"))
@@ -23,6 +23,30 @@ class OpenAiMicrometerObservationRecorderTest {
         assertEquals(100.0, tokenCount(registry, "input"))
         assertEquals(25.0, tokenCount(registry, "output"))
         assertEquals(125.0, tokenCount(registry, "total"))
+        assertEquals(16.0, tokenCount(registry, "reasoning"))
+    }
+
+    @Test
+    fun `omits only the reasoning token meter when the SDK detail is absent`() {
+        val registry = SimpleMeterRegistry()
+        val recorder = OpenAiMicrometerObservationRecorder(registry)
+
+        recorder.recordSuccess(
+            model = MODEL,
+            latency = Duration.ofMillis(250),
+            usage = OpenAiTokenUsage(inputTokens = 100, outputTokens = 25, totalTokens = 125),
+        )
+
+        assertEquals(100.0, tokenCount(registry, "input"))
+        assertEquals(25.0, tokenCount(registry, "output"))
+        assertEquals(125.0, tokenCount(registry, "total"))
+        assertTrue(
+            registry
+                .find(AI_GENERATION_TOKENS_METRIC)
+                .tag("token_type", "reasoning")
+                .meters()
+                .isEmpty(),
+        )
     }
 
     @Test

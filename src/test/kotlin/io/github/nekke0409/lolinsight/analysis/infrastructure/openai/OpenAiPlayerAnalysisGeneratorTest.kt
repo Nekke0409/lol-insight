@@ -1,11 +1,13 @@
 package io.github.nekke0409.lolinsight.analysis.infrastructure.openai
 
 import com.openai.client.OpenAIClient
+import com.openai.core.JsonField
 import com.openai.core.http.Headers
 import com.openai.errors.InternalServerException
 import com.openai.errors.OpenAIIoException
 import com.openai.errors.RateLimitException
 import com.openai.errors.UnauthorizedException
+import com.openai.models.ReasoningEffort
 import com.openai.models.ResponsesModel
 import com.openai.models.responses.ResponseUsage
 import com.openai.models.responses.StructuredResponse
@@ -41,7 +43,7 @@ class OpenAiPlayerAnalysisGeneratorTest {
         val client = mock(OpenAIClient::class.java)
         val responses = mock(ResponseService::class.java)
         val observationRecorder = RecordingObservationRecorder()
-        val response = mockStructuredResponse(output(), usage())
+        val response = mockStructuredResponse(output(), usage(reasoningTokens = 88))
         `when`(client.responses()).thenReturn(responses)
         `when`(responses.create(anyStructuredResponseParams())).thenReturn(response)
 
@@ -52,7 +54,7 @@ class OpenAiPlayerAnalysisGeneratorTest {
         assertEquals("player=7.2", result.observations.single().evidence)
         assertEquals(emptyList(), result.strengths)
         assertEquals("gpt-5-mini-2026-09-01", observationRecorder.successes.single().model)
-        assertEquals(OpenAiTokenUsage(101, 202, 303), observationRecorder.successes.single().usage)
+        assertEquals(OpenAiTokenUsage(101, 202, 303, reasoningTokens = 88), observationRecorder.successes.single().usage)
         val success = observationRecorder.successes.single()
         assertTrue(success.latency.isPositive)
         verify(responses).create(anyStructuredResponseParams())
@@ -71,6 +73,46 @@ class OpenAiPlayerAnalysisGeneratorTest {
 
         assertEquals("summary", result.summary)
         assertNull(observationRecorder.successes.single().usage)
+    }
+
+    @Test
+    fun `keeps analysis successful when the OpenAI usage omits reasoning details`() {
+        val client = mock(OpenAIClient::class.java)
+        val responses = mock(ResponseService::class.java)
+        val observationRecorder = RecordingObservationRecorder()
+        val response = mockStructuredResponse(output(), usage())
+        `when`(client.responses()).thenReturn(responses)
+        `when`(responses.create(anyStructuredResponseParams())).thenReturn(response)
+
+        val result = generator(client, observationRecorder).generate(TestPlayerAnalysisInput.input())
+
+        assertEquals("summary", result.summary)
+        assertEquals(OpenAiTokenUsage(101, 202, 303), observationRecorder.successes.single().usage)
+    }
+
+    @Test
+    fun `adds low reasoning only for the explicit diagnostic override`() {
+        val client = mock(OpenAIClient::class.java)
+        val responses = mock(ResponseService::class.java)
+        val response = mockStructuredResponse(output(), usage())
+        var capturedParams: StructuredResponseCreateParams<OpenAiPlayerAnalysisOutput>? = null
+        `when`(client.responses()).thenReturn(responses)
+        `when`(responses.create(anyStructuredResponseParams())).thenAnswer { invocation ->
+            capturedParams = invocation.getArgument(0)
+            response
+        }
+
+        generator(client, reasoningEffort = "low").generate(TestPlayerAnalysisInput.input())
+
+        assertEquals(
+            ReasoningEffort.LOW,
+            requireNotNull(capturedParams)
+                .rawParams
+                .reasoning()
+                .orElseThrow()
+                .effort()
+                .orElseThrow(),
+        )
     }
 
     @Test
@@ -164,9 +206,10 @@ class OpenAiPlayerAnalysisGeneratorTest {
     private fun generator(
         client: OpenAIClient,
         observationRecorder: OpenAiAnalysisObservationRecorder = NoOpOpenAiAnalysisObservationRecorder,
+        reasoningEffort: String = "",
     ): OpenAiPlayerAnalysisGenerator =
         OpenAiPlayerAnalysisGenerator(
-            properties = OpenAiProperties(apiKey = "test-key", model = "gpt-5-mini"),
+            properties = OpenAiProperties(apiKey = "test-key", model = "gpt-5-mini", reasoningEffort = reasoningEffort),
             promptFactory = promptFactory,
             clientOverride = client,
             observationRecorder = observationRecorder,
@@ -216,11 +259,18 @@ class OpenAiPlayerAnalysisGeneratorTest {
         return response
     }
 
-    private fun usage(): ResponseUsage {
+    private fun usage(reasoningTokens: Long? = null): ResponseUsage {
         val usage = mock(ResponseUsage::class.java)
         `when`(usage.inputTokens()).thenReturn(101)
         `when`(usage.outputTokens()).thenReturn(202)
         `when`(usage.totalTokens()).thenReturn(303)
+        val outputTokensDetails =
+            reasoningTokens?.let { tokens ->
+                mock(ResponseUsage.OutputTokensDetails::class.java).also { details ->
+                    `when`(details._reasoningTokens()).thenReturn(JsonField.of(tokens))
+                }
+            }
+        `when`(usage._outputTokensDetails()).thenReturn(JsonField.ofNullable(outputTokensDetails))
         return usage
     }
 

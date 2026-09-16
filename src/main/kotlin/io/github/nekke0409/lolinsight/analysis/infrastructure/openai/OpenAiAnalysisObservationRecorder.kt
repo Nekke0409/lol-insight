@@ -25,6 +25,7 @@ internal data class OpenAiTokenUsage(
     val inputTokens: Long,
     val outputTokens: Long,
     val totalTokens: Long,
+    val reasoningTokens: Long? = null,
 )
 
 internal interface OpenAiAnalysisObservationRecorder {
@@ -105,6 +106,7 @@ internal class OpenAiMicrometerObservationRecorder(
         incrementTokenCounter(model, "input", usage.inputTokens)
         incrementTokenCounter(model, "output", usage.outputTokens)
         incrementTokenCounter(model, "total", usage.totalTokens)
+        usage.reasoningTokens?.let { incrementTokenCounter(model, "reasoning", it) }
     }
 
     private fun incrementTokenCounter(

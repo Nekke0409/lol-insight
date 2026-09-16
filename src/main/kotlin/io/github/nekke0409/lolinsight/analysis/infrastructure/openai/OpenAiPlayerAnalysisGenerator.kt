@@ -9,6 +9,7 @@ import com.openai.errors.OpenAIServiceException
 import com.openai.errors.PermissionDeniedException
 import com.openai.errors.RateLimitException
 import com.openai.errors.UnauthorizedException
+import com.openai.models.Reasoning
 import com.openai.models.ResponsesModel
 import com.openai.models.responses.ResponseUsage
 import com.openai.models.responses.StructuredResponseCreateParams
@@ -55,7 +56,7 @@ internal class OpenAiPlayerAnalysisGenerator(
         return try {
             properties.requireConfigured()
             val prompt = promptFactory.create(input)
-            val params =
+            val paramsBuilder =
                 StructuredResponseCreateParams
                     .builder<OpenAiPlayerAnalysisOutput>()
                     .model(properties.model)
@@ -63,7 +64,10 @@ internal class OpenAiPlayerAnalysisGenerator(
                     .input(prompt.structuredData)
                     .store(false)
                     .text(OpenAiPlayerAnalysisOutput::class.java)
-                    .build()
+            properties.requestedReasoningEffort()?.let { effort ->
+                paramsBuilder.reasoning(Reasoning.builder().effort(effort).build())
+            }
+            val params = paramsBuilder.build()
             providerStartedAt = System.nanoTime()
             val response = client.responses().create(params)
             val result = response.toPlayerAnalysisResult()
@@ -137,6 +141,13 @@ internal class OpenAiPlayerAnalysisGenerator(
             inputTokens = inputTokens(),
             outputTokens = outputTokens(),
             totalTokens = totalTokens(),
+            reasoningTokens =
+                _outputTokensDetails()
+                    .asKnown()
+                    .getOrNull()
+                    ?._reasoningTokens()
+                    ?.asKnown()
+                    ?.getOrNull(),
         )
 
     private fun ResponsesModel.toMetricModel(): String =

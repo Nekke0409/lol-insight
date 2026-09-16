@@ -30,8 +30,9 @@ request identifier를 caller에게 노출하지 않는다.
 각 생성 결과마다 `ai.generation.requests`는 `provider=openai`, `model`, `outcome`, `error_category`를
 기록한다. `ai.generation.duration`은 호출이 `responses.create(...)`에 도달한 뒤 같은 tag로 provider 호출
 지연 시간을 기록한다. `ai.generation.tokens` counter는 SDK response에 optional `usage()`가 있을 때만
-`token_type=input|output|total`을 기록한다. 성공한 호출은 실제 response model을, 실패한 호출은 configured
-model을 사용한다.
+`token_type=input|output|total`을 기록하고, optional output detail이 있으면 `token_type=reasoning`도
+기록한다. output detail이 없으면 분석과 기존 세 counter는 유지하고 reasoning counter만 생략한다. 성공한 호출은
+실제 response model을, 실패한 호출은 configured model을 사용한다.
 
 success는 Responses API 호출 완료와 유효한 구조화 출력 매핑을 모두 요구한다. failure category는
 `configuration`, `authentication_permission`, `rate_limit`, `upstream`, `timeout_network`,
@@ -144,3 +145,7 @@ $env:OPENAI_TIMEOUT = "45s"
 ```
 
 smoke test는 운영 분석 정책을 임의로 변경하지 않는다.
+
+reasoning effort 비교 진단은 동일 fixture에서 `OPENAI_REASONING_EFFORT=low`만 process-local로 설정한다.
+값을 비우면 reasoning field를 보내지 않아 기존 model default request shape를 그대로 사용한다. 이 override는
+production default policy를 변경하지 않으며, 이번 진단에서는 `low`만 허용한다.
