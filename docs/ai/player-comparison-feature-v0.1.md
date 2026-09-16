@@ -1,6 +1,6 @@
-# Player Comparison Feature v0.1
+# 플레이어 비교 Feature v0.1
 
-## Purpose
+## 목적
 
 `PlayerComparisonFeature`는 기존의 사용자 측 `PlayerComparisonContext`와 stored `BenchmarkSample`의
 PostgreSQL aggregate를 결합한 provider-independent comparison read model이다. Backend가 exact cohort,
@@ -11,11 +11,11 @@ comparison availability와 metric difference를 결정하며, LLM은 이 feature
 PlayerComparisonContext
     -> exact BenchmarkCohort
     -> PeerBenchmarkQueryService.findBenchmarkExcludingPlayer(...)
-    -> eligibility and difference calculation
+    -> 적격성 및 차이 계산
     -> PlayerComparisonFeature
 ```
 
-## Exact cohort mapping
+## 정확한 cohort 매핑
 
 현재 수집과 사용자 조회의 지원 범위는 KR Ranked Solo이며, 각 `PlayerCohortStatistics`는 다음 exact cohort로
 변환된다.
@@ -37,7 +37,7 @@ exact cohort를 만들 수 없으므로 benchmark query를 실행하지 않는�
 `findBenchmarkExcludingPlayer(cohort, targetPuuid)`를 사용하므로 대상 사용자의 own `BenchmarkSample`은 peer
 distribution에 포함되지 않는다. PUUID는 feature나 `PlayerAnalysisInput`으로 전달하지 않는다.
 
-## Comparison model
+## 비교 모델
 
 ```text
 PlayerComparisonFeature
@@ -64,7 +64,7 @@ benchmark counts가 없다.
 Feature와 context의 cohort 순서는 `userGames` 내림차순, `position` 오름차순, `championId` 오름차순이다.
 동일 `BenchmarkCohort`는 한 번만 query한다.
 
-## Eligibility and benchmark availability
+## 적격성 및 benchmark 사용 가능 여부
 
 사용자 측 MVP product heuristic은 `MINIMUM_USER_GAMES_FOR_COMPARISON = 5`다. 이는 통계적 유의성을
 보장하는 기준이 아니라 1~2경기 같은 지나치게 작은 사용자 표본을 평가에 사용하지 않기 위한 최소 안전장치다.
@@ -73,7 +73,7 @@ Feature와 context의 cohort 순서는 `userGames` 내림차순, `position` 오�
 
 | Condition | Status |
 | --- | --- |
-| Current Ranked Solo rank 없음 | `UNRANKED` |
+| 현재 Ranked Solo rank 없음 | `UNRANKED` |
 | `userGames < 5` | `INSUFFICIENT_USER_SAMPLE` |
 | Exact cohort에 sample 없음 | `BENCHMARK_NO_DATA` |
 | Benchmark availability policy 미달 | `BENCHMARK_INSUFFICIENT_SAMPLE` |
@@ -89,7 +89,7 @@ players인 local smoke data는 `INSUFFICIENT_SAMPLE`으로 유지된다.
 사용자 표본이 부족해도 rank가 있으면 exact cohort query는 수행하고 benchmark counts를 전달한다. 다만
 사용자 상태가 우선하므로 metric comparison은 생성하지 않는다.
 
-## Metric comparison semantics
+## 지표 비교 의미
 
 각 `MetricComparison`은 다음을 가진다.
 
@@ -102,7 +102,7 @@ players인 local smoke data는 `INSUFFICIENT_SAMPLE`으로 유지된다.
 Backend가 subtraction을 직접 수행한다. 예를 들어 player value 7.2, mean 6.7, median 6.8이면 differences는
 각각 `0.5`, `0.4`다.
 
-## Statistical limits and prohibited interpretations
+## 통계적 한계와 금지된 해석
 
 사용자 값은 여러 Match의 평균이고 benchmark distribution은 sampled player의 개별 Match participant
 observation 분포다. 그러므로 사용자 평균과 benchmark mean/median 차이는 사실로 제공할 수 있지만, 두 값이
@@ -116,7 +116,7 @@ observation 분포다. 그러므로 사용자 평균과 benchmark mean/median �
 만들지 않는다. LLM은 `status`, exact cohort, counts, 평균·중앙값과 명시적으로 계산된 차이를 설명할 수 있지만,
 backend feature만으로 skill rating, MMR, rank percentile 또는 일반적인 좋고 나쁨을 주장해서는 안 된다.
 
-## Out of scope and future work
+## 범위 밖 항목과 향후 작업
 
 이 버전은 Riot collection, benchmark threshold, representative sampling, player-level benchmark, percentile rank,
 LLM/OpenAI, REST endpoint, timeline/rank history, benchmark cache를 변경하지 않는다.

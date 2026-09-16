@@ -1,61 +1,59 @@
-# Player Comparison Context v0.1
+# 플레이어 비교 컨텍스트 v0.1
 
-## Purpose
+## 목적
 
-`PlayerComparisonContext` is a provider-independent, user-side input for `PlayerComparisonFeature`'s exact Peer
-Benchmark comparison.
-It is not a benchmark result and does not decide whether the user is eligible for comparison.
+`PlayerComparisonContext`는 `PlayerComparisonFeature`의 정확한 Peer Benchmark 비교에 쓰는 provider 독립적인
+사용자 측 입력이다. 이는 benchmark 결과가 아니며, 사용자의 비교 가능 여부를 판단하지도 않는다.
 
 ```text
 Riot ID
     -> Account-V1 -> PUUID
-    -> current League-V4 Ranked Solo rank
-    -> recent normalized Match sample
-    -> championId + position user metrics
+    -> 현재 League-V4 Ranked Solo rank
+    -> 최근 정규화된 Match 표본
+    -> championId + position 사용자 지표
     -> PlayerComparisonContext
     -> PlayerComparisonFeature
 ```
 
-The current implementation intentionally stops before creating a `BenchmarkCohort` or calling
-`PeerBenchmarkQueryService.findBenchmark(...)`.
+현재 구현은 의도적으로 `BenchmarkCohort` 생성과 `PeerBenchmarkQueryService.findBenchmark(...)` 호출 전 단계에서 멈춘다.
 
-## Contract
+## 계약
 
-| Field | Meaning |
+| 필드 | 의미 |
 | --- | --- |
-| `player` | Resolved Riot ID (`gameName`, `tagLine`) for display and provider-independent identification. |
-| `targetPuuid` | Backend-only target-player identity used by `PlayerComparisonFeature` to exclude own `BenchmarkSample` rows. It is not an LLM input. |
-| `rankContext` | Current `RANKED_SOLO_5x5` `tier`, `division`, and `capturedAt`; `null` when the player has no Solo entry. |
-| `sample` | Requested Match count and the target-player Match count used in cohort statistics. |
-| `cohortStatistics` | Deterministically ordered `PlayerCohortStatistics` entries grouped by exact `championId + position`. |
+| `player` | 표시와 provider 독립 식별에 쓰는 확인된 Riot ID(`gameName`, `tagLine`) |
+| `targetPuuid` | `PlayerComparisonFeature`가 자신의 `BenchmarkSample` 행을 제외하는 데 쓰는 Backend 전용 대상 플레이어 식별자. LLM 입력이 아니다. |
+| `rankContext` | 현재 `RANKED_SOLO_5x5`의 `tier`, `division`, `capturedAt`. 플레이어에게 Solo 항목이 없으면 `null` |
+| `sample` | 요청한 Match 수와 cohort 통계에 사용한 대상 플레이어 Match 수 |
+| `cohortStatistics` | 정확한 `championId + position`으로 묶고 결정적 순서로 정렬한 `PlayerCohortStatistics` 항목 |
 
-`PlayerRankContext.capturedAt` is the time when the current League-V4 lookup was resolved. It is not an historical rank
-at the time of any Match. This version does not persist a rank snapshot.
+`PlayerRankContext.capturedAt`은 현재 League-V4 조회를 완료한 시각이다. 어느 Match 시점의 과거 랭크가 아니며,
+이 버전은 랭크 스냅샷을 저장하지 않는다.
 
-An empty League entries response, an entries response containing only Flex, or a 404 is a normal unranked result and
-sets `rankContext` to `null`. Rate-limit responses, other provider responses, transport failures, and invalid provider
-responses propagate through the existing Riot error policy; they are not converted to an unranked result.
+비어 있는 League entries 응답, Flex만 포함한 entries 응답 또는 404는 정상적인 미랭크 결과이며 `rankContext`를
+`null`로 설정한다. Rate limit 응답, 그 밖의 provider 응답, 전송 실패와 잘못된 provider 응답은 기존 Riot 오류 정책을
+따라 전파하며 미랭크 결과로 바꾸지 않는다.
 
-## Cohort statistics
+## Cohort 통계
 
-Each `PlayerCohortStatistics` contains:
+각 `PlayerCohortStatistics`는 다음을 포함한다.
 
 - `championId`, `position`, `games`, `wins`, `winRate`
 - `averageKda`, `averageCsPerMinute`, `averageGoldPerMinute`, `averageDamagePerMinute`
 - `averageVisionPerMinute`, `averageKillParticipation`, `averageDamageShare`
 
-Only the target PUUID's participant is used. `GRAGAS / TOP` and `GRAGAS / JUNGLE` remain separate entries; a champion
-summary or position summary cannot replace this exact grouping. Each metric is the arithmetic mean of its per-Match
-values from `MatchParticipantMetricsCalculator`, which remains the single source of truth for KDA, per-minute, and
-team-relative formulas. Results are sorted by games descending, then position and champion ID ascending.
+대상 PUUID의 참가자만 사용한다. `GRAGAS / TOP`과 `GRAGAS / JUNGLE`은 별도 항목으로 유지하며, 챔피언 요약이나
+포지션 요약으로 이 정확한 그룹을 대체할 수 없다. 각 지표는 `MatchParticipantMetricsCalculator`가 계산한 경기별 값의
+산술평균이다. 이 계산기는 KDA, 분당, 팀 상대 공식의 단일 기준이다. 결과는 games 내림차순, position과 champion ID
+오름차순으로 정렬한다.
 
-`games` is always included. v0.1 deliberately does not introduce a `minimumUserGamesForComparison` policy here;
-`PlayerComparisonFeature` applies that policy explicitly without changing the context contract.
+`games`는 항상 포함한다. v0.1은 이 계층에 `minimumUserGamesForComparison` 정책을 의도적으로 도입하지 않으며,
+`PlayerComparisonFeature`가 컨텍스트 계약을 바꾸지 않고 그 정책을 명시적으로 적용한다.
 
-## Boundaries
+## 경계
 
-`PlayerAnalysisFeature` remains the personal summary / future LLM self-analysis model. It is not expanded with rank or
-benchmark comparison data. `PlayerComparisonContext` is the separate comparison-ready model.
+`PlayerAnalysisFeature`는 개인 요약 및 향후 LLM 자기 분석 모델로 유지한다. 여기에 랭크나 benchmark 비교 데이터를
+추가하지 않는다. `PlayerComparisonContext`는 비교 준비가 끝난 별도 모델이다.
 
-This version excludes benchmark querying, benchmark differences, percentile ranks, “top X%” claims, LLM calls, a public
-comparison endpoint, changes to benchmark collection, RankSnapshot persistence, and Timeline data.
+이 버전은 benchmark 조회, benchmark 차이, 백분위 랭크, “상위 X%” 주장, LLM 호출, 공개 비교 endpoint, benchmark 수집 변경,
+RankSnapshot 저장, Timeline 데이터를 포함하지 않는다.

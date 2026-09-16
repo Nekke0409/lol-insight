@@ -1,8 +1,8 @@
-# ADR-004: Bound Recent Match Detail Fan-Out with an Application-Managed Executor
+# ADR-004: 애플리케이션 관리 Executor로 최근 Match Detail Fan-out 제한
 
 Status: Accepted
 
-## Context
+## 배경
 
 최근 경기 조회는 Riot ID에서 PUUID를 찾고 Match ID 목록을 받은 뒤, 각 Match Detail을 목록 순서대로
 blocking `RestClient`로 호출했다. Detail 수가 늘수록 해당 네트워크 대기 시간이 endpoint latency에
@@ -17,7 +17,7 @@ count 1/5/10/20에서 각각 351.9/1,050.8/1,531.3/3,358.4 ms였다. 이 수치�
 줄 수 있다. 반대로 모든 Detail 작업을 미리 queue에 넣으면 429를 확인한 뒤에도 아직 시작되지 않은
 작업이 계속 실행될 수 있다.
 
-## Decision
+## 결정
 
 Match Detail fan-out에만 Spring application lifecycle이 관리하는 `recentMatchDetailExecutor`를 사용한다.
 이 executor의 core/max thread 수는 모두 4이다.
@@ -37,7 +37,7 @@ Detail 404와 target PUUID participant 부재는 기존과 같이 unavailable로
 이 동시성 4는 in-flight Detail 호출 수의 제한일 뿐 request-per-second rate limiter, token bucket,
 retry, exponential backoff, 또는 process-wide cooldown이 아니다.
 
-## Result
+## 결과
 
 ```text
 Riot ID -> Account-V1 -> PUUID -> Match ID list
@@ -49,7 +49,7 @@ Riot ID -> Account-V1 -> PUUID -> Match ID list
                          indexed Detail results -> stable REST order
 ```
 
-## Reason
+## 이유
 
 - blocking `RestClient`를 유지한 채 Detail 네트워크 대기를 겹칠 수 있다.
 - executor lifecycle을 Spring이 관리하고 request마다 thread pool을 만들지 않는다.
@@ -57,7 +57,7 @@ Riot ID -> Account-V1 -> PUUID -> Match ID list
 - index 기반 조립으로 기존 REST response와 pagination 순서를 보존한다.
 - sliding window는 429 등 terminal 오류가 보인 후 새 Detail 작업을 추가하지 않게 한다.
 
-## Alternatives Considered
+## 검토한 대안
 
 ### Unbounded parallel `CompletableFuture` calls
 
@@ -74,7 +74,7 @@ Riot ID -> Account-V1 -> PUUID -> Match ID list
 
 - Riot API 보호와 이번 범위의 4 동시성 요구사항을 만족하지 않는다.
 
-### WebClient, reactive stack, or coroutines
+### WebClient, reactive stack 또는 coroutine
 
 장점:
 
@@ -89,7 +89,7 @@ Riot ID -> Account-V1 -> PUUID -> Match ID list
 
 - application-managed fixed executor가 현재 구조에서 더 작고 안전한 변경이다.
 
-### Request-scoped executor or submitting all Detail tasks to a fixed pool
+### 요청 범위 executor 또는 모든 Detail 작업을 고정 pool에 제출
 
 장점:
 
@@ -104,21 +104,21 @@ Riot ID -> Account-V1 -> PUUID -> Match ID list
 
 - 공유 executor와 sliding window가 lifecycle과 429 후 scheduling 중단 요구사항을 함께 만족한다.
 
-## Consequences
+## 결과와 영향
 
-### Positive
+### 장점
 
 - count가 큰 최근 경기 조회의 Detail 대기 시간이 겹쳐져 endpoint latency를 낮출 수 있다.
 - 기존 API 계약과 partial/error 정책이 유지된다.
 - latch와 counter로 동시성 상한 및 out-of-order 완료 시 순서 보존을 결정적으로 검증할 수 있다.
 
-### Negative / Trade-offs
+### 단점 / Trade-off
 
 - 동시에 들어오는 최근 경기 요청은 같은 4-thread executor를 공유하므로 queue 대기 시간이 생길 수 있다.
 - 이미 실행 중인 Detail 요청은 429를 발견해도 계속 실행될 수 있다.
 - in-flight concurrency 제한만으로 Riot의 시간 기반 rate limit을 보장하지 않는다.
 
-## Follow-up
+## 후속 작업
 
 - [ ] 동일 benchmark script와 count 1/5/10/20, 각 2회 조건으로 after 결과를 기록한다.
 - [ ] 실제 429 관측 결과를 근거로 process-wide cooldown, retry/backoff, 또는 request-per-second limiter 필요성을 별도로 결정한다.

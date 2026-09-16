@@ -1,20 +1,19 @@
-# Player Match Statistics v0.1
+# 플레이어 경기 통계 v0.1
 
-## Scope
+## 범위
 
-`GET /api/v1/players/{gameName}/{tagLine}/stats?start=0&count=20` returns aggregate statistics
-for the player over recent Match-V5 details. `start` defaults to `0`; `count` defaults to `20` and
-must be from `1` through `20`.
+`GET /api/v1/players/{gameName}/{tagLine}/stats?start=0&count=20`는 최근 Match-V5 상세 데이터로부터
+플레이어의 집계 통계를 반환한다. `start`의 기본값은 `0`이고, `count`의 기본값은 `20`이며
+`1`부터 `20` 사이여야 한다.
 
-The sample is loaded through the existing flow:
+표본은 기존 흐름으로 불러온다.
 
 ```text
 Riot ID -> Account-V1 -> PUUID -> Match IDs -> Match Detail -> domain Match
 ```
 
-Only a participant whose `puuid` equals the Account-V1 PUUID is analyzed. A Detail that is not
-found or has no matching participant is omitted, as in the recent-Matches API. No Riot DTO, PUUID,
-or complete Match data is returned by this endpoint.
+Account-V1 PUUID와 `puuid`가 같은 참가자만 분석한다. 찾을 수 없거나 일치하는 참가자가 없는 상세 데이터는
+최근 경기 API와 마찬가지로 제외한다. 이 엔드포인트는 Riot DTO, PUUID 또는 전체 Match 데이터를 반환하지 않는다.
 
 ```json
 {
@@ -24,40 +23,37 @@ or complete Match data is returned by this endpoint.
 }
 ```
 
-`analyzedCount` and `statistics.games` are the number of Match details containing the target PUUID.
-An empty sample returns zero for every numeric statistic. The endpoint does not cache aggregate
-statistics; Match Details continue to use the existing `match:detail` Redis cache.
+`analyzedCount`와 `statistics.games`는 대상 PUUID를 포함한 Match 상세 데이터의 수다. 빈 표본의 모든 수치 통계는
+0을 반환한다. 이 엔드포인트는 집계 통계를 캐시하지 않으며, Match 상세 데이터는 기존 `match:detail` Redis 캐시를 계속 사용한다.
 
-## Aggregation
+## 집계
 
-Each metric is first calculated per Match, then arithmetic-averaged across the analyzed Matches.
-This applies to KDA, per-minute values, kill participation, and damage share. `wins`, `losses`, and
-`games` are counts. `winRate` is a `0.0` through `1.0` ratio: `wins / games`.
+각 지표는 먼저 경기별로 계산하고, 분석한 경기 전체의 산술평균을 구한다. 이는 KDA, 분당 수치, 킬 관여율,
+피해 비율에 적용한다. `wins`, `losses`, `games`는 건수이며, `winRate`는 `wins / games`로 계산하는
+`0.0`부터 `1.0` 사이의 비율이다.
 
-| Field | Per-Match formula | Unit | Domain data source | Edge case |
+| 필드 | 경기별 공식 | 단위 | 도메인 데이터 원천 | 예외 상황 |
 | --- | --- | --- | --- | --- |
-| `games` | count of target participants | games | `Match.participants.puuid` | `0` for no target participants |
-| `wins` | count where `won` is true | games | `MatchParticipant.won` | `0` for no samples |
-| `losses` | count where `won` is false | games | `MatchParticipant.won` | `0` for no samples |
-| `winRate` | `wins / games` | ratio (0.0–1.0) | calculated counts | `0.0` when games is `0` |
-| `averageKills` | mean of `kills` | kills/game | `MatchParticipant.kills` | `0.0` for no samples |
-| `averageDeaths` | mean of `deaths` | deaths/game | `MatchParticipant.deaths` | `0.0` for no samples |
-| `averageAssists` | mean of `assists` | assists/game | `MatchParticipant.assists` | `0.0` for no samples |
-| `averageKda` | mean of `(kills + assists) / max(1, deaths)` | ratio | target participant KDA fields | deaths of `0` uses divisor `1` |
-| `averageCsPerMinute` | mean of `(laneMinionKills + neutralMinionKills) / durationMinutes` | CS/min | target participant and `Match.duration` | non-positive duration returns `0.0` |
-| `averageGoldPerMinute` | mean of `goldEarned / durationMinutes` | gold/min | target participant and `Match.duration` | non-positive duration returns `0.0` |
-| `averageDamagePerMinute` | mean of `championDamageDealt / durationMinutes` | damage/min | target participant and `Match.duration` | non-positive duration returns `0.0` |
-| `averageVisionPerMinute` | mean of `vision.score / durationMinutes` | vision/min | target participant and `Match.duration` | non-positive duration returns `0.0` |
-| `averageKillParticipation` | mean of `(kills + assists) / teamKills` | ratio | participants with the target `teamId` | `0.0` when team kills is `0` |
-| `averageDamageShare` | mean of `championDamageDealt / teamDamageToChampions` | ratio | participants with the target `teamId` | `0.0` when team damage is `0` |
+| `games` | 대상 참가자 수 | 경기 수 | `Match.participants.puuid` | 대상 참가자가 없으면 `0` |
+| `wins` | `won`이 true인 건수 | 경기 수 | `MatchParticipant.won` | 표본이 없으면 `0` |
+| `losses` | `won`이 false인 건수 | 경기 수 | `MatchParticipant.won` | 표본이 없으면 `0` |
+| `winRate` | `wins / games` | 비율(0.0–1.0) | 계산된 건수 | games가 `0`이면 `0.0` |
+| `averageKills` | `kills`의 평균 | 킬/경기 | `MatchParticipant.kills` | 표본이 없으면 `0.0` |
+| `averageDeaths` | `deaths`의 평균 | 데스/경기 | `MatchParticipant.deaths` | 표본이 없으면 `0.0` |
+| `averageAssists` | `assists`의 평균 | 어시스트/경기 | `MatchParticipant.assists` | 표본이 없으면 `0.0` |
+| `averageKda` | `(kills + assists) / max(1, deaths)`의 평균 | 비율 | 대상 참가자의 KDA 필드 | deaths가 `0`이면 분모로 `1` 사용 |
+| `averageCsPerMinute` | `(laneMinionKills + neutralMinionKills) / durationMinutes`의 평균 | CS/분 | 대상 참가자와 `Match.duration` | 경기 시간이 0 이하이면 `0.0` |
+| `averageGoldPerMinute` | `goldEarned / durationMinutes`의 평균 | 골드/분 | 대상 참가자와 `Match.duration` | 경기 시간이 0 이하이면 `0.0` |
+| `averageDamagePerMinute` | `championDamageDealt / durationMinutes`의 평균 | 피해량/분 | 대상 참가자와 `Match.duration` | 경기 시간이 0 이하이면 `0.0` |
+| `averageVisionPerMinute` | `vision.score / durationMinutes`의 평균 | 시야 점수/분 | 대상 참가자와 `Match.duration` | 경기 시간이 0 이하이면 `0.0` |
+| `averageKillParticipation` | `(kills + assists) / teamKills`의 평균 | 비율 | 대상 `teamId`의 참가자 | 팀 킬이 `0`이면 `0.0` |
+| `averageDamageShare` | `championDamageDealt / teamDamageToChampions`의 평균 | 비율 | 대상 `teamId`의 참가자 | 팀 피해량이 `0`이면 `0.0` |
 
-`teamKills` is the sum of `kills` for every `Match.participants` entry with the target participant's
-`teamId`. `teamDamageToChampions` is the equivalent sum of `championDamageDealt`. Opponent-team
-participants are not included in either denominator. All zero-denominator cases explicitly produce
-`0.0`; no statistic may return `NaN` or infinity.
+`teamKills`는 대상 참가자의 `teamId`와 같은 모든 `Match.participants` 항목의 `kills` 합계다.
+`teamDamageToChampions`는 이에 해당하는 `championDamageDealt` 합계다. 상대 팀 참가자는 두 분모 모두에
+포함하지 않는다. 분모가 0인 모든 경우는 명시적으로 `0.0`을 반환하며, 어떤 통계도 `NaN`이나 무한대를 반환하지 않는다.
 
-## Non-goals
+## 제외 범위
 
-v0.1 excludes champion, lane, rank-average, timeline, and AI-specific statistics. Riot `challenges`
-values are not used as a source of truth; the Backend calculates these values from the normalized
-domain Match data.
+v0.1은 챔피언, 라인, 랭크 평균, 타임라인, AI 전용 통계를 포함하지 않는다. Riot `challenges` 값은
+기준 데이터로 사용하지 않으며, Backend가 정규화된 도메인 Match 데이터로 이 값을 계산한다.

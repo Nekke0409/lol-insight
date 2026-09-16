@@ -1,6 +1,6 @@
-# Peer Benchmark v0.2
+# 동료 벤치마크 v0.2
 
-## Scope model
+## 범위 모델
 
 `PeerBenchmark`는 participant-level `BenchmarkSample` row를 PostgreSQL에서 on-demand로 aggregate한 결과다.
 v0.2는 서로 독립적인 두 benchmark population을 가진다.

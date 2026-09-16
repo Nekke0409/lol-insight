@@ -1,4 +1,4 @@
-# Architecture Decision Records
+# 아키텍처 결정 기록
 
 ADR(Architecture Decision Record)은 프로젝트에서 중요한 기술적 결정을
 그 당시의 맥락과 함께 기록하기 위해 사용한다.
@@ -6,7 +6,7 @@ ADR(Architecture Decision Record)은 프로젝트에서 중요한 기술적 결�
 `architecture.md`가 **현재 구조**를 설명한다면,
 ADR은 **왜 그런 구조가 되었는지**를 설명한다.
 
-## When to Write an ADR
+## ADR 작성 시점
 
 다음처럼 이후 구현에 지속적인 영향을 주는 결정을 기록한다.
 
@@ -32,7 +32,7 @@ ADR은 **왜 그런 구조가 되었는지**를 설명한다.
 
 단, 작은 변경처럼 보여도 전체 시스템의 의존 방향이나 운영 특성을 바꾼다면 ADR 대상이 될 수 있다.
 
-## File Naming
+## 파일 이름 규칙
 
 다음 형식을 사용한다.
 
@@ -52,7 +52,7 @@ NNN-short-description.md
 
 파일 번호는 결정의 중요도를 뜻하지 않는다.
 
-## Status
+## 상태
 
 필요한 경우 문서 상단에 상태를 표시할 수 있다.
 
@@ -72,7 +72,7 @@ Status: Accepted
 새 ADR을 만들고 기존 ADR에 `Superseded by ADR-XXX`와 같이 연결하여
 결정의 변경 이력을 보존한다.
 
-## Writing Principles
+## 작성 원칙
 
 좋은 ADR은 다음 질문에 간결하게 답한다.
 
@@ -84,7 +84,7 @@ Status: Accepted
 
 코드 구현 방법을 줄 단위로 설명하는 문서가 되지 않도록 한다.
 
-## Template
+## 템플릿
 
 새 ADR을 만들 때 [`000-template.md`](000-template.md)를 복사해서 사용한다.
 

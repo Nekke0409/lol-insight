@@ -4,7 +4,7 @@ League of Legends 데이터를 바탕으로 플레이어의 최근 경기와 통
 
 단순 기능 구현보다 외부 API 연동, 데이터 정규화, Rate Limit, 캐싱, 통계 계산, 실패 처리와 테스트를 실제 서비스 관점에서 다룹니다.
 
-## Service Direction
+## 서비스 방향
 
 서비스는 다음 흐름으로 확장합니다.
 
@@ -16,9 +16,9 @@ League of Legends 데이터를 바탕으로 플레이어의 최근 경기와 통
 
 Riot의 공식 Ranked Ladder를 대체하는 MMR, ELO 또는 자체 Skill Rating을 만들지 않습니다.
 
-## Current Implementation and Planned Work
+## 현재 구현과 계획된 작업
 
-| Area | Current implementation | Planned / future work |
+| 영역 | 현재 구현 | 계획된 / 향후 작업 |
 | --- | --- | --- |
 | Riot integration | Account-V1 기반 Riot ID 조회, Match-V5 Match ID/Detail 조회와 queue filter, League-V4 기반 KR Ranked Solo player discovery | representative sampling, scheduled collection |
 | Match processing | Riot Match DTO를 내부 `Match` 모델로 정규화하고 sampled player의 participant-level observation 추출 | aggregate용 추가 feature |
@@ -28,7 +28,7 @@ Riot의 공식 Ranked Ladder를 대체하는 MMR, ELO 또는 자체 Skill Rating
 | Persistence | PostgreSQL, JPA, Flyway 기반 `BenchmarkSample` schema, idempotent 저장 진입점, 소규모 collector와 on-demand aggregate query | retention 정책 |
 | LLM | OpenAI Responses API + Structured Outputs, `POST /api/v1/players/{gameName}/{tagLine}/analysis`, provider-independent `PlayerAnalysisGenerator` | result cache/persistence, per-user rate limit, cost observability, multi-provider |
 
-## Current Architecture
+## 현재 아키텍처
 
 초기 구조는 하나의 Spring Boot 애플리케이션 안에서 기능별 경계를 나누는 Modular Monolith입니다.
 
@@ -56,15 +56,15 @@ collector는 Ranked Solo Match ID를 `queue=420`으로 조회하고, Match ID별
 sampled player 관계를 보존한 채 Detail을 한 번만 읽어 participant-level sample을 idempotent하게 저장합니다.
 
 ```text
-ranked player source
-    -> sampled players
-    -> recent Ranked Solo Match IDs (implemented)
-    -> Match ID deduplication (implemented)
-    -> normalized Match (implemented)
-    -> BenchmarkSample (sampled player, matchId, implemented)
-    -> saveIfAbsent PostgreSQL persistence (implemented)
-    -> Benchmark Aggregate (implemented)
-    -> PeerBenchmark (implemented)
+랭크 플레이어 원천
+    -> 표본 플레이어
+    -> 최근 Ranked Solo Match ID(구현됨)
+    -> Match ID 중복 제거(구현됨)
+    -> 정규화된 Match(구현됨)
+    -> BenchmarkSample(표본 플레이어, matchId, 구현됨)
+    -> saveIfAbsent PostgreSQL 영속성(구현됨)
+    -> Benchmark 집계(구현됨)
+    -> PeerBenchmark(구현됨)
     -> PlayerComparisonFeature
     -> AVAILABLE comparison gate
     -> OpenAI LLM feedback
@@ -74,21 +74,21 @@ ranked player source
 
 자세한 설계와 현재 구현 경계는 [architecture.md](docs/architecture.md), Peer Benchmark 선택의 근거는 [ADR-006](docs/adr/006-use-sampled-peer-benchmark.md), v0.1 aggregate의 정확한 의미와 한계는 [Peer Benchmark v0.1](docs/benchmark/peer-benchmark-v0.1.md)에서 확인할 수 있습니다.
 
-## AI Analysis Principle
+## AI 분석 원칙
 
 계산과 설명을 분리합니다.
 
 ```text
-Riot data
-    -> normalization
-    -> statistics and cohort comparison in Backend
-    -> deterministic feature
-    -> LLM explanation
+Riot 데이터
+    -> 정규화
+    -> Backend의 통계 및 cohort 비교
+    -> 결정적 feature
+    -> LLM 설명
 ```
 
 Backend는 metric, exact cohort, sample size, 평균·중앙값·match-level percentile threshold, 차이와 비교 feature를 계산합니다. AVAILABLE comparison이 하나라도 있을 때만 LLM을 정확히 한 번 호출해 이 결과를 한국어로 설명합니다. 원본 Riot Match JSON 분석, cohort 선택, subtraction, player percentile 계산, benchmark 생성, MMR 추정은 LLM의 역할이 아닙니다.
 
-## Technology
+## 기술 스택
 
 현재 사용 중인 기술은 Kotlin, Spring Boot, Spring MVC `RestClient`, PostgreSQL, Spring Data JPA,
 Flyway, Redis, Docker, OpenAI Java SDK입니다. JDK 21을 사용합니다.
@@ -96,19 +96,19 @@ Flyway, Redis, Docker, OpenAI Java SDK입니다. JDK 21을 사용합니다.
 OpenAI 연동은 Responses API Structured Outputs를 사용하는 v0.2 다중 scope 분석 경계로 구현되어 있습니다.
 Spring Security, AWS, 다중 LLM Provider, 결과 cache/persistence, 사용자별 AI rate limit과 비용 관측은 후속 기술 방향입니다.
 
-## Documentation
+## 문서
 
 - [AGENTS.md](AGENTS.md): 작업 원칙과 구현 가이드
-- [Architecture](docs/architecture.md): 현재 구현과 향후 설계 경계
-- [ADRs](docs/adr/): 장기적인 기술 의사결정
-- [ADR-007](docs/adr/007-use-structured-llm-analysis-boundary.md): Structured LLM analysis 경계 결정
-- [Player Match Statistics v0.1](docs/statistics/player-match-statistics-v0.1.md): 현재 통계의 계산 기준
-- [Player Analysis Feature v0.1](docs/ai/player-analysis-feature-v0.1.md): 현재 provider 독립 feature의 범위
-- [Player Analysis v0.2](docs/ai/player-analysis-v0.2.md): 다중 scope OpenAI 분석 게이트, input/output 및 운영 제약
-- [Player Comparison Context v0.1](docs/ai/player-comparison-context-v0.1.md): peer comparison 사용자 입력의 범위
-- [Player Comparison Feature v0.1](docs/ai/player-comparison-feature-v0.1.md): exact benchmark comparison의 범위와 한계
+- [아키텍처](docs/architecture.md): 현재 구현과 향후 설계 경계
+- [ADR](docs/adr/): 장기적인 기술 의사결정
+- [ADR-007](docs/adr/007-use-structured-llm-analysis-boundary.md): Structured LLM 분석 경계 결정
+- [플레이어 경기 통계 v0.1](docs/statistics/player-match-statistics-v0.1.md): 현재 통계의 계산 기준
+- [플레이어 분석 Feature v0.1](docs/ai/player-analysis-feature-v0.1.md): 현재 provider 독립 feature의 범위
+- [플레이어 분석 v0.2](docs/ai/player-analysis-v0.2.md): 다중 scope OpenAI 분석 게이트, input/output 및 운영 제약
+- [플레이어 비교 컨텍스트 v0.1](docs/ai/player-comparison-context-v0.1.md): peer comparison 사용자 입력의 범위
+- [플레이어 비교 Feature v0.1](docs/ai/player-comparison-feature-v0.1.md): exact benchmark comparison의 범위와 한계
 
-## Local Environment
+## 로컬 환경
 
 Riot API key는 환경 변수로만 주입합니다. 실제 값을 저장소에 커밋하지 않습니다.
 
@@ -137,7 +137,7 @@ endpoint, startup runner, scheduler 없이 application service로만 제공됩�
 `BenchmarkSample` persistence integration test는 Testcontainers PostgreSQL을 사용하므로 Docker daemon이
 실행 중이어야 합니다.
 
-## OpenAI Observability v0.1
+## OpenAI 관측성 v0.1
 
 OpenAI Responses 어댑터는 기존 Micrometer `MeterRegistry`에 provider 호출 메타데이터를 기록한다.
 이는 계측만 추가하는 변경으로, metrics backend·exporter·Actuator endpoint 노출 정책·외부 동기 monitoring
@@ -168,7 +168,7 @@ ID, provider usage object은 log·persistence·metric·analysis REST response에
 분석 결과나 기존 오류 의미를 바꾸지 않도록 격리한다. `/analysis` 전체 HTTP 지연 시간은 generator가 아닌
 framework 제공 HTTP observation으로 측정한다.
 
-## OpenAI Runtime Configuration
+## OpenAI 런타임 설정
 
 OpenAI 분석의 production 기본 timeout은 `60s`이며 `OPENAI_TIMEOUT`으로 환경별 override할 수 있습니다.
 이는 latency SLA가 아니라 `gpt-5-mini` Responses API Structured Outputs smoke의 실측에 기반한 MVP
@@ -225,7 +225,7 @@ grouping하고 기존 30 samples / 10 unique players availability policy를 적�
 선택한 뒤 `/analysis`를 실행하려면 `findBenchmarkExcludingPlayer(cohort, targetPuuid)` 결과도 `AVAILABLE`인지
 확인해야 한다. threshold에 정확히 맞는 row보다 30/10보다 충분한 여유가 있는 row를 우선한다.
 
-## Peer Benchmark scope v0.2
+## Peer Benchmark 범위 v0.2
 
 Peer Benchmark은 `POSITION`(`region / queueId / tier / division / position`)과 `CHAMPION_POSITION`(기존 key에
 `championId` 추가)이라는 두 독립 scope를 제공한다. Player는 scope가 일치하는 comparison을 각각 받으며,
@@ -240,7 +240,7 @@ baseline으로 표현하지 않는다. OpenAI analysis는 AVAILABLE인 두 scope
 [Player Comparison Feature v0.2](docs/ai/player-comparison-feature-v0.2.md),
 [Player Analysis v0.2](docs/ai/player-analysis-v0.2.md)를 참고한다.
 
-## Development Smoke Procedure
+## 개발 스모크 절차
 
 실제 development Riot key로 작은 수집을 확인할 때는 IDE의 dev-only evaluation 또는 임시 local harness에서
 `RankedPlayerDiscoveryService.discover("GOLD", "I", 2)`의 결과를

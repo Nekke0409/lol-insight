@@ -1,4 +1,4 @@
-# Riot Match Data Specification v0.1
+# Riot Match 데이터 명세 v0.1
 
 > 대상 프로젝트: LOL Insight Platform
 > 대상 API: `GET /lol/match/v5/matches/{matchId}`  

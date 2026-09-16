@@ -1,8 +1,8 @@
-# ADR-001: Use Modular Monolith for Initial Architecture
+# ADR-001: 초기 아키텍처에 Modular Monolith 사용
 
 Status: Accepted
 
-## Context
+## 배경
 
 이 프로젝트는 다음 기능을 순차적으로 구현한다.
 
@@ -20,7 +20,7 @@ Status: Accepted
 Riot API 연동, Match 처리, AI 분석, 커뮤니티 기능이 성장하면서
 의존성이 뒤섞일 가능성이 있다.
 
-## Decision
+## 결정
 
 초기 Backend는 **하나의 Spring Boot 애플리케이션으로 배포하는 Modular Monolith**로 구성한다.
 
@@ -30,7 +30,7 @@ Player, Match, Analysis, Community 등 기능 영역의 경계를 코드 구조�
 코드 구성은 package-by-feature를 우선하고,
 기능 내부의 계층은 실제 복잡도에 따라 필요한 만큼만 분리한다.
 
-## Result
+## 결과
 
 ```text
 Single Spring Boot Application
@@ -44,7 +44,7 @@ Single Spring Boot Application
 각 기능은 같은 애플리케이션 안에서 동작하지만
 외부 API, 영속성, 애플리케이션 로직의 책임을 가능한 한 분리한다.
 
-## Reason
+## 이유
 
 - 초기 개발과 배포가 단순하다.
 - 단일 DB 트랜잭션을 활용하기 쉽다.
@@ -53,9 +53,9 @@ Single Spring Boot Application
 - 기능별 경계를 유지하여 코드가 하나의 거대한 결합 구조가 되는 것을 방지할 수 있다.
 - 프로젝트의 핵심 학습 목표인 Backend 설계, 외부 API 연동, 데이터 처리, 테스트에 집중할 수 있다.
 
-## Alternatives Considered
+## 검토한 대안
 
-### Traditional Layered Monolith
+### 전통적인 계층형 Monolith
 
 프로젝트 전체를 다음과 같이 기술 계층별로 구성하는 방식이다.
 
@@ -78,7 +78,7 @@ entity/
 
 따라서 최상위 구조는 package-by-feature를 우선한다.
 
-### Microservices
+### 마이크로서비스
 
 기능별로 독립 서비스와 배포 단위를 구성하는 방식이다.
 
@@ -96,22 +96,22 @@ entity/
 
 현재 단계에서는 선택하지 않는다.
 
-## Consequences
+## 결과와 영향
 
-### Positive
+### 장점
 
 - 하나의 애플리케이션으로 빠르게 개발할 수 있다.
 - 모듈 간 경계를 유지하면서도 리팩터링 비용이 낮다.
 - 테스트와 로컬 환경 구성이 단순하다.
 - 향후 실제 필요가 생긴 모듈을 서비스로 분리할 가능성을 남긴다.
 
-### Negative / Trade-offs
+### 단점 / Trade-off
 
 - 모듈 경계는 네트워크가 아니라 코드 규칙에 의해 유지되므로 개발자가 의존 방향을 지켜야 한다.
 - 하나의 배포 단위이므로 특정 기능만 독립적으로 배포할 수 없다.
 - 잘못 관리하면 시간이 지나며 일반적인 거대 Monolith로 변할 수 있다.
 
-## Revisit Conditions
+## 재검토 조건
 
 다음과 같은 상황이 실제로 발생하면 일부 모듈의 독립 서비스 분리를 검토한다.
 

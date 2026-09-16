@@ -1,4 +1,4 @@
-# ADR-006: Use a Sampled Peer Benchmark for Relative Player Analysis
+# ADR-006: 상대 플레이어 분석에 표본 기반 Peer Benchmark 사용
 
 Status: Accepted
 
@@ -43,7 +43,7 @@ average, median, percentile은 여러 sample을 모으는 aggregate 단계에서
 KDA와 per-minute·ratio metric의 공식은 기존 `PlayerMatchStatisticsCalculator`가 사용하는 per-match 계산을
 source of truth로 재사용하거나 같은 기준으로 추출한다. aggregate 결과를 `BenchmarkSample`으로 취급하지 않는다.
 
-### Tier Attribution and Time Semantics
+### Tier 귀속과 시간 의미
 
 League API로 rank가 확인된 sampled player만 BenchmarkSample 생성 대상이다. sampled player A가 수집 시점에
 GOLD I이고 Match에 참여했다면 A의 participant만 GOLD I sample이 된다. 같은 Match에 있다는 이유만으로 나머지
@@ -141,22 +141,22 @@ LLM integration은 이후 [ADR-007](007-use-structured-llm-analysis-boundary.md)
 
 ## Alternatives Considered
 
-### Full ladder and Match population collection
+### 전체 래더와 Match 모집단 수집
 
 더 넓은 population을 표현할 수 있지만, 현재 단계에서 Rate Limit, storage, freshness 및 운영 비용이 과도하다.
 샘플링 정책과 수집 파이프라인을 검증한 뒤에도 전수 수집이 실제로 필요한지 별도로 판단한다.
 
-### Assign one sampled player's tier to every participant in the Match
+### 표본 플레이어 한 명의 tier를 Match의 모든 참가자에게 부여
 
 구현은 간단하지만 Match 동시 참가만으로 다른 participant의 tier를 알 수 없다. 잘못된 cohort attribution을
 만들므로 사용하지 않는다.
 
-### Let the LLM infer a comparison baseline
+### LLM이 비교 기준선을 추론하도록 허용
 
 설명은 유연해 보이지만 비교 수치의 재현성, 검증 가능성, 비용 통제가 불가능하다. 통계 계산과 cohort 선택은
 Backend의 결정적 책임으로 유지한다.
 
-## Future
+## 향후 계획
 
 - retention 정책
 - scheduled collection과 process-wide rate-limit handling

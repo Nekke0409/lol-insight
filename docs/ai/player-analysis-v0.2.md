@@ -1,4 +1,4 @@
-# Player Analysis v0.2
+# 플레이어 분석 v0.2
 
 ## 목적
 
@@ -21,7 +21,7 @@ Riot API data
     -> PlayerAnalysisResult
 ```
 
-## OpenAI Observability v0.1
+## OpenAI 관측성 v0.1
 
 OpenAI 어댑터는 이 request/response contract를 바꾸지 않고 best-effort Micrometer 계측을 추가한다.
 `PlayerAnalysisResult`와 `PlayerAnalysisResponse`는 provider-independent를 유지하며, token usage와 provider

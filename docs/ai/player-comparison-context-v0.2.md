@@ -1,4 +1,4 @@
-# Player Comparison Context v0.2
+# 플레이어 비교 컨텍스트 v0.2
 
 `PlayerComparisonContext`는 두 benchmark scope에 대응하는 user-side statistical unit을 별도로 가진다. 이 model은
 계속 provider-independent input이며 benchmark를 query하지 않는다.

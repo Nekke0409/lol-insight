@@ -1,8 +1,8 @@
-# ADR-005: Cache Completed Match Details in Redis
+# ADR-005: 완료된 Match Detail을 Redis에 캐시
 
 Status: Accepted
 
-## Context
+## 배경
 
 단일 Match Detail 조회 endpoint와 최근 경기 조회 endpoint는 모두
 `RiotMatchClient.findMatchById`를 호출한다. 최근 경기 조회는 여러 Match Detail을 병렬로 조회할 수 있고,
@@ -16,7 +16,7 @@ Status: Accepted
 종료된 Match Detail은 일반적으로 변경되지 않지만, MVP에서는 데이터 영속화 정책이나 복잡한 무효화 규칙을
 도입하지 않았다. 반복 조회를 줄이기 위한 작고 명확한 cache 정책이 필요하다.
 
-## Decision
+## 결정
 
 `RiotMatchClient.findMatchById`가 정상적으로 반환한 `Match` 결과에만 Spring Cache와 Redis를 적용한다.
 
@@ -32,7 +32,7 @@ cache는 infrastructure 경계에서 구성한다. Application service는 계속
 Account-V1 조회, Match ID 목록, Player 전체 응답, RecentMatchesResponse 전체, 404/429/5xx 결과에는
 cache를 적용하지 않는다.
 
-## Result
+## 결과
 
 ```text
 matchId
@@ -41,7 +41,7 @@ matchId
       -> miss: Riot Match-V5 Detail 호출 -> Match 변환 -> Redis 저장 -> Match 반환
 ```
 
-## Reason
+## 이유
 
 - 종료된 Match Detail은 일반적으로 변경되지 않아 반복 조회 cache 후보로 적절하다.
 - 두 endpoint가 이미 같은 client 메서드를 공통 경계로 사용하므로 service 계층 변경 없이 적용할 수 있다.
@@ -50,9 +50,9 @@ matchId
 - 7일 TTL은 MVP의 정책을 단순하게 유지하면서도 cache entry의 수명에 상한을 둔다.
 - Java native serialization을 사용하지 않고 domain model에 `Serializable` 구현을 강제하지 않는다.
 
-## Alternatives Considered
+## 검토한 대안
 
-### Local in-memory cache
+### 로컬 in-memory cache
 
 장점:
 
@@ -102,16 +102,16 @@ matchId
 - 반복되는 종료 Match Detail 조회는 cache 적용 필요성이 확인된 데이터이며, 작은 범위의 Redis 도입으로
   명확하게 개선할 수 있다.
 
-## Consequences
+## 결과와 영향
 
-### Positive
+### 장점
 
 - cache hit은 Match-V5 Detail HTTP 요청 없이 `Match`를 반환해 반복 조회 latency와 Riot API 사용량을 줄인다.
 - 기존 REST 계약, partial response 정책, bounded concurrency=4 동작은 유지된다.
 - 실패를 cache하지 않으므로 일시적인 upstream 오류가 정상 복구를 막지 않는다.
 - Redis key와 TTL이 명시적이어서 local smoke test와 이후 cold/warm benchmark를 수행할 수 있다.
 
-### Negative / Trade-offs
+### 단점 / Trade-off
 
 - 이 기능이 활성화된 환경에서는 cache 접근을 위해 Redis가 필요하다.
 - cache miss의 첫 요청은 여전히 Riot API를 호출하며 429, 5xx, transport failure가 발생할 수 있다.
@@ -120,7 +120,7 @@ matchId
 - Redis cache는 distributed rate limiter, process-wide cooldown, retry, exponential backoff, token bucket,
   negative cache, Match ID 목록 cache, Account cache, database persistence를 제공하지 않는다.
 
-## Follow-up
+## 후속 작업
 
 - [ ] 안정적인 local Riot API 측정 구간에서 cold cache와 warm cache benchmark 결과를 별도로 기록한다.
 - [ ] 실제 429 관측 결과를 근거로 cache 효과와 별개로 rate-limit 제어 정책의 필요성을 결정한다.

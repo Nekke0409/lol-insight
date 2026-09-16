@@ -52,51 +52,48 @@ $env:RIOT_API_KEY = "your-riot-api-key"
 target URL은 `http://localhost:8080`이며, 다른 local port를 사용하면 `BENCHMARK_BASE_URL` 또는
 `-BaseUrl`로 변경한다.
 
-## Redis Match Detail Cache Smoke Test
+## Redis Match Detail Cache 스모크 테스트
 
-Start the local Redis service before starting the backend.
+Backend를 시작하기 전에 로컬 Redis 서비스를 시작한다.
 
 ```powershell
 docker compose up -d redis
 ```
 
-Use the existing `RIOT_API_KEY` setup and leave `REDIS_HOST=localhost` and `REDIS_PORT=6379` at
-their local defaults unless Redis runs elsewhere. Make the same single-Match request twice, or make
-the same recent-Matches request twice with the same player and pagination values.
+기존 `RIOT_API_KEY` 설정을 사용하고 Redis가 다른 곳에서 실행 중인 경우가 아니라면 `REDIS_HOST=localhost`와
+`REDIS_PORT=6379`은 로컬 기본값으로 둔다. 동일한 단일 Match 요청을 두 번 보내거나, 같은 플레이어 및 페이지네이션
+값으로 동일한 최근 Match 요청을 두 번 보낸다.
 
-- On the first request, each previously uncached Match Detail is a cache miss and calls Riot.
-- On the second request, cached Match Detail values are returned from Redis without a Match-V5
-  Detail HTTP request. Account lookup and Match ID list lookup are intentionally still uncached.
+- 첫 번째 요청에서는 이전에 캐시되지 않은 각 Match Detail이 cache miss가 되어 Riot을 호출한다.
+- 두 번째 요청에서는 Match-V5 Detail HTTP 요청 없이 캐시된 Match Detail 값을 Redis에서 반환한다. Account 조회와
+  Match ID 목록 조회는 의도적으로 계속 캐시하지 않는다.
 
-Without adding application DEBUG logging, inspect the keys from the Redis container when needed:
+애플리케이션 DEBUG 로그를 추가하지 않고도 필요할 때 Redis 컨테이너에서 키를 확인할 수 있다.
 
 ```powershell
 docker compose exec redis redis-cli --scan --pattern "match:detail:*"
 ```
 
-The expected key form is `match:detail:{matchId}`. This is a local smoke test only; it does not
-prove that cold-cache traffic will avoid Riot 429 responses.
+예상 키 형식은 `match:detail:{matchId}`다. 이는 로컬 스모크 테스트일 뿐이며, 콜드 캐시 트래픽이 Riot 429 응답을
+피한다는 것을 증명하지는 않는다.
 
-## Redis Cache Experiment Template
+## Redis Cache 실험 템플릿
 
-No Redis-cache latency values are recorded in this document yet. Do not insert estimated values.
-For a later comparison, run separate experiments with the same target, count, iterations, local
-backend, JDK, shard, and API key scope:
+이 문서에는 아직 Redis cache latency 값을 기록하지 않았다. 추정값을 넣지 않는다. 이후 비교할 때는 동일한 대상,
+count, 반복 횟수, 로컬 backend, JDK, shard, API key 범위로 별도 실험을 실행한다.
 
-- **Cold cache:** use a Redis instance that does not already contain the target Match Detail keys,
-  then run the benchmark once.
-- **Warm cache:** repeat the identical benchmark while the target Match Detail keys remain valid.
+- **콜드 캐시:** 대상 Match Detail 키가 아직 없는 Redis 인스턴스를 사용한 뒤 benchmark를 한 번 실행한다.
+- **웜 캐시:** 대상 Match Detail 키가 유효한 동안 동일한 benchmark를 반복한다.
 
-Record the resulting CSV path and the relevant Redis state in the template below. Whole endpoint
-latency still includes the uncached Account-V1 and Match-ID-list calls, so report HTTP status and
-success counts alongside latency.
+아래 템플릿에 결과 CSV 경로와 관련 Redis 상태를 기록한다. 전체 endpoint latency에는 캐시하지 않은 Account-V1과
+Match-ID 목록 호출도 포함되므로, latency와 함께 HTTP 상태 및 성공 건수를 보고한다.
 
-| Cache state | Measured at | Commit | Count | Iterations | Result file | Notes |
+| 캐시 상태 | 측정 시각 | 커밋 | Count | 반복 횟수 | 결과 파일 | 비고 |
 | --- | --- | --- | ---: | ---: | --- | --- |
 | Cold |  |  |  |  |  |  |
 | Warm |  |  |  |  |  |  |
 
-## Run
+## 실행
 
 서버가 기동된 뒤, 별도 PowerShell terminal에서 다음처럼 실행한다.
 
@@ -152,7 +149,7 @@ local backend에 `count=1` 요청을 한 번 수동으로 수행하고 그 결�
 script는 동시 endpoint 요청을 만들지 않으며, 각 endpoint 요청 내부의 구현을 포함한 latency를 한 요청씩
 측정한다.
 
-## Sequential Baseline Before Bounded Concurrency
+## Bounded Concurrency 적용 전 순차 기준선
 
 bounded concurrency 적용 전 실제 Riot API 환경에서 기본 설정(각 count당 2회)으로 다음 결과를
 측정했다. 모든 요청은 HTTP 200으로 성공했고 benchmark 실패는 없었다. 표본이 작으므로 절대적인 성능
@@ -173,7 +170,7 @@ bounded concurrency 적용 전 실제 Riot API 환경에서 기본 설정(각 co
 개별 attempt 원본값은 이 repository에 보존되어 있지 않다. 따라서 이 baseline의 summary 값과
 문서에 이미 기록된 attempt 값만 비교 기준으로 사용하며, 이를 바탕으로 raw CSV를 추정 생성하지 않는다.
 
-## Bounded Concurrency=4 Result
+## Bounded Concurrency=4 결과
 
 ADR-004의 bounded concurrency=4 적용 후 실제로 수행한 benchmark 결과는
 [`results/recent-matches-concurrency-4.csv`](results/recent-matches-concurrency-4.csv)에 보존한다.
@@ -199,19 +196,19 @@ ADR-004의 bounded concurrency=4 적용 후 실제로 수행한 benchmark 결과
 process-wide cooldown이 아니다. 따라서 위 성공 응답 latency는 관측값으로만 보존하며, 순차 baseline과의
 개선율 또는 429의 단일 원인으로 해석하지 않는다.
 
-### Next Isolated Experiments
+### 다음 격리 실험
 
 각 experiment는 rate-limit 영향이 없는 상태에서 별도 PowerShell process로 한 번만 실행한다.
 고정 sleep이나 Riot rate-limit window의 시간값을 script에 추가하지 않는다.
 
 ```powershell
-# Experiment A
+# 실험 A
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\benchmark-recent-matches.ps1 -Count 5 -Iterations 1
 
-# Experiment B
+# 실험 B
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\benchmark-recent-matches.ps1 -Count 10 -Iterations 1
 
-# Experiment C
+# 실험 C
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\benchmark-recent-matches.ps1 -Count 20 -Iterations 1
 ```
 
@@ -226,16 +223,16 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\benchmark-rece
 - 같은 count의 isolated run에서 두 구현 모두 429이면, 이 recent-matches use case의 upstream 호출량이 현재 Riot key 제한과 충돌할 가능성이 있다.
 - 어느 조건도 반복적으로 재현되지 않으면, 현재 데이터만으로 하나의 원인을 확정할 수 없다고 기록한다.
 
-## Record Template
+## 기록 템플릿
 
 측정 직전에 commit SHA, backend 실행 방식/JDK, base URL, 대상 shard, 반복 횟수와 측정 시각을 함께
 기록한다. 개인 Riot ID, PUUID, API key는 기록하지 않는다.
 
-| Measured at | Commit | Environment notes | Iterations | Result file |
+| 측정 시각 | 커밋 | 환경 비고 | 반복 횟수 | 결과 파일 |
 | --- | --- | --- | ---: | --- |
 |  |  |  |  |  |
 
-| Count | Attempts | Successful | Failed | HTTP status distribution | Average latency (ms) | Minimum latency (ms) | Maximum latency (ms) | Notes |
+| Count | 시도 | 성공 | 실패 | HTTP 상태 분포 | 평균 latency(ms) | 최소 latency(ms) | 최대 latency(ms) | 비고 |
 | ---: | ---: | ---: | ---: | --- | ---: | ---: | ---: | --- |
 | 1 |  |  |  |  |  |  |  |  |
 | 5 |  |  |  |  |  |  |  |  |
@@ -245,7 +242,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\benchmark-rece
 실제 결과는 환경 의존적이다. 위 sequential baseline과 이후 bounded-concurrency 결과에는
 민감정보를 제외한 CSV 경로 또는 결과 요약을 함께 기록한다.
 
-## Comparing the Bounded-Concurrency Change
+## Bounded Concurrency 변경 비교
 
 bounded concurrency를 적용한 뒤에도 아래 조건을 고정한다.
 

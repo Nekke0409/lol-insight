@@ -1,4 +1,4 @@
-# Architecture
+# 아키텍처
 
 이 문서는 LOL Insight 프로젝트의 **현재 아키텍처 방향을 설명하는 기준 문서**다.
 
@@ -7,7 +7,7 @@
 
 아직 구현되지 않은 세부사항은 필요 이상으로 미리 확정하지 않는다.
 
-## 1. Architecture Goals
+## 1. 아키텍처 목표
 
 이 프로젝트의 아키텍처는 다음 목표를 우선한다.
 
@@ -17,16 +17,16 @@
 4. 초기에는 단순한 구조로 빠르게 개발하되 이후 기능 확장이 가능해야 한다.
 5. 설계 의도와 기술적 trade-off가 코드에서 드러나도록 한다.
 
-## 2. Architecture Style
+## 2. 아키텍처 스타일
 
-### Current Choice
+### 현재 선택
 
 초기 아키텍처는 **Modular Monolith**를 사용한다.
 
 하나의 Spring Boot 애플리케이션 안에서 기능별 경계를 나누되,
 초기부터 마이크로서비스로 분리하지 않는다.
 
-### Why
+### 이유
 
 현재 단계에서는 다음 이유로 Modular Monolith가 적절하다.
 
@@ -39,12 +39,12 @@
 서비스 규모와 팀 규모가 커져 독립 배포가 실제로 필요해질 때
 특정 모듈의 분리를 검토한다.
 
-## 3. System Context
+## 3. 시스템 컨텍스트
 
 ```mermaid
 flowchart LR
-    User[User / Frontend]
-    App[Spring Boot Backend]
+    User[사용자 / 프론트엔드]
+    App[Spring Boot 백엔드]
     Riot[Riot Games API]
     Cache[(Redis)]
     DB[(PostgreSQL)]
@@ -75,7 +75,7 @@ persistence 및 OpenAI Responses API Structured Outputs 분석 경계를 사용�
 - 분석 feature 생성
 - LLM 요청 비용 관리
 
-## 4. Main Functional Areas
+## 4. 주요 기능 영역
 
 프로젝트는 현재 다음 기능 영역을 기준으로 성장한다.
 
@@ -103,7 +103,7 @@ position 및 `(championId, position)`별 통계를 각각 같은 scope benchmark
 
 LLM Provider의 요청/응답 형식이 Match나 Player의 핵심 로직에 직접 퍼지지 않도록 한다.
 
-### OpenAI Observability v0.1
+### OpenAI 관측성 v0.1
 
 OpenAI usage와 지연 시간은 OpenAI infrastructure 어댑터 내부에만 둔다. application 경계는
 `PlayerAnalysisGenerator -> PlayerAnalysisResult`를 유지하며, application model과 REST response에는
@@ -128,7 +128,7 @@ recorder는 best-effort 방식의 프로세스 내부 component다. 어댑터 �
 이 계측은 prompt, request JSON, response body, analysis 본문, Riot identifier, OpenAI request ID, API key,
 raw provider usage object을 log하거나 persist하지 않는다.
 
-### Benchmark
+### 벤치마크
 
 Peer Benchmark는 샘플링한 ranked player의 Ranked Solo Match participant 관측치를 수집하고, cohort별로
 집계해 상대 비교에 사용하는 기능 영역이다. KR `RANKED_SOLO_5x5`의 League-V4 entry를 page 단위로 읽고
@@ -147,7 +147,7 @@ player percentile rank는 아직 구현되지 않았고, LLM integration은 ADR-
 현재 우선순위는 Riot 데이터 기능과 AI 분석 기능보다 낮으므로
 구체적인 내부 구조는 실제 구현 단계에서 결정한다.
 
-## 5. Application Dependency Direction
+## 5. 애플리케이션 의존 방향
 
 기본적인 요청 흐름은 다음 형태를 우선한다.
 
@@ -203,7 +203,7 @@ Spring Framework 또는 외부 API의 세부 구현이 핵심 비즈니스 흐�
 
 Repository는 외부 HTTP API 접근 계층으로 사용하지 않는다.
 
-### External Client / Adapter
+### 외부 Client / Adapter
 
 담당 책임:
 
@@ -215,7 +215,7 @@ Repository는 외부 HTTP API 접근 계층으로 사용하지 않는다.
 
 외부 API 변경이 핵심 서비스 로직에 직접 영향을 주는 범위를 줄인다.
 
-## 6. Package Direction
+## 6. 패키지 구성 방향
 
 초기에는 **package-by-feature**를 우선한다.
 
@@ -249,7 +249,7 @@ match/
 `global/`에는 정말 여러 기능이 공유하는 설정과 횡단 관심사만 둔다.
 도메인에 속한 코드를 편의를 위해 `global`로 이동시키지 않는다.
 
-## 7. Riot Games API Boundary
+## 7. Riot Games API 경계
 
 Riot API는 외부 시스템으로 취급한다.
 
@@ -260,7 +260,7 @@ Riot API JSON
     -> internal model
 ```
 
-### Principles
+### 원칙
 
 - Riot API DTO를 JPA Entity로 직접 사용하지 않는다.
 - Riot API DTO가 Controller 응답 모델 전체로 퍼지는 것을 피한다.
@@ -268,7 +268,7 @@ Riot API JSON
 - 필요한 데이터만 내부 모델 또는 통계 feature로 변환한다.
 - API Key는 환경 설정을 통해 주입하고 저장소에 커밋하지 않는다.
 
-### Current Client Structure
+### 현재 Client 구조
 
 공통 Riot API 통신은 `global/riot`에 둔다. 이 패키지는 여러 기능에서 공유하는
 외부 시스템 설정과 HTTP 통신 책임만 가지며, Player나 Match 도메인 로직을 포함하지 않는다.
@@ -293,7 +293,7 @@ Account-V1의 `RiotAccountClient`, Match-V5의 `RiotMatchClient`, 그리고 Leag
 `PlayerRankLookupService`가 사용하는 rank 입력으로 매핑한다. PUUID rank lookup과 tier/division ladder discovery는
 서로 다른 application service로 유지한다. 공통 전송기에는 endpoint DTO나 도메인 판단을 넣지 않는다.
 
-### Bounded Match Detail Batch Loading
+### 제한된 Match Detail 일괄 로딩
 
 `MatchDetailBatchLoader`는 최근 경기와 benchmark collector가 함께 사용하는 Match Detail fan-out 경계다. 최근
 경기 조회는 Account-V1 Riot ID 조회와 Match-V5 Match ID 목록 조회를 요청 thread에서 순차로 수행하고, 그 뒤의
@@ -309,7 +309,7 @@ Detail만 이 loader로 전달한다. executor는 Spring application lifecycle�
 이후 제출을 멈추고 `cancel(false)`로 실행 전 작업을 취소하며 Retry-After를 결과에 보존한다. 실행 중인 blocking
 HTTP 호출은 강제로 interrupt하거나 취소하지 않는다.
 
-### Error Boundary
+### 오류 경계
 
 Riot HTTP 오류는 공통 `RiotApiHttpClient`에서 status code와 response body를 보존하는
 `RiotApiResponseException`으로 변환한다. 429 응답에서는 `Retry-After` header의 유효한
@@ -328,7 +328,7 @@ not-found 예외는 404로, Riot 429는 유효한 경우에만 `Retry-After` hea
 connect/read timeout 등의 transport failure는 503으로 변환한다. 자동 retry와 process-wide
 rate-limit cooldown은 이 경계에 포함하지 않으며 별도 정책으로 결정한다.
 
-### Operational Concerns
+### 운영 고려사항
 
 Riot API 호출에서는 다음 상황을 고려한다.
 
@@ -341,7 +341,7 @@ Riot API 호출에서는 다음 상황을 고려한다.
 
 재시도와 캐시는 실제 API 특성과 데이터 신선도 요구사항을 확인한 뒤 적용한다.
 
-## 8. Match Data Processing
+## 8. Match 데이터 처리
 
 원본 Match 응답은 매우 크기 때문에
 LLM이나 API 응답에서 항상 전체 원본 데이터를 그대로 사용하지 않는다.
@@ -350,17 +350,16 @@ LLM이나 API 응답에서 항상 전체 원본 데이터를 그대로 사용하
 
 ```text
 Riot Match DTO
-    -> normalization
-    -> selected match data
-    -> statistics / derived metrics
-    -> API response or analysis feature
+    -> 정규화
+    -> 선택한 Match 데이터
+    -> 통계 / 파생 지표
+    -> API 응답 또는 분석 feature
 ```
 
-The Player recent-Matches and player statistics endpoints share an application-level loader for
-`Riot ID -> PUUID -> Match IDs -> domain Match` orchestration. The loader preserves the bounded
-Detail fan-out and partial-result policy; each endpoint maps the resulting normalized Match list to
-its own response. Statistics calculation is a separate application component and does not call
-Riot or Redis directly.
+플레이어 recent-Matches와 플레이어 통계 endpoint는 `Riot ID -> PUUID -> Match IDs -> domain Match`
+오케스트레이션을 위한 애플리케이션 수준 loader를 공유한다. loader는 제한된 Detail fan-out 및 부분 결과 정책을
+유지하며, 각 endpoint는 정규화된 Match 목록을 자신의 응답으로 변환한다. 통계 계산은 Riot이나 Redis를 직접 호출하지 않는
+별도 애플리케이션 컴포넌트다.
 
 원본 데이터를 DB에 얼마나 저장할지,
 정규화된 데이터를 저장할지,
@@ -369,29 +368,29 @@ Riot or Redis directly.
 
 이 결정이 서비스 전체의 저장 비용과 데이터 모델에 큰 영향을 주게 되면 ADR로 기록한다.
 
-### Peer Benchmark Flow
+### Peer Benchmark 흐름
 
 현재의 플레이어 흐름과 향후 benchmark 흐름은 목적과 집계 단위가 다르므로 독립적으로 존재한다.
 
 ```text
-Player flow (implemented)
+플레이어 흐름(구현됨)
 Riot API
-    -> normalized Match
+    -> 정규화된 Match
     -> PlayerMatchStatistics
     -> PlayerAnalysisFeature
-    -> PlayerComparisonContext (current Solo rank + champion/position user metrics)
+    -> PlayerComparisonContext(현재 Solo rank + champion/position 사용자 지표)
 
-Benchmark flow (collection and aggregation implemented)
-ranked player source
-    -> sampled players (implemented)
-    -> recent Ranked Solo Match IDs (implemented)
-    -> Match ID deduplication (implemented)
-    -> normalized Match (implemented)
-    -> BenchmarkSample (implemented)
-    -> saveIfAbsent persistence (implemented)
-    -> Benchmark Aggregate (implemented)
-    -> PeerBenchmark (implemented)
-    -> PlayerComparisonFeature (implemented)
+Benchmark 흐름(수집과 집계 구현됨)
+랭크 플레이어 원천
+    -> 표본 플레이어(구현됨)
+    -> 최근 Ranked Solo Match ID(구현됨)
+    -> Match ID 중복 제거(구현됨)
+    -> 정규화된 Match(구현됨)
+    -> BenchmarkSample(구현됨)
+    -> saveIfAbsent 영속성(구현됨)
+    -> Benchmark 집계(구현됨)
+    -> PeerBenchmark(구현됨)
+    -> PlayerComparisonFeature(구현됨)
 ```
 
 `PlayerComparisonContext`는 `PlayerAnalysisFeature`와 별개의 comparison-ready 사용자 입력이다. 대상 PUUID와
@@ -460,7 +459,7 @@ context와 per-match metric을 저장한다. `championName`은 display용 중복
 `gameStartTimestamp`, `collectedAt`은 각각 rank 확인 시각, 실제 Match 시작 시각, 우리 시스템의 저장 시각이며
 서로 대체하지 않는다. 별도 rank history가 필요해지면 `RankSnapshot` 같은 모델은 향후 정책과 함께 결정한다.
 
-#### Tier Attribution and Cohort
+#### Tier 귀속과 Cohort
 
 League API로 rank를 확인해 sampled player A가 GOLD I인 경우, A의 participant만 GOLD I `BenchmarkSample`을
 만든다. A와 같은 Match에 있었다는 사실만으로 다른 9명에게 GOLD I을 부여하거나 tier를 추정하지 않는다. 다른
@@ -525,22 +524,22 @@ coverage는 제외할 target player 없이 전체 exact-cohort corpus를 기준�
 comparison flow는 반드시 exclusion 결과를 다시 확인해야 한다. 제한된 seed와 coverage report는 convenience sampling
 pipeline만 검증하며 corpus의 대표성이나 운영 준비 상태를 보장하지 않는다.
 
-## 9. AI Analysis Architecture
+## 9. AI 분석 아키텍처
 
 AI 기능의 기본 원칙은 **계산과 설명을 분리하는 것**이다.
 
 ```text
-Riot API data
-    -> Backend normalization
-    -> Backend statistics calculation
-    -> Peer Benchmark comparison
-    -> Analysis / comparison feature generation
-    -> AVAILABLE comparison gate
+Riot API 데이터
+    -> Backend 정규화
+    -> Backend 통계 계산
+    -> Peer Benchmark 비교
+    -> 분석 / 비교 feature 생성
+    -> AVAILABLE 비교 gate
     -> OpenAI Responses API Structured Outputs
-    -> Natural-language feedback
+    -> 자연어 피드백
 ```
 
-### Backend Responsibility
+### Backend 책임
 
 가능하면 Backend에서 다음을 결정적으로 계산한다.
 
@@ -553,7 +552,7 @@ Riot API data
 - cohort 선택과 sample size 검증
 - average, median, match-level percentile threshold 및 player와 benchmark의 numeric difference 계산
 
-### LLM Responsibility
+### LLM 책임
 
 LLM은 주로 다음 역할을 담당한다.
 
@@ -566,7 +565,7 @@ LLM이 정확한 산술 계산이나 원본 Match JSON의 전체 구조 이해�
 LLM은 cohort를 선택하거나 sample availability·subtraction·player percentile을 계산하거나 임의 benchmark·MMR을
 만들지 않는다. `PlayerComparisonFeature`가 LLM에 전달할 구조화된 comparison input의 source of truth다.
 
-### Provider Boundary
+### Provider 경계
 
 OpenAI API 등 특정 Provider의 SDK나 응답 타입이
 Analysis 핵심 모델 전체로 전파되지 않도록 Client/Adapter 경계를 둔다.
@@ -574,7 +573,7 @@ Analysis 핵심 모델 전체로 전파되지 않도록 Client/Adapter 경계를
 Provider 교체 가능성을 이유로 과도한 추상화를 미리 만들지는 않지만,
 최소한 외부 SDK 타입과 핵심 애플리케이션 로직은 분리한다.
 
-### Implemented v0.1 LLM Analysis
+### 구현된 v0.1 LLM 분석
 
 `POST /api/v1/players/{gameName}/{tagLine}/analysis`는 기존 `PlayerComparisonFeatureService`를 그대로 사용한다.
 rank가 없으면 `UNRANKED`, AVAILABLE comparison이 없으면 `INSUFFICIENT_COMPARISON_DATA`를 반환하며, 두 경우 모두
@@ -590,7 +589,7 @@ good/bad·지표 방향성, cross-position/champion ranking, LLM의 표본 적�
 결과 cache, DB persistence, retry/backoff 및 비용 관측은 v0.1 범위 밖이다. 상세 contract는
 [Player Analysis v0.1](ai/player-analysis-v0.1.md), 결정 근거는 [ADR-007](adr/007-use-structured-llm-analysis-boundary.md)을 따른다.
 
-## 10. Persistence
+## 10. 영속성
 
 PostgreSQL, JPA/Hibernate, Flyway는 `BenchmarkSample` persistence에 도입됐다. schema source of truth는
 Flyway migration이며, JPA는 `ddl-auto=validate`로 mapping만 검증한다. datasource의 production credentials는
@@ -616,7 +615,7 @@ test에는 Docker daemon이 필요하다.
 기존 Riot/Redis Spring context test는 datasource auto-configuration을 test scope에서만 제외하고 persistence
 repository mock을 주입해 실제 PostgreSQL 없이도 기존 검증 범위를 유지한다.
 
-## 11. Cache
+## 11. 캐시
 
 Redis는 **필요성이 확인된 데이터에 선택적으로 도입**한다.
 
@@ -639,39 +638,36 @@ Redis는 **필요성이 확인된 데이터에 선택적으로 도입**한다.
 복잡한 캐시 무효화가 필요한 데이터는
 캐시 자체가 적절한지 먼저 검토한다.
 
-### Match Detail Cache
+### Match Detail 캐시
 
-`RiotMatchClient.findMatchById` is cached through the Spring Cache abstraction. The application
-service remains unaware of Redis; both the single Match endpoint and the recent-Matches detail
-fan-out reach the same client method and therefore use the same cache path.
+`RiotMatchClient.findMatchById`는 Spring Cache 추상화를 통해 캐시된다. 애플리케이션 service는 Redis를 알 필요가 없으며,
+단일 Match endpoint와 recent-Matches Detail fan-out은 모두 같은 client 메서드에 도달하므로 같은 캐시 경로를 사용한다.
 
-- Cache name: `match:detail`
-- Redis key: `match:detail:{matchId}`
-- Cache value: the internal `Match` domain model, serialized as JSON with the Spring Boot
-  `ObjectMapper`
-- TTL: seven days from a successful write
-- Stored values: only successfully mapped Match Detail results; null values are disabled
+- 캐시 이름: `match:detail`
+- Redis 키: `match:detail:{matchId}`
+- 캐시 값: Spring Boot `ObjectMapper`로 JSON 직렬화한 내부 `Match` 도메인 모델
+- TTL: 성공적으로 기록한 시점부터 7일
+- 저장 값: 성공적으로 매핑한 Match Detail 결과만 저장하며 null 값은 비활성화
 
-The Redis cache manager predefines this cache only. It does not create caches for account lookup,
-Match ID lists, complete player responses, complete recent-Matches responses, or upstream errors.
-`MatchNotFoundException`, Riot 429/5xx responses, transport failures, and invalid or empty upstream
-responses leave no cache entry because the cached method does not complete successfully.
+Redis cache manager는 이 캐시만 미리 정의한다. account 조회, Match ID 목록, 전체 player 응답, 전체 recent-Matches 응답,
+upstream 오류를 위한 캐시는 만들지 않는다. `MatchNotFoundException`, Riot 429/5xx 응답, 전송 실패, 잘못되었거나 비어 있는
+upstream 응답은 캐시 대상 메서드가 성공적으로 완료되지 않으므로 캐시 항목을 남기지 않는다.
 
-Cache hits bypass Match-V5 Detail HTTP calls. Cache misses still call Riot and can still receive a
-429 response; caching is not a distributed rate limiter, cooldown, retry, or token-bucket policy.
+캐시 적중 시 Match-V5 Detail HTTP 호출을 건너뛴다. 캐시 미스 시에는 여전히 Riot을 호출하므로 429 응답을 받을 수 있다.
+캐싱은 분산 rate limiter, cooldown, 재시도 또는 token-bucket 정책이 아니다.
 
 benchmark collection은 기존 `RiotMatchClient.findMatchById`를 호출해 이 Match Detail cache 경로를 재사용한다.
 이 결정은 benchmark 전용 Redis cache, collector state cache 또는 aggregate cache를 새로 도입하는 것이 아니다.
 
-## 12. Error Handling
+## 12. 오류 처리
 
 오류는 최소한 다음 범주를 구분할 수 있어야 한다.
 
 ```text
-Client Error
-External API Error
-Business Error
-Infrastructure Error
+클라이언트 오류
+외부 API 오류
+비즈니스 오류
+인프라 오류
 ```
 
 외부 API의 HTTP 상태 코드를 그대로 사용자 API의 상태 코드로 복사하지 않는다.
@@ -681,7 +677,7 @@ Riot API 오류를 서비스 관점의 오류로 변환한 뒤
 
 구체적인 Error Response schema는 API 구현 단계에서 결정한다.
 
-## 13. Security
+## 13. 보안
 
 초기부터 다음 원칙을 지킨다.
 
@@ -695,7 +691,7 @@ Riot API 오류를 서비스 관점의 오류로 변환한 뒤
 
 인증 방식은 아직 확정하지 않는다.
 
-## 14. Observability
+## 14. 관측성
 
 운영 단계에서는 최소한 다음을 관찰할 수 있어야 한다.
 
@@ -709,7 +705,7 @@ Riot API 오류를 서비스 관점의 오류로 변환한 뒤
 
 구체적인 로깅/메트릭 스택은 배포 구조를 정할 때 결정한다.
 
-## 15. MVP vs Future
+## 15. MVP와 향후 계획
 
 ### MVP
 
@@ -731,7 +727,7 @@ Riot API 오류를 서비스 관점의 오류로 변환한 뒤
 - player percentile rank
 - player percentile rank
 
-### Future Considerations
+### 향후 고려사항
 
 실제 필요가 생겼을 때 검토한다.
 
@@ -748,7 +744,7 @@ Riot API 오류를 서비스 관점의 오류로 변환한 뒤
 
 미래 가능성만으로 MVP 구조를 복잡하게 만들지 않는다.
 
-## 16. Architecture Change Policy
+## 16. 아키텍처 변경 정책
 
 기존 아키텍처보다 더 적절한 구조가 발견될 수 있다.
 
@@ -760,5 +756,5 @@ Riot API 오류를 서비스 관점의 오류로 변환한 뒤
 4. `docs/architecture.md`를 실제 코드 상태에 맞게 수정한다.
 5. 장기간 영향을 주는 중요한 선택이라면 ADR을 추가한다.
 
-Architecture 문서는 코드보다 앞서 미래 구조를 선언하는 문서가 아니라,
+아키텍처 문서는 코드보다 앞서 미래 구조를 선언하는 문서가 아니라,
 **현재 코드베이스의 주요 설계 방향을 신뢰할 수 있게 설명하는 문서**여야 한다.

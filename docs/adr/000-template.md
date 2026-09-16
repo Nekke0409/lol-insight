@@ -1,40 +1,40 @@
-# ADR-NNN: Decision Title
+# ADR-NNN: 결정 제목
 
 Status: Proposed
 
-## Context
+## 배경
 
 어떤 상황인지 설명한다.
 
 현재 구조에서 어떤 문제가 발생했고,
 왜 지금 이 결정을 내려야 하는지 작성한다.
 
-## Decision
+## 결정
 
 무엇을 선택했는지 명확하게 작성한다.
 
 가능하면 한두 문장만 읽어도 핵심 결정을 알 수 있게 한다.
 
-## Result
+## 결과
 
 변경 전후의 구조가 중요하다면 간단히 표현한다.
 
 ```text
-Before
+변경 전
 
 A
 -> B
 ```
 
 ```text
-After
+변경 후
 
 A
 -> C
 -> B
 ```
 
-## Reason
+## 이유
 
 이 결정을 선택한 주요 이유를 작성한다.
 
@@ -42,11 +42,11 @@ A
 - 이유 2
 - 이유 3
 
-## Alternatives Considered
+## 검토한 대안
 
 검토했지만 선택하지 않은 대안과 이유를 작성한다.
 
-### Alternative A
+### 대안 A
 
 장점:
 
@@ -60,19 +60,19 @@ A
 
 - ...
 
-## Consequences
+## 결과와 영향
 
 이 결정으로 얻게 되는 장점과 감수해야 할 비용을 모두 기록한다.
 
-### Positive
+### 장점
 
 - ...
 
-### Negative / Trade-offs
+### 단점 / Trade-off
 
 - ...
 
-## Follow-up
+## 후속 작업
 
 이 결정 이후 필요한 후속 작업이 있다면 기록한다.
 

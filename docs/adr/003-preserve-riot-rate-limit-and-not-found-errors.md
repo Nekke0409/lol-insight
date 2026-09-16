@@ -1,8 +1,8 @@
-# ADR-003: Preserve Riot Rate-Limit Metadata and Translate Endpoint-Specific Not Found Errors
+# ADR-003: Riot Rate Limit 메타데이터 보존 및 Endpoint별 Not Found 오류 변환
 
 Status: Accepted
 
-## Context
+## 배경
 
 `RiotApiHttpClient`는 Riot HTTP 오류의 status code와 response body를 보존하지만,
 429 응답의 `Retry-After` header는 보존하지 않았다. 따라서 우리 API가 rate limit을
@@ -12,7 +12,7 @@ Status: Accepted
 서로 다른 서비스 의미를 가진다. GlobalExceptionHandler가 Riot status code만으로 이를
 구분하면 HTTP 계층이 Riot endpoint 세부사항을 알아야 한다.
 
-## Decision
+## 결정
 
 공통 Riot HTTP client는 `RiotApiResponseException`에 유효한 `Retry-After` 정수 초 값을
 선택적으로 보존한다. 원본 response header 전체는 보존하거나 외부 응답에 전달하지 않는다.
@@ -25,7 +25,7 @@ GlobalExceptionHandler는 내부 not-found 예외를 404로 변환하고, Riot 4
 이때 보존된 초 값이 있으면 `Retry-After` response header에 전달한다. Riot 원본 response body,
 API key 관련 정보, 내부 exception detail과 다른 upstream header는 응답에 노출하지 않는다.
 
-## Result
+## 결과
 
 ```text
 Riot 429
@@ -44,14 +44,14 @@ Match-V5 Detail 404
     -> HTTP 404
 ```
 
-## Reason
+## 이유
 
 - endpoint context가 있는 곳에서만 404의 서비스 의미를 정확히 판별할 수 있다.
 - GlobalExceptionHandler가 Riot API endpoint 세부사항에 결합되지 않는다.
 - rate-limit 대기 시간을 명확한 초 단위 값으로 보존하면서도 외부 header를 무분별하게 노출하지 않는다.
 - 이후 최근 경기 다건 조회에서 호출 scheduling과 cooldown 정책을 추가할 수 있는 최소 정보를 제공한다.
 
-## Alternatives Considered
+## 검토한 대안
 
 ### GlobalExceptionHandler에서 Riot 404를 구분
 
@@ -83,20 +83,20 @@ Match-V5 Detail 404
 
 - 이번 요구사항에는 429의 `Retry-After` 초 값만 필요하다.
 
-## Consequences
+## 결과와 영향
 
-### Positive
+### 장점
 
 - player와 single Match Detail의 not-found 응답이 API 사용자에게 정확한 404가 된다.
 - Riot 429의 대기 정보가 안전하게 우리 API 응답으로 전달된다.
 - transport failure와 upstream response failure를 서로 다른 HTTP status로 다룬다.
 
-### Negative / Trade-offs
+### 단점 / Trade-off
 
 - endpoint별 Client는 자신의 404 의미를 명시적으로 유지해야 한다.
 - `Retry-After`가 없거나 정수 초로 파싱되지 않으면 downstream client에 대기 시간은 전달되지 않는다.
 
-## Follow-up
+## 후속 작업
 
 - [ ] 최근 경기 다건 Detail 조회 전에 429 시 새 Detail scheduling을 중단하는 정책을 결정한다.
 - [ ] JVM process-wide cooldown의 범위와 동시성 제어 방식을 별도 결정한다.

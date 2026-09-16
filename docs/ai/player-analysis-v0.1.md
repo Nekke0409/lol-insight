@@ -1,4 +1,4 @@
-# Player Analysis v0.1
+# 플레이어 분석 v0.1
 
 > [Player Analysis v0.2](player-analysis-v0.2.md)로 대체되었습니다. 이 문서는 이전의
 > champion-position 전용 입력 계약을 기록합니다.
@@ -42,7 +42,7 @@ Backend가 cohort 선택, 사용자·benchmark 표본 적격성, benchmark aggre
 OpenAI SDK type, OpenAI response schema DTO, prompt와 provider 오류 해석은
 `analysis/infrastructure/openai` 안에만 있다. 다중 provider factory나 strategy 계층은 아직 만들지 않는다.
 
-## LLM input
+## LLM 입력
 
 `PlayerAnalysisInput`에는 다음만 들어간다.
 
@@ -121,7 +121,7 @@ $env:RUN_OPENAI_SMOKE_TEST = "true"
 
 이 test는 deterministic fixture input만 사용하며, API key가 없거나 opt-in flag가 없으면 실행되지 않는다.
 
-## Post-MVP
+## MVP 이후
 
 - AI result cache와 persistence
 - per-user rate limit, token/cost observability

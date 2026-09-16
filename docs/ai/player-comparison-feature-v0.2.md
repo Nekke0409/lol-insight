@@ -1,4 +1,4 @@
-# Player Comparison Feature v0.2
+# 플레이어 비교 Feature v0.2
 
 `PlayerComparisonFeature`는 scope가 같은 user statistic과 peer benchmark를 연결한다. 각 statistical unit에 대해
 별도의 `PlayerCohortComparison`을 만들며, 한 scope 결과를 다른 scope 결과로 대체하지 않는다.

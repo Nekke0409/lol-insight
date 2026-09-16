@@ -1,8 +1,8 @@
-# ADR-002: Define a Shared Riot API Client Boundary
+# ADR-002: 공용 Riot API Client 경계 정의
 
 Status: Accepted
 
-## Context
+## 배경
 
 Riot Games API의 Account-V1, Summoner-V4, League-V4, Match-V5는 서로 다른 기능에서 사용될 예정이지만,
 모두 API Key 인증, 외부 HTTP 호출, 오류 상태 처리라는 공통 관심사를 가진다.
@@ -13,7 +13,7 @@ Riot Games API의 Account-V1, Summoner-V4, League-V4, Match-V5는 서로 다른 
 
 현재 애플리케이션은 blocking Spring MVC 구조이며, 아직 endpoint별 DTO와 도메인 use case가 없다.
 
-## Decision
+## 결정
 
 공통 Riot API 통신 경계를 `global/riot`에 둔다.
 
@@ -26,7 +26,7 @@ Riot Games API의 Account-V1, Summoner-V4, League-V4, Match-V5는 서로 다른 
 이 단계에서는 endpoint별 Client, Riot 응답 DTO, 재시도, Rate Limit 대기, 캐시, 서비스 HTTP 오류 매핑을 구현하지 않는다.
 각 endpoint Client는 필요해질 때 feature 패키지에 추가하고 공통 전송기를 사용한다.
 
-## Reason
+## 이유
 
 - API Key와 인증 헤더 처리를 한 곳에 제한할 수 있다.
 - endpoint별 routing 선택을 호출 코드에서 명시할 수 있다.
@@ -35,7 +35,7 @@ Riot Games API의 Account-V1, Summoner-V4, League-V4, Match-V5는 서로 다른 
 - 실제 외부 네트워크 없이 URL, 헤더, 오류 변환을 테스트할 수 있다.
 - 아직 존재하지 않는 endpoint DTO나 provider 교체 요구를 위해 과도한 추상화를 만들지 않는다.
 
-## Alternatives Considered
+## 검토한 대안
 
 ### Endpoint별 Client가 각자 HTTP 요청 수행
 
@@ -50,21 +50,21 @@ Riot Games API의 Account-V1, Summoner-V4, League-V4, Match-V5는 서로 다른 
 Riot API 외의 모든 HTTP 통신을 하나의 자체 framework로 감싸는 방식은 현재 요구보다 복잡하다.
 공통 Riot API 전송 책임에만 범위를 제한한다.
 
-## Consequences
+## 결과와 영향
 
-### Positive
+### 장점
 
 - 이후 Account, Summoner, League, Match Client가 일관된 인증과 routing 방식을 사용한다.
 - 외부 API의 실패를 서비스 오류와 구분할 수 있는 기반이 생긴다.
 - Riot API 호출 단위 테스트가 실제 Riot API Key나 네트워크 없이 가능하다.
 
-### Negative / Trade-offs
+### 단점 / Trade-off
 
 - 현재는 기본 host를 KR platform 및 ASIA regional로 둔다. 다른 shard 지원이 필요하면 설정값 또는 routing 모델 확장이 필요하다.
 - timeout 값은 현재 호출 패턴이 없는 단계의 보수적인 기본값(연결 2초, 응답 5초)이다. 운영 관측 결과에 따라 환경별로 조정해야 한다.
 - Rate Limit, 재시도, 캐시는 별도 요구가 확인될 때 추가해야 한다.
 
-## Revisit Conditions
+## 재검토 조건
 
 - 다른 platform 또는 regional routing을 사용자 선택으로 지원해야 할 때
 - Rate Limit 응답을 기반으로 재시도 또는 대기 정책이 필요할 때

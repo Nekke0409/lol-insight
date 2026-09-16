@@ -1,86 +1,82 @@
-# Peer Benchmark v0.1
+# 동료 벤치마크 v0.1
 
-## Scope
+## 범위
 
-v0.1 `PeerBenchmark` is an on-demand PostgreSQL aggregate over stored `BenchmarkSample` rows. It is an
-application/domain read model; no JPA entity is returned outside the persistence boundary.
-`PeerBenchmarkQueryService.findBenchmark(cohort)` reads the complete cohort corpus, while
-`findBenchmarkExcludingPlayer(cohort, puuid)` is the explicit player-comparison query. There is no public REST
-endpoint in this version.
+v0.1의 `PeerBenchmark`는 저장된 `BenchmarkSample` 행을 대상으로 요청 시 실행하는 PostgreSQL 집계다. 이는
+애플리케이션/도메인 읽기 모델이며, 영속성 경계 밖으로 JPA entity를 반환하지 않는다.
+`PeerBenchmarkQueryService.findBenchmark(cohort)`는 전체 cohort corpus를 읽고,
+`findBenchmarkExcludingPlayer(cohort, puuid)`는 명시적인 플레이어 비교 조회다. 이 버전에는 공개 REST endpoint가 없다.
 
-The exact cohort key is:
+정확한 cohort 키는 다음과 같다.
 
 ```text
 region + queueId + tier + division + position + championId
 ```
 
-`division` is deliberately included. A GOLD I sample is not a whole-GOLD benchmark, and it must not be presented as
-one. Tier-wide aggregation needs a separate sampling policy that deliberately covers all divisions.
+`division`을 의도적으로 포함한다. GOLD I 표본은 GOLD 전체 benchmark가 아니며, 그렇게 표시해서도 안 된다.
+티어 전체 집계에는 모든 division을 의도적으로 포괄하는 별도 sampling 정책이 필요하다.
 
-## User-side comparison input
+## 사용자 측 비교 입력
 
-`PlayerComparisonContext` is the implemented provider-independent user input for `PlayerComparisonFeature`. It retains the
-target PUUID for Backend-only aggregate exclusion, the user's current `RANKED_SOLO_5x5` tier/division and capture time,
-plus target-player Match metrics grouped by the same `championId + position` dimensions. A player without a Ranked Solo
-entry has `rankContext = null`; this is not a Riot failure. The context deliberately does not invoke
-`PeerBenchmarkQueryService`, construct a `BenchmarkCohort`, apply a minimum-user-games policy, calculate a difference,
-or claim a percentile. Those responsibilities belong to `PlayerComparisonFeatureService`; see
-[Player Comparison Context v0.1](../ai/player-comparison-context-v0.1.md) and
-[Player Comparison Feature v0.1](../ai/player-comparison-feature-v0.1.md) for the separate contracts.
+`PlayerComparisonContext`는 구현된 `PlayerComparisonFeature`의 provider 독립 사용자 입력이다. Backend 전용 집계 제외에
+쓸 대상 PUUID, 사용자의 현재 `RANKED_SOLO_5x5` tier/division 및 확인 시각, 동일한 `championId + position` 차원으로 묶은
+대상 플레이어 Match 지표를 보유한다. Ranked Solo 항목이 없는 플레이어의 `rankContext`는 `null`이며 Riot 실패가 아니다.
+이 컨텍스트는 의도적으로 `PeerBenchmarkQueryService` 호출, `BenchmarkCohort` 생성, 최소 사용자 경기 정책 적용,
+차이 계산, 백분위 주장을 하지 않는다. 이 책임은 `PlayerComparisonFeatureService`에 있으며, 별도 계약은
+[플레이어 비교 컨텍스트 v0.1](../ai/player-comparison-context-v0.1.md)과
+[플레이어 비교 Feature v0.1](../ai/player-comparison-feature-v0.1.md)를 참고한다.
 
-## Observation unit and output
+## 관측 단위와 결과
 
-One `BenchmarkSample` is one `(sampled player PUUID, matchId)` participant-level observation. It is not a player
-average. Therefore `PeerBenchmark` describes the distribution of **match-level observations** in the exact cohort.
+`BenchmarkSample` 한 건은 `(sampled player PUUID, matchId)` 하나의 참가자 단위 관측치다. 플레이어 평균이 아니다.
+따라서 `PeerBenchmark`는 정확한 cohort 안의 **경기 단위 관측치** 분포를 나타낸다.
 
-For each of KDA, CS/min, gold/min, damage/min, vision/min, kill participation and damage share, the result has:
+KDA, CS/분, 골드/분, 피해량/분, 시야 점수/분, 킬 관여율, 피해 비율 각각에 대해 결과는 다음을 가진다.
 
-- `mean`: arithmetic mean of match observations
-- `median`: p50 threshold of match observations
-- `p25`, `p75`, `p90`: continuous percentile thresholds of match observations
+- `mean`: 경기 관측치의 산술평균
+- `median`: 경기 관측치의 p50 임곗값
+- `p25`, `p75`, `p90`: 경기 관측치의 연속 백분위 임곗값
 
-For example, `csPerMinute.p90 = 8.1` means the 90th-percentile threshold among collected match observations for that
-cohort is 8.1. It does not mean a player with 8.1 CS/min is in the top 10% of players. v0.1 calculates neither a user
-percentile rank nor a player percentile, score, MMR, ranking, or “top X% player” claim.
+예를 들어 `csPerMinute.p90 = 8.1`은 해당 cohort에서 수집한 경기 관측치의 90번째 백분위 임곗값이 8.1이라는 뜻이다.
+CS/분이 8.1인 플레이어가 상위 10%라는 뜻은 아니다. v0.1은 사용자 백분위 랭크, 플레이어 백분위, 점수, MMR, 순위,
+“상위 X% 플레이어” 주장을 계산하지 않는다.
 
-`PeerBenchmark` exposes both counts:
+`PeerBenchmark`는 다음 두 건수를 제공한다.
 
-- `sampleCount = COUNT(*)`: every eligible match observation
-- `uniquePlayerCount = COUNT(DISTINCT puuid)`: contributing sampled players
+- `sampleCount = COUNT(*)`: 적격한 모든 경기 관측치
+- `uniquePlayerCount = COUNT(DISTINCT puuid)`: 기여한 표본 플레이어
 
-A player with 100 eligible matches and another with one contributes 101 samples and two unique players. This is the
-current match-level meaning, not a player-balanced benchmark. Heavy contributors can influence the distribution;
-weighting, resampling and per-player balancing are future work, likely together with a player-level benchmark.
+적격 경기 100건을 제공한 플레이어와 1건을 제공한 플레이어는 표본 101건과 고유 플레이어 2명으로 기여한다. 이는
+플레이어 균형 benchmark가 아닌 현재의 경기 단위 의미다. 많은 경기를 제공한 플레이어가 분포에 영향을 줄 수 있으며,
+가중치 부여, 재표본화, 플레이어별 균형화는 플레이어 단위 benchmark와 함께 다룰 향후 과제다.
 
-## Availability policy
+## 사용 가능 여부 정책
 
-`PeerBenchmarkResult` separates data presence from usability:
+`PeerBenchmarkResult`는 데이터 존재 여부와 사용 가능 여부를 분리한다.
 
-| Status | Meaning | `benchmark` |
+| 상태 | 의미 | `benchmark` |
 | --- | --- | --- |
-| `NO_DATA` | No matching `BenchmarkSample` exists. | `null` |
-| `INSUFFICIENT_SAMPLE` | Samples exist but do not meet the minimum policy. | `null` |
-| `AVAILABLE` | Both policy minima are met. | `PeerBenchmark` |
+| `NO_DATA` | 일치하는 `BenchmarkSample`이 없다. | `null` |
+| `INSUFFICIENT_SAMPLE` | 표본은 있지만 최소 정책을 충족하지 않는다. | `null` |
+| `AVAILABLE` | 두 정책 최소값을 모두 충족한다. | `PeerBenchmark` |
 
-The initial configurable heuristic is `minimumSampleCount = 30` and `minimumUniquePlayerCount = 10`, bound from
-`benchmark.availability.minimum-sample-count` and `benchmark.availability.minimum-unique-player-count`. These values
-are a product safeguard against treating tiny smoke-test data as a peer benchmark; they do not establish statistical
-validity. The existing local smoke shape of four samples from two players is therefore `INSUFFICIENT_SAMPLE`, not
-`AVAILABLE`.
+초기 설정 가능 휴리스틱은 `minimumSampleCount = 30`, `minimumUniquePlayerCount = 10`이며,
+`benchmark.availability.minimum-sample-count`, `benchmark.availability.minimum-unique-player-count`에서 바인딩한다.
+이 값은 작은 smoke test 데이터를 동료 benchmark로 취급하지 않기 위한 제품 안전장치일 뿐 통계적 타당성을 보장하지 않는다.
+따라서 두 플레이어의 표본 네 건으로 구성된 기존 로컬 smoke 데이터는 `AVAILABLE`이 아니라 `INSUFFICIENT_SAMPLE`이다.
 
-## Query and storage policy
+## 조회와 저장 정책
 
-The persistence query runs `COUNT(*)`, `COUNT(DISTINCT puuid)`, `AVG` and PostgreSQL `percentile_cont` directly on
-`benchmark_sample`. It does not load all samples into the JVM to sort them. The player-comparison query adds
-`puuid <> :excludedPuuid` to the exact-cohort predicate, so the target player's own samples are excluded from every
-count, mean and percentile calculation. Availability is then evaluated from that excluded aggregate; excluding every
-matching sample is normal `NO_DATA`. v0.1 intentionally has no aggregate table, materialized view, scheduler,
-retention job, or Redis aggregate cache. Those choices can be reconsidered after data volume and query latency are
-measured.
+영속성 조회는 `benchmark_sample`에서 `COUNT(*)`, `COUNT(DISTINCT puuid)`, `AVG`, PostgreSQL `percentile_cont`를
+직접 실행한다. 모든 표본을 JVM으로 불러와 정렬하지 않는다. 플레이어 비교 조회는 정확한 cohort 조건에
+`puuid <> :excludedPuuid`를 추가하므로 대상 플레이어 자신의 표본은 모든 건수, 평균, 백분위 계산에서 제외한다.
+이 제외 집계로 사용 가능 여부를 평가하며, 일치하는 표본을 모두 제외한 경우는 정상적인 `NO_DATA`다. v0.1은
+aggregate table, materialized view, scheduler, retention job, Redis aggregate cache를 의도적으로 두지 않는다.
+데이터 규모와 조회 latency를 측정한 뒤에 이 선택을 다시 검토할 수 있다.
 
-`gameVersion` and `gameStartTimestamp` are already retained on each sample, but v0.1 does not filter on them. The
-aggregate is not patch-aware, so old and new patches can mix as data accumulates. A production benchmark needs a
-freshness window or patch-aware cohort strategy before that mixing becomes material.
+`gameVersion`과 `gameStartTimestamp`는 각 표본에 이미 보존하지만 v0.1은 이를 조건으로 필터링하지 않는다. 집계는
+patch-aware하지 않으므로 데이터가 쌓이면 이전 패치와 새 패치가 섞일 수 있다. 운영 benchmark에는 이 혼합이 유의미해지기 전에
+freshness window 또는 patch-aware cohort 전략이 필요하다.
 
 ## 제한된 개발용 seed 및 coverage
 
@@ -110,8 +106,8 @@ analysis target의 AVAILABLE을 보장하지는 않는다. 실제 comparison은
 10 players보다 여유가 있는 row를 선택하는 편이 좋지만, 별도의 운영 availability threshold를 도입하지는 않는다. 이
 workflow는 representative 또는 운영 benchmark 수집이 아니라 convenience sampling과 pipeline 검증을 위한 것이다.
 
-## Future player-level benchmark
+## 향후 플레이어 단위 benchmark
 
-A future player-level benchmark first aggregates each peer player's sufficiently comparable matches, then forms a
-distribution over those player aggregates. That is a different population and may support carefully defined peer-player
-percentiles. It is not implemented by the match-level `PeerBenchmark` in v0.1.
+향후 플레이어 단위 benchmark는 먼저 각 동료 플레이어의 충분히 비교 가능한 경기를 집계하고, 그 플레이어 집계값의
+분포를 만든다. 이는 다른 모집단이며 신중하게 정의한 동료 플레이어 백분위를 지원할 수 있다. v0.1의 경기 단위
+`PeerBenchmark`는 이를 구현하지 않는다.
