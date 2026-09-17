@@ -4,12 +4,15 @@ import io.github.nekke0409.lolinsight.analysis.application.PlayerAnalysisRespons
 import io.github.nekke0409.lolinsight.analysis.application.PlayerAnalysisService
 import io.github.nekke0409.lolinsight.analysis.job.application.AnalysisJobCreated
 import io.github.nekke0409.lolinsight.analysis.job.application.AnalysisJobService
+import io.github.nekke0409.lolinsight.analysis.ratelimit.AnalysisGenerationRateLimiter
+import io.github.nekke0409.lolinsight.analysis.ratelimit.AnalysisRateLimitKeyResolver
 import io.github.nekke0409.lolinsight.player.application.PlayerMatchHistoryService
 import io.github.nekke0409.lolinsight.player.application.PlayerMatchStatisticsResponse
 import io.github.nekke0409.lolinsight.player.application.PlayerMatchStatisticsService
 import io.github.nekke0409.lolinsight.player.application.PlayerResponse
 import io.github.nekke0409.lolinsight.player.application.PlayerService
 import io.github.nekke0409.lolinsight.player.application.RecentMatchesResponse
+import jakarta.servlet.http.HttpServletRequest
 import jakarta.validation.constraints.Max
 import jakarta.validation.constraints.Min
 import jakarta.validation.constraints.NotBlank
@@ -30,6 +33,8 @@ class PlayerController(
     private val playerMatchStatisticsService: PlayerMatchStatisticsService,
     private val playerAnalysisService: PlayerAnalysisService,
     private val analysisJobService: AnalysisJobService,
+    private val analysisRateLimitKeyResolver: AnalysisRateLimitKeyResolver,
+    private val analysisGenerationRateLimiter: AnalysisGenerationRateLimiter,
 ) {
     @GetMapping("/{gameName}/{tagLine}")
     fun findByRiotId(
@@ -59,7 +64,11 @@ class PlayerController(
         @PathVariable @NotBlank tagLine: String,
         @RequestParam(defaultValue = "0") @Min(0) start: Int,
         @RequestParam(defaultValue = "20") @Min(1) @Max(20) count: Int,
-    ): PlayerAnalysisResponse = playerAnalysisService.analyze(gameName, tagLine, start, count)
+        request: HttpServletRequest,
+    ): PlayerAnalysisResponse {
+        analysisGenerationRateLimiter.check(analysisRateLimitKeyResolver.resolve(request))
+        return playerAnalysisService.analyze(gameName, tagLine, start, count)
+    }
 
     @PostMapping("/{gameName}/{tagLine}/analysis-jobs")
     fun createAnalysisJob(
@@ -67,7 +76,9 @@ class PlayerController(
         @PathVariable @NotBlank tagLine: String,
         @RequestParam(defaultValue = "0") @Min(0) start: Int,
         @RequestParam(defaultValue = "20") @Min(1) @Max(20) count: Int,
+        request: HttpServletRequest,
     ): ResponseEntity<AnalysisJobCreated> {
+        analysisGenerationRateLimiter.check(analysisRateLimitKeyResolver.resolve(request))
         val created = analysisJobService.create(gameName, tagLine, start, count)
         return ResponseEntity
             .accepted()

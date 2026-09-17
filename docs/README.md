@@ -63,3 +63,7 @@ ADR은 "현재 구조가 무엇인가"보다 다음 질문에 답하는 기록�
 - [`ADR-004: 애플리케이션 관리 Executor로 최근 Match Detail Fan-out 제한`](adr/004-bound-match-detail-fan-out.md)
 - [`ADR-005: 완료된 Match Detail을 Redis에 캐시`](adr/005-cache-completed-match-details-in-redis.md)
 - [`ADR-006: 상대 플레이어 분석에 표본 기반 Peer Benchmark 사용`](adr/006-use-sampled-peer-benchmark.md)
+- [`ADR-007: Structured LLM analysis boundary 사용`](adr/007-use-structured-llm-analysis-boundary.md)
+- [`ADR-008: 명시적 benchmark scope 사용`](adr/008-use-explicit-benchmark-scopes.md)
+- [`ADR-009: 비동기 Player Analysis Job 도입`](adr/009-introduce-asynchronous-player-analysis-jobs.md)
+- [`ADR-010: 단일 인스턴스 분석 생성 요청에 인메모리 rate limit 사용`](adr/010-use-in-memory-analysis-generation-rate-limit.md)

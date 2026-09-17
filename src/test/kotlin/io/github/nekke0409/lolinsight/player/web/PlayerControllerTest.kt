@@ -10,6 +10,11 @@ import io.github.nekke0409.lolinsight.analysis.job.application.AnalysisJobCapaci
 import io.github.nekke0409.lolinsight.analysis.job.application.AnalysisJobCreated
 import io.github.nekke0409.lolinsight.analysis.job.application.AnalysisJobService
 import io.github.nekke0409.lolinsight.analysis.job.application.AnalysisJobStatus
+import io.github.nekke0409.lolinsight.analysis.ratelimit.AnalysisGenerationRateLimitExceededException
+import io.github.nekke0409.lolinsight.analysis.ratelimit.AnalysisGenerationRateLimiter
+import io.github.nekke0409.lolinsight.analysis.ratelimit.AnalysisRateLimitKey
+import io.github.nekke0409.lolinsight.analysis.ratelimit.AnalysisRateLimitKeyResolver
+import io.github.nekke0409.lolinsight.analysis.ratelimit.AnalysisRateLimitProperties
 import io.github.nekke0409.lolinsight.global.riot.RiotApiResponseException
 import io.github.nekke0409.lolinsight.global.riot.RiotApiTransportException
 import io.github.nekke0409.lolinsight.global.web.GlobalExceptionHandler
@@ -28,7 +33,11 @@ import io.github.nekke0409.lolinsight.player.application.RecentMatchesPageRespon
 import io.github.nekke0409.lolinsight.player.application.RecentMatchesPlayerResponse
 import io.github.nekke0409.lolinsight.player.application.RecentMatchesResponse
 import org.junit.jupiter.api.Test
+import org.mockito.Mockito.doThrow
 import org.mockito.Mockito.mock
+import org.mockito.Mockito.times
+import org.mockito.Mockito.verify
+import org.mockito.Mockito.verifyNoInteractions
 import org.mockito.Mockito.`when`
 import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpStatus
@@ -42,7 +51,9 @@ import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPat
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 import org.springframework.test.web.servlet.setup.MockMvcBuilders
 import org.springframework.web.client.RestClientException
+import java.time.Clock
 import java.time.Instant
+import java.time.ZoneOffset
 import java.util.UUID
 
 class PlayerControllerTest {
@@ -51,6 +62,7 @@ class PlayerControllerTest {
     private val playerMatchStatisticsService = mock(PlayerMatchStatisticsService::class.java)
     private val playerAnalysisService = mock(PlayerAnalysisService::class.java)
     private val analysisJobService = mock(AnalysisJobService::class.java)
+    private val analysisGenerationRateLimiter = mock(AnalysisGenerationRateLimiter::class.java)
     private val mockMvc: MockMvc =
         MockMvcBuilders
             .standaloneSetup(
@@ -60,6 +72,8 @@ class PlayerControllerTest {
                     playerMatchStatisticsService,
                     playerAnalysisService,
                     analysisJobService,
+                    AnalysisRateLimitKeyResolver(),
+                    analysisGenerationRateLimiter,
                 ),
             ).setControllerAdvice(GlobalExceptionHandler())
             .build()
@@ -250,6 +264,113 @@ class PlayerControllerTest {
             .perform(post("/api/v1/players/{gameName}/{tagLine}/analysis-jobs", "Hide on bush", "KR1"))
             .andExpect(status().isServiceUnavailable)
             .andExpect(jsonPath("$.detail").value("AI analysis is temporarily at capacity."))
+    }
+
+    @Test
+    fun `rejects a rate-limited analysis request before either generation flow starts`() {
+        val clientIp = "203.0.113.10"
+        doThrow(AnalysisGenerationRateLimitExceededException(42))
+            .`when`(analysisGenerationRateLimiter)
+            .check(AnalysisRateLimitKey("analysis-generation:$clientIp"))
+
+        mockMvc
+            .perform(
+                post("/api/v1/players/{gameName}/{tagLine}/analysis", "Hide on bush", "KR1")
+                    .with { request ->
+                        request.remoteAddr = clientIp
+                        request
+                    },
+            ).andExpect(status().isTooManyRequests)
+            .andExpect(header().string(HttpHeaders.RETRY_AFTER, "42"))
+            .andExpect(jsonPath("$.code").value("ANALYSIS_RATE_LIMIT_EXCEEDED"))
+            .andExpect(jsonPath("$.detail").value("AI analysis generation rate limit exceeded."))
+
+        verifyNoInteractions(playerAnalysisService, analysisJobService)
+    }
+
+    @Test
+    fun `rejects a rate-limited asynchronous request before creating a job`() {
+        val clientIp = "203.0.113.10"
+        doThrow(AnalysisGenerationRateLimitExceededException(42))
+            .`when`(analysisGenerationRateLimiter)
+            .check(AnalysisRateLimitKey("analysis-generation:$clientIp"))
+
+        mockMvc
+            .perform(
+                post("/api/v1/players/{gameName}/{tagLine}/analysis-jobs", "Hide on bush", "KR1")
+                    .with { request ->
+                        request.remoteAddr = clientIp
+                        request
+                    },
+            ).andExpect(status().isTooManyRequests)
+            .andExpect(header().string(HttpHeaders.RETRY_AFTER, "42"))
+            .andExpect(jsonPath("$.code").value("ANALYSIS_RATE_LIMIT_EXCEEDED"))
+
+        verifyNoInteractions(analysisJobService)
+    }
+
+    @Test
+    fun `shares one generation quota between asynchronous and synchronous requests`() {
+        val clientIp = "203.0.113.10"
+        val sharedRateLimiter =
+            AnalysisGenerationRateLimiter(
+                AnalysisRateLimitProperties(),
+                Clock.fixed(Instant.parse("2026-09-17T00:00:00Z"), ZoneOffset.UTC),
+            )
+        val sharedQuotaMockMvcBuilder =
+            MockMvcBuilders.standaloneSetup(
+                PlayerController(
+                    playerService,
+                    playerMatchHistoryService,
+                    playerMatchStatisticsService,
+                    playerAnalysisService,
+                    analysisJobService,
+                    AnalysisRateLimitKeyResolver(),
+                    sharedRateLimiter,
+                ),
+            )
+        sharedQuotaMockMvcBuilder.setControllerAdvice(GlobalExceptionHandler())
+        val sharedQuotaMockMvc = sharedQuotaMockMvcBuilder.build()
+        val created = AnalysisJobCreated(UUID.randomUUID(), AnalysisJobStatus.PENDING, Instant.parse("2026-09-17T00:00:00Z"))
+        `when`(analysisJobService.create("Hide on bush", "KR1", 0, 20)).thenReturn(created)
+        `when`(playerAnalysisService.analyze("Hide on bush", "KR1", 0, 20))
+            .thenReturn(PlayerAnalysisResponse(PlayerAnalysisResponseStatus.INSUFFICIENT_COMPARISON_DATA, null))
+
+        sharedQuotaMockMvc
+            .perform(
+                post("/api/v1/players/{gameName}/{tagLine}/analysis-jobs", "Hide on bush", "KR1")
+                    .with { request ->
+                        request.remoteAddr = clientIp
+                        request
+                    },
+            ).andExpect(status().isAccepted)
+        sharedQuotaMockMvc
+            .perform(
+                post("/api/v1/players/{gameName}/{tagLine}/analysis", "Hide on bush", "KR1")
+                    .with { request ->
+                        request.remoteAddr = clientIp
+                        request
+                    },
+            ).andExpect(status().isOk)
+        sharedQuotaMockMvc
+            .perform(
+                post("/api/v1/players/{gameName}/{tagLine}/analysis-jobs", "Hide on bush", "KR1")
+                    .with { request ->
+                        request.remoteAddr = clientIp
+                        request
+                    },
+            ).andExpect(status().isAccepted)
+        sharedQuotaMockMvc
+            .perform(
+                post("/api/v1/players/{gameName}/{tagLine}/analysis", "Hide on bush", "KR1")
+                    .with { request ->
+                        request.remoteAddr = clientIp
+                        request
+                    },
+            ).andExpect(status().isTooManyRequests)
+
+        verify(analysisJobService, times(2)).create("Hide on bush", "KR1", 0, 20)
+        verify(playerAnalysisService).analyze("Hide on bush", "KR1", 0, 20)
     }
 
     @Test

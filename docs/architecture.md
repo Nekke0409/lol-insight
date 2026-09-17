@@ -166,6 +166,38 @@ queue, ownership authorization이 없다. UUID는 보안 boundary가 아니다. 
 제한은 [Async Player Analysis Job v0.1](ai/async-player-analysis-jobs-v0.1.md), 결정 근거는
 [ADR-009](adr/009-introduce-asynchronous-player-analysis-jobs.md)를 따른다.
 
+### Analysis generation rate limit v0.1
+
+비용이 발생하는 분석 생성을 보호하기 위해 sync `POST /api/v1/players/{gameName}/{tagLine}/analysis`와 async
+`POST /api/v1/players/{gameName}/{tagLine}/analysis-jobs`는 동일한
+`analysis-generation:{clientKey}` logical bucket을 소비한다. `GET /api/v1/analysis-jobs/{jobId}` polling은 OpenAI
+generation을 발생시키지 않으므로 이 quota의 대상이 아니다.
+
+현재 인증이 없으므로 `AnalysisRateLimitKeyResolver`가 Servlet의 `remoteAddr`를 client key로 바꾼다. Controller는
+HTTP request를 resolver에만 전달하고 limiter/application flow에는 HTTP 객체가 전파되지 않는다. 임의의
+`X-Forwarded-For`는 신뢰하지 않는다. AWS ALB 또는 reverse proxy 배포 시에는 trusted proxy와 Spring
+forward-header strategy를 배포 설정으로 명시한 뒤 resolver가 보는 remote address의 의미를 별도로 검증해야 한다.
+
+기본 정책은 `ANALYSIS_RATE_LIMIT_CAPACITY=3`, `ANALYSIS_RATE_LIMIT_WINDOW=1m`이다. Bucket4j local token bucket은
+3개 token을 즉시 허용하고 1분 뒤 interval refill한다. 이는 provider throughput의 최적값이 아니라 worker 1개와
+queue 2개로 구성된 현재 async executor에 맞춘 비용 보호 heuristic이다. 허용된 요청은 limiter를 통과한 즉시 quota를
+소비하며 Riot/OpenAI 실패, provider 429 또는 async executor의 dispatch rejection에 대해 자동으로 반환하지 않는다.
+실패를 반복해 외부 API를 호출하는 우회를 막고 reservation/refund 상태를 추가하지 않기 위함이다.
+
+limiter는 두 POST에서 `PlayerAnalysisService` 호출 또는 `AnalysisJob` row 생성·dispatch보다 먼저 실행한다. quota
+초과는 safe ProblemDetail code `ANALYSIS_RATE_LIMIT_EXCEEDED`, HTTP `429 Too Many Requests`, 실제 다음 token 시각을
+올림한 `Retry-After` 초 header로 응답한다. 반면 executor queue 용량 초과는 기존처럼 `503 Service Unavailable`과
+`CAPACITY_EXCEEDED` audit row를 사용한다. rate limit은 client의 요청 빈도를, executor capacity는 서버가 동시에
+수용할 수 있는 작업 수를 각각 보호하므로 서로 대체하지 않는다.
+
+현재 Bucket4j local bucket state는 process memory에만 있고 Caffeine `expireAfterAccess(window)`와 library scheduler가
+유휴 client bucket을 정리한다. v0.1에는 별도 rate-limit metric을 추가하지 않는다. client IP는 cache key로만 사용하며
+log, DB, response, metric tag에 기록하지 않는다. 이 선택은 single-instance MVP에만 정확하다. 인스턴스가 여러 개면
+각 인스턴스의 quota가 별도로 존재하므로 전역 per-client 제한이 아니다. 인증 도입 후 resolver의 client key를 `userId`로
+교체할 수 있으며, multi-instance 배포 전에는 Redis의 atomic distributed limiter, API Gateway 또는 WAF 중 하나를 별도
+운영 결정으로 도입해야 한다. 근거와 대안은
+[ADR-010](adr/010-use-in-memory-analysis-generation-rate-limit.md)을 따른다.
+
 ### 벤치마크
 
 Peer Benchmark는 샘플링한 ranked player의 Ranked Solo Match participant 관측치를 수집하고, cohort별로

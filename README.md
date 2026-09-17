@@ -26,7 +26,7 @@ Riot의 공식 Ranked Ladder를 대체하는 MMR, ELO 또는 자체 Skill Rating
 | Analysis feature | 개인 요약용 `PlayerAnalysisFeature`, comparison-ready `PlayerComparisonContext`, deterministic `PlayerComparisonFeature`, 그리고 AVAILABLE cohort만 설명하는 `PlayerAnalysisResult` | locale, result quality evaluation |
 | Redis | 성공한 Match Detail을 7일 TTL로 캐시 | benchmark 전용 Redis 기능은 도입하지 않음 |
 | Persistence | PostgreSQL, JPA, Flyway 기반 `BenchmarkSample`과 `AnalysisJob` schema, idempotent sample 저장, JSONB analysis snapshot | retention 정책, job crash recovery |
-| LLM | OpenAI Responses API + Structured Outputs, sync `/analysis`와 polling `/analysis-jobs`, provider-independent `PlayerAnalysisGenerator` | result cache, per-user rate limit, cost observability, multi-provider |
+| LLM | OpenAI Responses API + Structured Outputs, sync `/analysis`와 polling `/analysis-jobs`, provider-independent `PlayerAnalysisGenerator`, client/IP 기준 분석 생성 rate limit | result cache, 인증 사용자 기준 quota, cost observability, multi-provider |
 
 ## 현재 아키텍처
 
@@ -49,6 +49,12 @@ Riot ID -> Account-V1 -> PUUID -> Match IDs -> normalized Match
 ```
 
 Match Detail은 `RiotMatchClient` 경계에서 Redis를 사용합니다. 최근 경기 Detail fan-out은 application lifecycle이 관리하는 고정 4-thread executor와 sliding window로 제한됩니다. cache hit은 Riot Match-V5 Detail 호출을 생략하지만, cache는 rate limiter나 retry 정책이 아닙니다.
+
+AI 분석 생성은 sync `POST /analysis`와 async `POST /analysis-jobs`가 client/IP 기준 하나의 quota를 공유합니다. 기본값은
+client당 1분마다 최대 3회이며, 초과하면 `429 Too Many Requests`, `Retry-After`,
+`ANALYSIS_RATE_LIMIT_EXCEEDED`를 반환합니다. polling `GET /analysis-jobs/{jobId}`는 생성 quota 대상이 아닙니다.
+이는 단일 인스턴스 비용 보호용 MVP 정책이며, executor 용량 초과의 `503`과는 별개입니다. 자세한 한계와 전환 경로는
+[ADR-010](docs/adr/010-use-in-memory-analysis-generation-rate-limit.md)을 따릅니다.
 
 Peer Benchmark의 ranked player discovery와 제한된 collection vertical slice가 구현됐습니다. League-V4의 KR
 `RANKED_SOLO_5x5` entry를 page 단위로 읽어 entry가 제공하는 PUUID를 `SampledRankedPlayer`로 정규화합니다.
@@ -91,10 +97,10 @@ Backend는 metric, exact cohort, sample size, 평균·중앙값·match-level per
 ## 기술 스택
 
 현재 사용 중인 기술은 Kotlin, Spring Boot, Spring MVC `RestClient`, PostgreSQL, Spring Data JPA,
-Flyway, Redis, Docker, OpenAI Java SDK입니다. JDK 21을 사용합니다.
+Flyway, Redis, Caffeine, Bucket4j, Docker, OpenAI Java SDK입니다. JDK 21을 사용합니다.
 
 OpenAI 연동은 Responses API Structured Outputs를 사용하는 v0.2 다중 scope 분석 경계와 v0.1 async job 실행 경계로 구현되어 있습니다.
-Spring Security, AWS, 다중 LLM Provider, 결과 cache, 사용자별 AI rate limit과 비용 관측은 후속 기술 방향입니다.
+Spring Security, AWS, 다중 LLM Provider, 결과 cache, 인증 사용자 기준 AI rate limit과 비용 관측은 후속 기술 방향입니다.
 
 ## 문서
 
@@ -103,6 +109,7 @@ Spring Security, AWS, 다중 LLM Provider, 결과 cache, 사용자별 AI rate li
 - [ADR](docs/adr/): 장기적인 기술 의사결정
 - [ADR-007](docs/adr/007-use-structured-llm-analysis-boundary.md): Structured LLM 분석 경계 결정
 - [ADR-009](docs/adr/009-introduce-asynchronous-player-analysis-jobs.md): async Player Analysis Job 결정
+- [ADR-010](docs/adr/010-use-in-memory-analysis-generation-rate-limit.md): 분석 생성 요청 rate limit 결정
 - [플레이어 경기 통계 v0.1](docs/statistics/player-match-statistics-v0.1.md): 현재 통계의 계산 기준
 - [플레이어 분석 Feature v0.1](docs/ai/player-analysis-feature-v0.1.md): 현재 provider 독립 feature의 범위
 - [플레이어 분석 v0.2](docs/ai/player-analysis-v0.2.md): 다중 scope OpenAI 분석 게이트, input/output 및 운영 제약

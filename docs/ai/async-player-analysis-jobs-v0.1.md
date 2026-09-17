@@ -36,6 +36,24 @@ queue가 가득 차서 command 제출이 거절되면 response는 `503 Service U
 않고 `FAILED / CAPACITY_EXCEEDED` audit row로 남는다. 따라서 실제 queue에 들어가지 않은 job ID를 202로 노출하지
 않는다.
 
+### 분석 생성 rate limit
+
+이 POST와 기존 sync `POST /api/v1/players/{gameName}/{tagLine}/analysis`는 client/IP별 같은
+`analysis-generation:{clientKey}` quota를 공유한다. 기본값은 `ANALYSIS_RATE_LIMIT_CAPACITY=3`과
+`ANALYSIS_RATE_LIMIT_WINDOW=1m`이며, 3개 token을 소진하면 다음 interval refill까지 요청을 거절한다. 이 값은
+worker 1개와 queue 2개의 현재 executor에 맞춘 MVP 비용 보호 heuristic이지, OpenAI provider의 최적 throughput 값이
+아니다.
+
+quota 검사는 `AnalysisJob` row 생성과 executor dispatch보다 먼저 실행한다. 초과 요청은 row 생성, queue 사용, Riot API
+호출, OpenAI 호출 없이 `429 Too Many Requests`를 반환한다. response는 `Retry-After` header와 safe code
+`ANALYSIS_RATE_LIMIT_EXCEEDED`를 포함하고 IP나 bucket state는 노출하지 않는다. `GET /api/v1/analysis-jobs/{jobId}`
+polling은 generation quota에서 제외된다.
+
+quota를 통과한 요청은 이후 provider failure, timeout, provider 429, analysis failure 또는 executor capacity rejection이
+발생해도 반환하지 않는다. capacity rejection은 기존 `503`과 `FAILED(CAPACITY_EXCEEDED)` audit row semantics를
+유지한다. rate limit은 특정 client의 비용 유발 빈도를, executor capacity는 전체 서버의 동시 작업 수를 제한하는 별도
+정책이다.
+
 ### Job 조회
 
 `GET /api/v1/analysis-jobs/{jobId}`

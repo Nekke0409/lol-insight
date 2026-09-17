@@ -34,6 +34,9 @@ openai:
   text-verbosity: ${OPENAI_TEXT_VERBOSITY:low}
 
 analysis:
+  rate-limit:
+    capacity: ${ANALYSIS_RATE_LIMIT_CAPACITY:3}
+    window: ${ANALYSIS_RATE_LIMIT_WINDOW:1m}
   jobs:
     executor:
       worker-threads: ${ANALYSIS_JOB_WORKER_THREADS:1}

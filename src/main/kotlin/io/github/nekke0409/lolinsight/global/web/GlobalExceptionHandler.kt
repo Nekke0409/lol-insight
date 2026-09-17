@@ -8,6 +8,7 @@ import io.github.nekke0409.lolinsight.analysis.application.PlayerAnalysisRateLim
 import io.github.nekke0409.lolinsight.analysis.application.PlayerAnalysisTransportException
 import io.github.nekke0409.lolinsight.analysis.job.application.AnalysisJobCapacityExceededException
 import io.github.nekke0409.lolinsight.analysis.job.application.AnalysisJobNotFoundException
+import io.github.nekke0409.lolinsight.analysis.ratelimit.AnalysisGenerationRateLimitExceededException
 import io.github.nekke0409.lolinsight.global.riot.RiotApiEmptyResponseException
 import io.github.nekke0409.lolinsight.global.riot.RiotApiInvalidResponseException
 import io.github.nekke0409.lolinsight.global.riot.RiotApiResponseException
@@ -30,6 +31,21 @@ class GlobalExceptionHandler {
     @ExceptionHandler(AnalysisJobCapacityExceededException::class)
     fun handleAnalysisJobCapacityExceededException(): ProblemDetail =
         ProblemDetail.forStatusAndDetail(HttpStatus.SERVICE_UNAVAILABLE, "AI analysis is temporarily at capacity.")
+
+    @ExceptionHandler(AnalysisGenerationRateLimitExceededException::class)
+    fun handleAnalysisGenerationRateLimitExceededException(
+        exception: AnalysisGenerationRateLimitExceededException,
+    ): ResponseEntity<ProblemDetail> {
+        val problemDetail =
+            ProblemDetail.forStatusAndDetail(HttpStatus.TOO_MANY_REQUESTS, "AI analysis generation rate limit exceeded.").apply {
+                setProperty("code", "ANALYSIS_RATE_LIMIT_EXCEEDED")
+            }
+
+        return ResponseEntity
+            .status(HttpStatus.TOO_MANY_REQUESTS)
+            .header(HttpHeaders.RETRY_AFTER, exception.retryAfterSeconds.toString())
+            .body(problemDetail)
+    }
 
     @ExceptionHandler(PlayerAnalysisConfigurationException::class)
     fun handlePlayerAnalysisConfigurationException(): ProblemDetail =
