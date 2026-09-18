@@ -17,7 +17,7 @@ class PlayerAnalysisInputMapper {
 
         return PlayerAnalysisInput(
             comparisons = comparisons,
-            analysisLimitations = ANALYSIS_LIMITATIONS,
+            analysisLimitations = ANALYSIS_LIMITATIONS.sortedBy(PlayerAnalysisLimitation::code),
         )
     }
 

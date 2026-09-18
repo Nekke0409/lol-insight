@@ -28,13 +28,18 @@ Riot의 공식 Ranked Ladder를 대체하는 MMR, ELO 또는 자체 Skill Rating
 | Riot 데이터 | Account-V1 Riot ID 조회, Match-V5 Match ID/Detail 조회, League-V4 기반 KR Ranked Solo 표본 player discovery | representative sampling, scheduled collection 정책 |
 | 데이터 처리·통계 | Riot DTO 정규화, 최근 경기 통계, participant-level `BenchmarkSample` 저장 | 추가 분석 feature와 freshness 정책 |
 | Peer Benchmark | exact cohort 집계, target self-exclusion, role/champion-position scope 비교 | 표본 품질과 coverage 개선 |
-| AI 분석 | `PlayerAnalysisInput`/`PlayerAnalysisResult`, OpenAI Responses API Structured Outputs, sync·async 제공 | completed-result cache, 결과 품질 평가, 인증 사용자 quota, provider 전략 |
-| 운영 경계 | Redis Match Detail cache, PostgreSQL/Flyway, OpenAI usage·latency 계측, 분석 생성 rate limit, bounded async job과 in-flight dedupe | crash recovery, distributed 운영 정책, 배포·확장 구조 |
+| AI 분석 | `PlayerAnalysisInput` fingerprint 기반 Redis completed-result cache, OpenAI Responses API Structured Outputs, sync·async 제공 | 결과 품질 평가, 인증 사용자 quota, provider 전략 |
+| 운영 경계 | Redis Match Detail·analysis result cache, PostgreSQL/Flyway, OpenAI usage·latency 계측, 분석 생성 rate limit, bounded async job과 in-flight dedupe | crash recovery, distributed 운영 정책, 배포·확장 구조 |
 | AI Automation | 구현하지 않음 | 명시적 trigger와 Backend rule을 기반으로 기존 분석 job을 재사용 |
 | Tool-using Agent | 구현하지 않음 | Application Service를 감싼 Backend Tool로 질의 응답을 구성 |
 | RAG / Vector Search | 구현하지 않음 | 비정형 지식 검색이 실제 필요할 때 PostgreSQL + pgvector부터 검토 |
 
-`completed-result cache`는 아직 없습니다. async 요청의 in-flight dedupe는 같은 client의 같은 요청이 `PENDING` 또는 `RUNNING`일 때만 기존 job을 재사용하며, terminal result를 공유하거나 cache하지 않습니다.
+completed-result cache는 `PlayerAnalysisInput`의 결정적인 JSON을 SHA-256 fingerprint로 만든 Redis key
+`analysis:result:{version}:{fingerprint}`에 성공한 `PlayerAnalysisResult`만 저장합니다. URL, Riot ID, PUUID, match ID는
+key나 value에 넣지 않습니다. sync와 async worker는 같은 `PlayerAnalysisService`를 거치므로 이 cache를 공유합니다.
+
+async 요청의 in-flight dedupe는 이 cache와 별개입니다. 같은 client의 같은 HTTP request가 `PENDING` 또는 `RUNNING`일 때만
+기존 job을 재사용하며, terminal `AnalysisJob`을 재사용하거나 다른 client에 job ID를 공유하지 않습니다.
 
 ## 현재 아키텍처
 
@@ -46,6 +51,7 @@ Riot Games API
     -> deterministic statistics
     -> peer benchmark / comparison feature
     -> PlayerAnalysisInput
+    -> completed-result cache
     -> OpenAI Structured Output
     -> PlayerAnalysisResult
 ```
@@ -81,7 +87,7 @@ LangChain, LangGraph, 별도 Vector DB 같은 framework는 실제 복잡도를 �
 
 현재 사용 중인 기술은 Kotlin, Spring Boot, JDK 21, Spring MVC `RestClient`, PostgreSQL, Spring Data JPA, Flyway, Redis, Caffeine, Bucket4j, Docker, OpenAI Java SDK입니다.
 
-Spring Security, AWS, 결과 cache, 인증 사용자 기준 quota, 다중 LLM Provider, AI Automation, Tool-using Agent, RAG는 현재 구현 범위가 아닙니다.
+Spring Security, AWS, 인증 사용자 기준 quota, 다중 LLM Provider, AI Automation, Tool-using Agent, RAG는 현재 구현 범위가 아닙니다.
 
 ## 문서
 

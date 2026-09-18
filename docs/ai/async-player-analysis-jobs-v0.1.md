@@ -17,7 +17,7 @@ POST analysis-jobs
 
 worker
     -> PENDING -> RUNNING
-    -> 기존 PlayerAnalysisService 실행 (transaction 밖)
+    -> 기존 PlayerAnalysisService 실행 (transaction 밖, completed-result cache 공유)
     -> SUCCEEDED + PlayerAnalysisResult JSONB
        또는 FAILED + safe failureCode
 
@@ -66,8 +66,9 @@ registry hit은 DB에서 job이 실제로 `PENDING` 또는 `RUNNING`인지 확�
 worker가 `SUCCEEDED` 또는 `FAILED` 전이를 저장하면 job ID가 일치하는 registry entry만 제거한다. 예외적으로 cleanup이
 되지 않아도 Caffeine `expireAfterWrite` safety expiration이 stale reservation을 정리한다. 기본
 `ANALYSIS_JOB_DEDUPE_EXPIRY=5m`은 OpenAI timeout 60초와 기본 worker 1개/queue 2개 lifecycle보다 충분히 길게 둔
-값이다. 이 TTL은 completed-result cache가 아니며, entry hit으로 연장되지 않는다. process restart 시 registry는
-사라지므로 restart 이후 in-flight dedupe는 보장하지 않는다.
+값이다. 이 TTL은 completed-result cache의 TTL과 별개이며, entry hit으로 연장되지 않는다. process restart 시 registry는
+사라지므로 restart 이후 in-flight dedupe는 보장하지 않는다. completed-result cache는 별도로 Redis에 남을 수 있지만,
+그 hit도 `AnalysisJob`을 재사용하지는 않는다.
 
 이 MVP는 distributed dedupe를 제공하지 않는다. 여러 instance에서는 instance별 registry가 독립적이므로, horizontal
 scaling 전에 Redis 등의 atomic distributed coordination 필요성을 별도로 판단한다.

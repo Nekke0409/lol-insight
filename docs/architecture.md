@@ -63,8 +63,8 @@ flowchart LR
 
 Backend가 서비스의 중심이며 Frontend가 Riot API나 향후 LLM API를 직접 호출하지 않는다.
 
-현재 구현은 Riot Games API, Redis Match Detail cache, `BenchmarkSample`과 `AnalysisJob`용 PostgreSQL/JPA/Flyway
-persistence 및 OpenAI Responses API Structured Outputs 분석 경계를 사용한다. OpenAI API key가 없는 상태에서도
+현재 구현은 Riot Games API, Redis Match Detail·completed analysis result cache, `BenchmarkSample`과 `AnalysisJob`용
+PostgreSQL/JPA/Flyway persistence 및 OpenAI Responses API Structured Outputs 분석 경계를 사용한다. OpenAI API key가 없는 상태에서도
 애플리케이션은 시작하며, 분석 endpoint를 실제 호출할 때만 명시적인 configuration error를 반환한다.
 
 이를 통해 다음을 Backend에서 통제한다.
@@ -90,15 +90,17 @@ Riot API
     -> peer benchmark
     -> comparison feature
     -> PlayerAnalysisInput
+    -> completed-result cache
     -> OpenAI Structured Output
     -> PlayerAnalysisResult
     -> sync response 또는 async job polling
 ```
 
 `POST /analysis`는 이 pipeline을 동기로 반환한다. `POST /analysis-jobs`는 `AnalysisJob` lifecycle을 저장하고 bounded
-worker에서 같은 `PlayerAnalysisService`를 실행한 뒤 polling으로 결과를 전달한다. async POST는 generation rate limit을
-먼저 적용하고 같은 client·같은 exact request의 `PENDING`/`RUNNING` job만 in-flight dedupe한다. terminal result cache는
-구현하지 않았다.
+worker에서 같은 `PlayerAnalysisService`를 실행한 뒤 polling으로 결과를 전달한다. 이 service는 effective
+`PlayerAnalysisInput`을 SHA-256 fingerprint로 만든 Redis completed-result cache를 조회한 뒤 miss일 때만 OpenAI를 호출한다.
+async POST는 generation rate limit을 먼저 적용하고 같은 client·같은 exact request의 `PENDING`/`RUNNING` job만 in-flight
+dedupe한다. terminal `AnalysisJob`은 계속 재사용하지 않는다.
 
 ## 4. 주요 기능 영역
 
@@ -178,8 +180,9 @@ failure code를 조회한다.
 async POST에는 same-process in-flight dedupe가 있다. HTTP boundary에서 기존 `AnalysisRateLimitKeyResolver`로 얻은
 client identity와 validation을 통과한 exact `gameName`, `tagLine`, `start`, `count`, `analysis-v0.2` contract version을
 SHA-256 digest key로 만든다. 같은 client·같은 request의 `PENDING`/`RUNNING` job만 재사용하며, 다른 client는 job ID를
-공유하지 않는다. `SUCCEEDED`/`FAILED` result는 cache하지 않으므로 다음 요청은 새 job을 만든다. sync `/analysis`는
-response contract를 유지하기 위해 이 dedupe 대상이 아니다.
+공유하지 않는다. `SUCCEEDED`/`FAILED` job은 재사용하지 않으므로 다음 요청은 새 job을 만든다. completed-result cache는
+worker 내부의 shared `PlayerAnalysisService` 경계에서만 적용된다. sync `/analysis`는 response contract를 유지하기 위해
+in-flight dedupe 대상이 아니다.
 
 Caffeine registry는 key별 atomic mapping으로 DB PENDING commit 뒤 job을 연결하고 그 다음 dispatch한다. hit마다 DB
 lifecycle을 확인해 terminal entry를 제거하며, worker의 terminal transition도 matching entry를 즉시 제거한다. cleanup
@@ -238,6 +241,31 @@ log, DB, response, metric tag에 기록하지 않는다. 이 선택은 single-in
 교체할 수 있으며, multi-instance 배포 전에는 Redis의 atomic distributed limiter, API Gateway 또는 WAF 중 하나를 별도
 운영 결정으로 도입해야 한다. 근거와 대안은
 [ADR-010](adr/010-use-in-memory-analysis-generation-rate-limit.md)을 따른다.
+
+### Completed analysis result cache v0.1
+
+`PlayerAnalysisService`는 `PlayerAnalysisInput -> PlayerAnalysisGenerator` 사이에서 Redis completed-result cache를
+조회한다. input은 deterministic comparison/metric/limitation order와 Spring Boot `ObjectMapper` JSON을 사용해 canonical
+representation으로 만들고, SHA-256 digest만 Redis key에 사용한다. key는
+`analysis:result:{version}:{fingerprint}`이며 Riot ID, PUUID, Match ID, raw input을 넣지 않는다.
+
+cache hit은 provider-independent `PlayerAnalysisResult`를 즉시 반환하므로 OpenAI SDK call, retry 및
+`ai.generation.*` metric을 만들지 않는다. miss에서만 generator를 호출하고 성공한 result만 typed JSON으로
+`ANALYSIS_RESULT_CACHE_TTL`(기본 30분) 동안 저장한다. `ANALYSIS_RESULT_CACHE_VERSION`의 기본값은
+`analysis-result-v1`이며 prompt semantics, output schema, analysis contract, generation policy처럼 output 의미가 바뀌면
+명시적으로 bump한다. freshness의 일차 기준은 TTL이 아니라 input fingerprint이므로 latest Riot/rank/benchmark 계산 결과가
+input을 바꾸면 miss가 발생한다.
+
+Redis read/write, corrupted value cleanup, fingerprint 생성, cache metric 기록은 fail-open이다. read failure와 corrupted
+value는 miss로, write failure는 저장 생략으로 처리하고 analysis result를 바꾸지 않는다. corrupted JSON은 가능하면
+삭제하며 raw content를 log하지 않는다. success-only cache이므로 timeout, provider rate limit, malformed response와
+exception에는 negative entry를 남기지 않는다. `analysis.result.cache.requests`에는 `outcome=hit|miss`만 tag로 기록한다.
+
+sync와 async worker는 같은 service boundary를 공유하지만, async POST는 cache hit이어도 새 `AnalysisJob`과 `202` lifecycle을
+유지한다. rate limit은 cache lookup보다 먼저 소비되고 existing in-flight dedupe의 순서도 바꾸지 않는다. v0.1에는
+distributed single-flight, cache lock, stampede protection이 없다.
+
+결정 근거와 대안은 [ADR-011](adr/011-cache-completed-analysis-results-by-input.md)을 따른다.
 
 ### 벤치마크
 
@@ -683,7 +711,8 @@ Provider 교체 가능성을 이유로 과도한 추상화를 미리 만들지�
 
 `POST /api/v1/players/{gameName}/{tagLine}/analysis`는 기존 `PlayerComparisonFeatureService`를 그대로 사용한다.
 rank가 없으면 `UNRANKED`, AVAILABLE comparison이 없으면 `INSUFFICIENT_COMPARISON_DATA`를 반환하며, 두 경우 모두
-provider를 호출하지 않는다. AVAILABLE comparison이 있으면 `PlayerAnalysisGenerator`를 정확히 한 번 호출한다.
+cache와 provider를 호출하지 않는다. AVAILABLE comparison이 있으면 completed-result cache miss에서만
+`PlayerAnalysisGenerator`를 정확히 한 번 호출한다.
 
 입력은 exact cohort, 사용자 경기 수, benchmark sample/unique player 수, Backend가 계산한 7개 metric의 값·평균·중앙값·
 percentile threshold·difference뿐이다. PUUID, Riot ID, Match ID, raw Riot JSON, DB/Redis 데이터, API key와 raw provider
@@ -692,9 +721,9 @@ error는 제외한다. 현재 분석은 OpenAI Responses API Structured Outputs�
 
 Prompt는 모든 사용자 노출 문장을 한국어로 제한하며, player percentile/top X%, player-level aggregate, 보편적인
 good/bad·지표 방향성, cross-position/champion ranking, LLM의 표본 적격성 판단, patch/freshness/timeline 추론을 금지한다.
-완료 결과 cache, automatic retry/backoff, stale-job recovery는 아직 구현하지 않았다. async job의 terminal result JSONB
-persistence와 provider 호출 관측성은 별도 현재 구현 범위다. 상세 contract는
-[Player Analysis v0.2](ai/player-analysis-v0.2.md), 결정 근거는 [ADR-007](adr/007-use-structured-llm-analysis-boundary.md)을 따른다.
+completed-result cache와 async job의 terminal result JSONB persistence, provider 호출 관측성은 현재 구현 범위다. automatic
+retry/backoff, stale-job recovery는 아직 구현하지 않았다. 상세 contract는 [Player Analysis v0.2](ai/player-analysis-v0.2.md),
+결정 근거는 [ADR-007](adr/007-use-structured-llm-analysis-boundary.md), [ADR-011](adr/011-cache-completed-analysis-results-by-input.md)을 따른다.
 
 ### 향후 Automation 경계
 
@@ -745,7 +774,8 @@ champion/item 문서, 공식 gameplay knowledge 같은 비정형 지식 검색�
 PostgreSQL, JPA/Hibernate, Flyway는 `BenchmarkSample` persistence에 도입됐다. schema source of truth는
 Flyway migration이며, JPA는 `ddl-auto=validate`로 mapping만 검증한다. datasource의 production credentials는
 `POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD` 환경변수로 제공한다.
-`local` profile에만 Compose와 일치하는 개발 기본값이 있다. Redis는 여전히 Match Detail cache로만 사용한다.
+`local` profile에만 Compose와 일치하는 개발 기본값이 있다. Redis는 Match Detail cache와 ephemeral completed analysis
+result cache에 사용한다. 후자는 source of truth나 analysis persistence가 아니다.
 
 `BenchmarkSample`은 analytics/application에서 의미 있는 domain model이고 `BenchmarkSampleEntity`는 PostgreSQL
 표현이다. Entity를 Controller 응답이나 향후 aggregate model로 직접 반환하지 않는다. `(match_id, puuid)` unique
@@ -863,15 +893,15 @@ Riot API 오류를 서비스 관점의 오류로 변환한 뒤
 - 단일 Spring Boot Modular Monolith
 - Account-V1, Match-V5, League-V4 Riot API 연동과 internal model 정규화
 - 최근 Match 통계, `BenchmarkSample` 수집·영속화, exact Peer Benchmark와 comparison feature
-- OpenAI Structured Outputs 기반 `PlayerAnalysisResult`, usage·latency 관측성
+- OpenAI Structured Outputs 기반 `PlayerAnalysisResult`, usage·latency 및 completed-result cache 관측성
 - sync analysis와 persisted async `AnalysisJob`, bounded executor, generation rate limit, same-process in-flight dedupe
-- Match Detail Redis cache, PostgreSQL/JPA/Flyway, 핵심 단위·통합 테스트
+- Match Detail·completed analysis result Redis cache, PostgreSQL/JPA/Flyway, 핵심 단위·통합 테스트
 
 ### 다음 확장 순서
 
 1. Riot data와 player statistics의 품질·표본 정책 강화
 2. Peer Benchmark coverage, freshness, representative/scheduled collection 개선
-3. AI analysis 품질과 completed-result cache를 포함한 운영 안정성 강화
+3. AI analysis 품질과 cache hit-rate를 포함한 운영 안정성 강화
 4. explicit Backend rule을 기반으로 한 AI Automation
 5. Application Service boundary를 사용하는 Tool-using AI Agent
 6. 비정형 지식 검색이 실제 필요할 때만 RAG / Vector Search
@@ -880,8 +910,8 @@ Riot API 오류를 서비스 관점의 오류로 변환한 뒤
 사용자 계정·인증은 community CRUD를 위한 선행 기능으로 두지 않는다. automation 설정, 분석 이력, 개인화,
 job ownership, Agent 개인화에 필요한 요구가 구체화되면 별도 결정한다.
 
-completed-result cache, scheduled collection, crash/stale-job recovery, distributed rate limit/dedupe, persistent queue,
-multi-provider, patch-aware benchmark, deployment scaling은 아직 구현하지 않았다. 이러한 항목은 필요성과 운영 요구가
+scheduled collection, crash/stale-job recovery, distributed rate limit/dedupe, persistent queue, multi-provider,
+patch-aware benchmark, deployment scaling은 아직 구현하지 않았다. 이러한 항목은 필요성과 운영 요구가
 확인될 때 기존 application boundary를 유지하는 가장 작은 변경부터 검토한다.
 
 ## 16. 아키텍처 변경 정책

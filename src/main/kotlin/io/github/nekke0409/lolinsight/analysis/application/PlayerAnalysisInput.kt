@@ -8,6 +8,20 @@ data class PlayerAnalysisInput(
 ) {
     init {
         require(comparisons.isNotEmpty()) { "comparisons must not be empty" }
+        require(comparisons == comparisons.sortedWith(COMPARISON_ORDER)) {
+            "comparisons must use the deterministic analysis order"
+        }
+        require(analysisLimitations == analysisLimitations.sortedBy(PlayerAnalysisLimitation::code)) {
+            "analysisLimitations must use the deterministic code order"
+        }
+    }
+
+    private companion object {
+        val COMPARISON_ORDER =
+            compareBy<AnalysisComparisonInput> { it.scope }
+                .thenByDescending { it.userGames }
+                .thenBy { it.position }
+                .thenBy { it.championId ?: 0 }
     }
 }
 
@@ -32,6 +46,9 @@ data class AnalysisComparisonInput(
         require(metrics.isNotEmpty()) { "metrics must not be empty" }
         require(benchmarkCohort.position == position) { "benchmark cohort position must match comparison position" }
         require(benchmarkCohort.championId == championId) { "benchmark cohort championId must match comparison championId" }
+        require(metrics == metrics.sortedBy(PlayerAnalysisMetric::name)) {
+            "metrics must use the deterministic metric order"
+        }
 
         when (scope) {
             BenchmarkScope.POSITION -> require(championId == null) { "POSITION scope must not include championId" }

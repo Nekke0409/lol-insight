@@ -16,6 +16,7 @@ Riot API data
     -> PlayerComparisonFeature
     -> AVAILABLE comparison gate
     -> PlayerAnalysisInput
+    -> completed-result cache
     -> PlayerAnalysisGenerator
     -> OpenAI Responses API Structured Outputs
     -> PlayerAnalysisResult
@@ -45,13 +46,14 @@ log하거나 persist하지 않는다. v0.1은 currency cost를 계산하지 않�
 price/version/currency 정책은 이후로 미룬다.
 
 recorder error는 분석 생성과 격리한다. 이 범위에는 외부 monitoring 호출, metrics exporter, Actuator 노출
-설정, retry, cache, background analysis behavior를 추가하지 않는다. 전체 endpoint 지연 시간은 계속 framework
+설정, retry, background analysis behavior를 추가하지 않는다. 전체 endpoint 지연 시간은 계속 framework
 HTTP observation을 사용한다.
 
 ## 분석 게이트와 요청 횟수
 
-서비스는 scope와 관계없이 하나 이상의 comparison이 `status == AVAILABLE`이면
-`PlayerAnalysisGenerator`를 정확히 한 번 호출한다. AVAILABLE comparison이 없으면 생성기를 호출하지 않는다.
+서비스는 scope와 관계없이 하나 이상의 comparison이 `status == AVAILABLE`이면 effective `PlayerAnalysisInput`을 만든다.
+completed-result cache miss에서만 `PlayerAnalysisGenerator`를 정확히 한 번 호출하며, hit이면 생성기와 OpenAI 관측성은
+호출하지 않는다. AVAILABLE comparison이 없으면 cache와 생성기를 모두 호출하지 않는다.
 
 | POSITION 범위 | CHAMPION_POSITION 범위 | 결과 |
 | --- | --- | --- |
@@ -60,8 +62,8 @@ HTTP observation을 사용한다.
 | `AVAILABLE` | `AVAILABLE` | 두 comparison을 포함한 요청 1회 |
 | `AVAILABLE` 아님 | `AVAILABLE` 아님 | `INSUFFICIENT_COMPARISON_DATA`, 요청 없음 |
 
-rank가 없는 사용자는 계속 `UNRANKED`, `analysis: null`을 받고 AI provider 요청은 없다. v0.2에는
-scope별 요청, fallback 요청, cache, token optimizer, 분석 결과 저장을 추가하지 않는다.
+rank가 없는 사용자는 계속 `UNRANKED`, `analysis: null`을 받고 AI provider 요청은 없다. scope별 요청, fallback 요청,
+token optimizer, 분석 결과 영속화는 추가하지 않는다.
 
 ## 구조화된 입력
 
@@ -87,6 +89,36 @@ CHAMPION_POSITION 입력은 champion ID를 생략할 수 없다.
 
 `PlayerAnalysisInput`에는 PUUID, Riot ID, Match ID, raw Riot JSON, DB entity, Redis value, API key가 없다.
 target PUUID는 Backend의 aggregate self-exclusion 경계 안에서만 사용한다.
+
+## Completed-result cache v0.1
+
+`PlayerAnalysisService`는 mapper가 만든 effective `PlayerAnalysisInput` 바로 뒤, provider-independent
+`PlayerAnalysisGenerator` 바로 앞에서 Redis completed-result cache를 조회한다. HTTP URL이나 Riot ID가 아니라 실제로
+LLM에 전달되는 structured input만 cache identity가 된다. input은 comparison/metric/limitation의 결정적 순서와 Spring Boot
+`ObjectMapper` JSON 직렬화를 사용하고, SHA-256 digest만 key에 넣는다.
+
+```text
+PlayerAnalysisInput
+    -> analysis:result:{version}:{sha256}
+        -> hit: PlayerAnalysisResult 반환, OpenAI 호출 없음
+        -> miss: OpenAI generation 성공 -> PlayerAnalysisResult 저장 -> 반환
+```
+
+- key version 기본값은 `analysis-result-v1`, TTL 기본값은 `30m`이며 각각 `ANALYSIS_RESULT_CACHE_VERSION`,
+  `ANALYSIS_RESULT_CACHE_TTL`로 override할 수 있다. freshness의 일차 기준은 TTL이 아니라 input fingerprint다. match/rank/
+  benchmark 변화가 LLM 입력을 바꾸면 새 fingerprint가 miss를 만든다. 반대로 raw 데이터가 바뀌어도 최종 input이 같으면 같은
+  결과를 재사용한다.
+- prompt semantics, Structured Output schema, result contract, generation policy처럼 output 의미를 바꾸는 경우 cache
+  version을 명시적으로 올린다. version은 자동으로 계산하지 않는다.
+- 성공적으로 생성된 provider-independent `PlayerAnalysisResult`만 JSON으로 저장한다. raw prompt/response, SDK object,
+  request ID, token usage, Riot ID/PUUID/match ID/API key는 저장하지 않는다. fingerprint와 cache metric tag에도 raw input은 없다.
+- Redis lookup/write, fingerprint 생성, metric 기록 실패는 각각 miss 또는 저장 생략으로 처리한다. corrupted Redis value는
+  가능하면 삭제한 뒤 miss로 처리하며, 분석 요청 자체를 실패시키지 않는다. negative cache는 없다.
+- `analysis.result.cache.requests{outcome=hit|miss}`만 기록한다. cache hit은 `ai.generation.*` 요청·token metric을 늘리지
+  않으며 cache metric failure도 분석 결과를 바꾸지 않는다.
+- sync endpoint와 async worker가 같은 service boundary를 공유한다. 이 cache는 `AnalysisJob` cache가 아니므로 async POST는
+  여전히 새 job과 `202`를 만들고, worker가 hit이면 빠르게 `SUCCEEDED`가 된다. rate limit은 기존처럼 cache lookup보다 먼저
+  소비한다. distributed single-flight/cache lock은 v0.1 범위 밖이다.
 
 ## Scope의 의미
 

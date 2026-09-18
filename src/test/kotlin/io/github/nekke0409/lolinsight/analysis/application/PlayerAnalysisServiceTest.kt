@@ -17,16 +17,19 @@ import org.mockito.Mockito.verifyNoMoreInteractions
 import org.mockito.Mockito.`when`
 import java.time.Instant
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 
 class PlayerAnalysisServiceTest {
     private val playerComparisonFeatureService = mock(PlayerComparisonFeatureService::class.java)
     private val playerAnalysisInputMapper = mock(PlayerAnalysisInputMapper::class.java)
     private val playerAnalysisGenerator = mock(PlayerAnalysisGenerator::class.java)
+    private val playerAnalysisResultCache = mock(PlayerAnalysisResultCache::class.java)
     private val service =
         PlayerAnalysisService(
             playerComparisonFeatureService = playerComparisonFeatureService,
             playerAnalysisInputMapper = playerAnalysisInputMapper,
             playerAnalysisGenerator = playerAnalysisGenerator,
+            playerAnalysisResultCache = playerAnalysisResultCache,
         )
 
     @Test
@@ -71,6 +74,39 @@ class PlayerAnalysisServiceTest {
         verifyNoInteractions(playerAnalysisInputMapper, playerAnalysisGenerator)
     }
 
+    @Test
+    fun `returns a completed result cache hit without generating again`() {
+        val feature = feature(positionAvailable())
+        val input = analysisInput()
+        val result = PlayerAnalysisResult("요약", emptyList(), emptyList(), emptyList(), emptyList())
+        stubFeature(feature)
+        `when`(playerAnalysisInputMapper.map(feature)).thenReturn(input)
+        `when`(playerAnalysisResultCache.find(input)).thenReturn(result)
+
+        val response = service.analyze(GAME_NAME, TAG_LINE, 0, 20)
+
+        assertEquals(PlayerAnalysisResponse(PlayerAnalysisResponseStatus.ANALYZED, result), response)
+        verify(playerAnalysisResultCache).find(input)
+        verifyNoInteractions(playerAnalysisGenerator)
+    }
+
+    @Test
+    fun `does not cache a failed generation`() {
+        val feature = feature(positionAvailable())
+        val input = analysisInput()
+        stubFeature(feature)
+        `when`(playerAnalysisInputMapper.map(feature)).thenReturn(input)
+        `when`(playerAnalysisGenerator.generate(input)).thenThrow(IllegalStateException("provider failure"))
+
+        assertFailsWith<IllegalStateException> {
+            service.analyze(GAME_NAME, TAG_LINE, 0, 20)
+        }
+
+        verify(playerAnalysisResultCache).find(input)
+        verify(playerAnalysisGenerator).generate(input)
+        verifyNoMoreInteractions(playerAnalysisResultCache)
+    }
+
     private fun assertAnalyzedWithSingleGeneratorCall(feature: PlayerComparisonFeature) {
         val input = analysisInput()
         val result = PlayerAnalysisResult("요약", emptyList(), emptyList(), emptyList(), emptyList())
@@ -83,8 +119,10 @@ class PlayerAnalysisServiceTest {
         assertEquals(PlayerAnalysisResponseStatus.ANALYZED, response.status)
         assertEquals(result, response.analysis)
         verify(playerAnalysisInputMapper).map(feature)
+        verify(playerAnalysisResultCache).find(input)
         verify(playerAnalysisGenerator).generate(input)
-        verifyNoMoreInteractions(playerAnalysisInputMapper, playerAnalysisGenerator)
+        verify(playerAnalysisResultCache).store(input, result)
+        verifyNoMoreInteractions(playerAnalysisInputMapper, playerAnalysisGenerator, playerAnalysisResultCache)
     }
 
     private fun stubFeature(feature: PlayerComparisonFeature) {

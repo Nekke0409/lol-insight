@@ -9,6 +9,7 @@ class PlayerAnalysisService(
     private val playerComparisonFeatureService: PlayerComparisonFeatureService,
     private val playerAnalysisInputMapper: PlayerAnalysisInputMapper,
     private val playerAnalysisGenerator: PlayerAnalysisGenerator,
+    private val playerAnalysisResultCache: PlayerAnalysisResultCache,
 ) {
     fun analyze(
         gameName: String,
@@ -29,7 +30,10 @@ class PlayerAnalysisService(
             return PlayerAnalysisResponse(PlayerAnalysisResponseStatus.INSUFFICIENT_COMPARISON_DATA, null)
         }
 
-        val analysis = playerAnalysisGenerator.generate(playerAnalysisInputMapper.map(feature))
+        val input = playerAnalysisInputMapper.map(feature)
+        val analysis =
+            playerAnalysisResultCache.find(input)
+                ?: playerAnalysisGenerator.generate(input).also { playerAnalysisResultCache.store(input, it) }
         return PlayerAnalysisResponse(PlayerAnalysisResponseStatus.ANALYZED, analysis)
     }
 }

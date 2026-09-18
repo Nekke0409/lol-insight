@@ -76,3 +76,4 @@ Automation과 Tool-using Agent의 세부 문서는 아직 만들지 않는다. �
 - [`ADR-008: 명시적 benchmark scope 사용`](adr/008-use-explicit-benchmark-scopes.md)
 - [`ADR-009: 비동기 Player Analysis Job 도입`](adr/009-introduce-asynchronous-player-analysis-jobs.md)
 - [`ADR-010: 단일 인스턴스 분석 생성 요청에 인메모리 rate limit 사용`](adr/010-use-in-memory-analysis-generation-rate-limit.md)
+- [`ADR-011: 구조화된 분석 입력 기반 Redis completed-result cache 사용`](adr/011-cache-completed-analysis-results-by-input.md)

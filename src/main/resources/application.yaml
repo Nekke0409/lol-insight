@@ -34,6 +34,9 @@ openai:
   text-verbosity: ${OPENAI_TEXT_VERBOSITY:low}
 
 analysis:
+  result-cache:
+    ttl: ${ANALYSIS_RESULT_CACHE_TTL:30m}
+    version: ${ANALYSIS_RESULT_CACHE_VERSION:analysis-result-v1}
   rate-limit:
     capacity: ${ANALYSIS_RATE_LIMIT_CAPACITY:3}
     window: ${ANALYSIS_RATE_LIMIT_WINDOW:1m}
