@@ -22,7 +22,7 @@ class RedisPlayerAnalysisResultCacheTest {
     private val redisTemplate: RedisTemplate<String, PlayerAnalysisResult> = mock()
     private val valueOperations: ValueOperations<String, PlayerAnalysisResult> = mock()
     private val meterRegistry = SimpleMeterRegistry()
-    private val properties = AnalysisResultCacheProperties(ttl = Duration.ofMinutes(30), version = "analysis-result-v1")
+    private val properties = AnalysisResultCacheProperties(ttl = Duration.ofMinutes(30))
     private val cache =
         RedisPlayerAnalysisResultCache(
             redisTemplate,
@@ -46,10 +46,10 @@ class RedisPlayerAnalysisResultCacheTest {
 
     @Test
     fun `uses a versioned SHA-256 key and changes keys across versions`() {
-        val versionTwo =
+        val legacyVersion =
             RedisPlayerAnalysisResultCache(
                 redisTemplate,
-                AnalysisResultCacheProperties(ttl = Duration.ofMinutes(30), version = "analysis-result-v2"),
+                AnalysisResultCacheProperties(ttl = Duration.ofMinutes(30), version = "analysis-result-v1"),
                 PlayerAnalysisInputFingerprint(
                     JsonMapper.builder().addModule(KotlinModule.Builder().build()).build(),
                 ),
@@ -57,9 +57,9 @@ class RedisPlayerAnalysisResultCacheTest {
             )
 
         val firstKey = requireNotNull(cache.keyFor(INPUT))
-        val secondKey = requireNotNull(versionTwo.keyFor(INPUT))
+        val secondKey = requireNotNull(legacyVersion.keyFor(INPUT))
 
-        assertEquals("$ANALYSIS_RESULT_CACHE_KEY_PREFIX:analysis-result-v1", firstKey.substringBeforeLast(':'))
+        assertEquals("$ANALYSIS_RESULT_CACHE_KEY_PREFIX:analysis-result-v2", firstKey.substringBeforeLast(':'))
         assertEquals(64, firstKey.substringAfterLast(':').length)
         assertEquals(false, firstKey.contains("Hide on bush"))
         assertEquals(false, firstKey.contains("KR1"))

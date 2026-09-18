@@ -12,6 +12,7 @@ import io.github.nekke0409.lolinsight.match.domain.MatchPerks
 import io.github.nekke0409.lolinsight.match.domain.MatchTeam
 import io.github.nekke0409.lolinsight.match.domain.MatchVision
 import io.github.nekke0409.lolinsight.match.domain.ObjectiveResult
+import io.github.nekke0409.lolinsight.match.domain.RankedSoloQueue
 import io.github.nekke0409.lolinsight.match.domain.RiotIdSnapshot
 import io.github.nekke0409.lolinsight.match.infrastructure.riot.RiotMatchClient
 import io.github.nekke0409.lolinsight.player.infrastructure.riot.RiotAccountClient
@@ -44,7 +45,8 @@ class PlayerMatchHistoryServiceTest {
     private val riotAccountClient = mock(RiotAccountClient::class.java)
     private val riotMatchClient = mock(RiotMatchClient::class.java)
     private val matchDetailExecutor = Executors.newFixedThreadPool(MAX_CONCURRENT_MATCH_DETAIL_REQUESTS)
-    private val service = PlayerMatchHistoryService(PlayerMatchHistoryLoader(riotAccountClient, riotMatchClient, matchDetailExecutor))
+    private val playerMatchHistoryLoader = PlayerMatchHistoryLoader(riotAccountClient, riotMatchClient, matchDetailExecutor)
+    private val service = PlayerMatchHistoryService(playerMatchHistoryLoader)
 
     @AfterEach
     fun shutDownMatchDetailExecutor() {
@@ -98,6 +100,24 @@ class PlayerMatchHistoryServiceTest {
         assertEquals(8, targetSummary.kills)
         assertEquals(162, targetSummary.totalCs)
         assertEquals(listOf(3_073, 0, 3_364), targetSummary.itemIds)
+    }
+
+    @Test
+    fun `loads comparison pagination from the Ranked Solo Match ID list`() {
+        accountLookupReturns()
+        `when`(riotMatchClient.findMatchIdsByPuuid("target-puuid", 5, 2, RankedSoloQueue.ID))
+            .thenReturn(listOf("KR_solo_2", "KR_solo_1"))
+        `when`(riotMatchClient.findMatchById("KR_solo_2"))
+            .thenReturn(match("KR_solo_2", listOf(participant(puuid = "target-puuid"))))
+        `when`(riotMatchClient.findMatchById("KR_solo_1"))
+            .thenReturn(match("KR_solo_1", listOf(participant(puuid = "target-puuid"))))
+
+        val history = playerMatchHistoryLoader.loadRecentRankedSoloMatches("Hide on bush", "KR1", start = 5, count = 2)
+
+        verify(riotMatchClient).findMatchIdsByPuuid("target-puuid", 5, 2, RankedSoloQueue.ID)
+        assertEquals(5, history.start)
+        assertEquals(2, history.requestedCount)
+        assertEquals(listOf("KR_solo_2", "KR_solo_1"), history.matches.map { it.matchId })
     }
 
     @Test

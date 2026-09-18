@@ -8,6 +8,7 @@ import io.github.nekke0409.lolinsight.match.domain.MatchPerks
 import io.github.nekke0409.lolinsight.match.domain.MatchTeam
 import io.github.nekke0409.lolinsight.match.domain.MatchVision
 import io.github.nekke0409.lolinsight.match.domain.ObjectiveResult
+import io.github.nekke0409.lolinsight.match.domain.RankedSoloQueue
 import io.github.nekke0409.lolinsight.match.domain.RiotIdSnapshot
 import io.github.nekke0409.lolinsight.player.application.PlayerRecentMatchHistoryPlayer
 import io.github.nekke0409.lolinsight.rank.application.PlayerRankContext
@@ -122,6 +123,71 @@ class PlayerComparisonContextBuilderTest {
         assertEquals(context.championPositionStatistics, reversedContext.championPositionStatistics)
     }
 
+    @Test
+    fun `excludes Flex normal and ARAM details even when champion and position match`() {
+        val soloContext = buildContext(sampleMatches())
+        val context =
+            buildContext(
+                sampleMatches() +
+                    listOf(
+                        match(
+                            "KR_flex",
+                            targetParticipant(
+                                103,
+                                "MIDDLE",
+                                kills = 100,
+                                deaths = 0,
+                                laneCs = 1_000,
+                                goldEarned = 50_000,
+                                damage = 100_000,
+                                vision = 100,
+                            ),
+                            otherParticipant(),
+                            duration = Duration.ofMinutes(20),
+                            queueId = 440,
+                        ),
+                        match(
+                            "KR_normal",
+                            targetParticipant(
+                                103,
+                                "MIDDLE",
+                                kills = 100,
+                                deaths = 0,
+                                laneCs = 1_000,
+                                goldEarned = 50_000,
+                                damage = 100_000,
+                                vision = 100,
+                            ),
+                            otherParticipant(),
+                            duration = Duration.ofMinutes(20),
+                            queueId = 400,
+                        ),
+                        match(
+                            "KR_aram",
+                            targetParticipant(
+                                103,
+                                "MIDDLE",
+                                kills = 100,
+                                deaths = 0,
+                                laneCs = 1_000,
+                                goldEarned = 50_000,
+                                damage = 100_000,
+                                vision = 100,
+                            ),
+                            otherParticipant(),
+                            duration = Duration.ofMinutes(20),
+                            queueId = 450,
+                            gameMode = "ARAM",
+                        ),
+                    ),
+            )
+
+        assertEquals(soloContext.sample, context.sample)
+        assertEquals(PlayerComparisonContextSample(requestedCount = 20, analyzedCount = 4), context.sample)
+        assertEquals(soloContext.positionStatistics, context.positionStatistics)
+        assertEquals(soloContext.championPositionStatistics, context.championPositionStatistics)
+    }
+
     private fun buildContext(
         matches: List<Match>,
         rankContext: PlayerRankContext? = this.rankContext,
@@ -173,12 +239,14 @@ class PlayerComparisonContextBuilderTest {
         matchId: String,
         vararg participants: MatchParticipant,
         duration: Duration,
+        queueId: Int = RankedSoloQueue.ID,
+        gameMode: String = "CLASSIC",
     ): Match {
         val objective = ObjectiveResult(wasFirst = false, killCount = 0)
         return Match(
             matchId = matchId,
-            queueId = 420,
-            gameMode = "CLASSIC",
+            queueId = queueId,
+            gameMode = gameMode,
             gameVersion = "16.1",
             mapId = 11,
             platformId = "KR",

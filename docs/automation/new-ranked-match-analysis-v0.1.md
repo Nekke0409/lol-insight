@@ -4,7 +4,7 @@
 
 관리자가 로컬 opt-in runner로 추적할 Riot ID를 등록하면, 서비스는 해당 플레이어의 PUUID와 현재 Ranked Solo 최신
 Match ID를 PostgreSQL에 baseline으로 저장한다. 따라서 등록 전의 경기는 자동 분석하지 않는다. 이후 새 Ranked Solo
-경기가 감지되면 최신 20경기 rolling window를 사용하는 기존 `AnalysisJob` 하나를 생성하며, 완료 결과는 기존 job
+경기가 감지되면 최신 20개의 Ranked Solo 경기 rolling window를 사용하는 기존 `AnalysisJob` 하나를 생성하며, 완료 결과는 기존 job
 lifecycle과 result persistence로 조회한다. 알림 전송과 public subscription API는 이 버전에 없다.
 
 ## 경계와 저장 모델

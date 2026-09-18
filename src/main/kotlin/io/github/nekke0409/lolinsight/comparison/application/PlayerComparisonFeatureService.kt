@@ -7,6 +7,7 @@ import io.github.nekke0409.lolinsight.benchmark.domain.BenchmarkMetricDistributi
 import io.github.nekke0409.lolinsight.benchmark.domain.BenchmarkScope
 import io.github.nekke0409.lolinsight.benchmark.domain.PeerBenchmark
 import io.github.nekke0409.lolinsight.benchmark.domain.PeerBenchmarkResult
+import io.github.nekke0409.lolinsight.match.domain.RankedSoloQueue
 import io.github.nekke0409.lolinsight.rank.application.PlayerRankContext
 import org.springframework.stereotype.Service
 
@@ -73,7 +74,7 @@ class PlayerComparisonFeatureService(
             BenchmarkScope.POSITION ->
                 BenchmarkCohort.position(
                     region = KR_REGION,
-                    queueId = RANKED_SOLO_QUEUE_ID,
+                    queueId = RankedSoloQueue.ID,
                     tier = rankContext.tier,
                     division = rankContext.division,
                     position = position,
@@ -82,7 +83,7 @@ class PlayerComparisonFeatureService(
             BenchmarkScope.CHAMPION_POSITION ->
                 BenchmarkCohort.championPosition(
                     region = KR_REGION,
-                    queueId = RANKED_SOLO_QUEUE_ID,
+                    queueId = RankedSoloQueue.ID,
                     tier = rankContext.tier,
                     division = rankContext.division,
                     position = position,
@@ -193,7 +194,6 @@ class PlayerComparisonFeatureService(
 
     private companion object {
         const val KR_REGION = "KR"
-        const val RANKED_SOLO_QUEUE_ID = 420
         const val MINIMUM_USER_GAMES_FOR_COMPARISON = 5
 
         val SCOPED_STATISTICS_ORDER =

@@ -4,6 +4,7 @@ import io.github.nekke0409.lolinsight.match.application.MatchParticipantMetrics
 import io.github.nekke0409.lolinsight.match.application.MatchParticipantMetricsCalculator
 import io.github.nekke0409.lolinsight.match.domain.Match
 import io.github.nekke0409.lolinsight.match.domain.MatchParticipant
+import io.github.nekke0409.lolinsight.match.domain.RankedSoloQueue
 import io.github.nekke0409.lolinsight.player.application.PlayerRecentMatchHistoryPlayer
 import io.github.nekke0409.lolinsight.rank.application.PlayerRankContext
 import org.springframework.stereotype.Component
@@ -17,7 +18,12 @@ class PlayerComparisonContextBuilder {
         matches: List<Match>,
         rankContext: PlayerRankContext?,
     ): PlayerComparisonContext {
-        val observations = matches.mapNotNull { match -> match.toObservationFor(targetPuuid) }
+        val observations =
+            matches
+                .asSequence()
+                .filter { it.queueId == RankedSoloQueue.ID }
+                .mapNotNull { match -> match.toObservationFor(targetPuuid) }
+                .toList()
 
         return PlayerComparisonContext(
             player = PlayerComparisonContextPlayer(player.gameName, player.tagLine),

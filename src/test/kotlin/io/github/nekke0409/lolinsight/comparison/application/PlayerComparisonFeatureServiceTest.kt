@@ -42,6 +42,31 @@ class PlayerComparisonFeatureServiceTest {
     }
 
     @Test
+    fun `does not query a benchmark when no valid Ranked Solo user observation remains`() {
+        stubContext(positionStatistics = emptyList(), championPositionStatistics = emptyList())
+
+        val comparisons = service.buildFeature(GAME_NAME, TAG_LINE, 0, 20).comparisons
+
+        assertEquals(emptyList(), comparisons)
+        verifyNoInteractions(peerBenchmarkQueryService)
+    }
+
+    @Test
+    fun `marks fewer than five valid Ranked Solo user games as insufficient`() {
+        val statistics = positionStats(games = 4)
+        val cohort = positionCohort(statistics)
+        stubContext(positionStatistics = listOf(statistics), championPositionStatistics = emptyList())
+        `when`(peerBenchmarkQueryService.findBenchmarkExcludingPlayer(cohort, TARGET_PUUID))
+            .thenReturn(availableResult(cohort))
+
+        val comparison = service.buildFeature(GAME_NAME, TAG_LINE, 0, 20).comparisons.single()
+
+        assertEquals(4, comparison.userGames)
+        assertEquals(PlayerCohortComparisonStatus.INSUFFICIENT_USER_SAMPLE, comparison.status)
+        assertNull(comparison.metrics)
+    }
+
+    @Test
     fun `joins each user statistical unit only to its matching benchmark scope without fallback`() {
         val positionStatistics = positionStats(games = 6, averageKda = 4.0)
         val championStatistics = championPositionStats(games = 3, averageKda = 8.0)

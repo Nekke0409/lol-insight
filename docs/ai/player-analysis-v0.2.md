@@ -6,6 +6,12 @@
 `PlayerComparisonFeature`를 한국어 자연어 분석으로 변환한다. 성공한 요청은 외부 AI provider 호출 비용을 발생시킬 수 있으므로
 endpoint는 계속 `POST`를 사용한다.
 
+AI comparison의 사용자 표본은 Match-V5 Match ID 목록을 `queue=RankedSoloQueue.ID`로 조회한 최근 Ranked Solo 경기다.
+`start`와 `count`는 이 queue-filtered 목록의 pagination이며, 최근 전체 경기를 먼저 가져와 Solo만 로컬 필터링하지 않는다.
+일반 전적·통계 조회의 queue 없는 최근 전체 경기와는 별도 경계다. Match Detail이 upstream 목록에 잘못 섞여도
+`PlayerComparisonContextBuilder`가 queue ID를 다시 검사해 Flex·일반·ARAM 경기를 사용자 games, 승률, 7개 지표 및 OpenAI
+입력에서 제외한다.
+
 이 버전은 ADR-008에서 도입한 두 독립 benchmark scope에 맞춰 OpenAI 입력 경계를 확장한다. benchmark 수집,
 aggregate SQL, availability threshold, self-exclusion, REST output schema는 변경하지 않는다.
 
@@ -78,7 +84,7 @@ token optimizer, 분석 결과 영속화는 추가하지 않는다.
 | `scope` | 명시적인 `POSITION` 또는 `CHAMPION_POSITION` 모집단 식별자 |
 | `position` | 사용자 통계와 benchmark cohort가 함께 사용하는 포지션 |
 | `championId` | `POSITION`에서는 `null`, `CHAMPION_POSITION`에서는 필수 |
-| `userGames` | 같은 scope에서의 사용자 관측 수 |
+| `userGames` | 같은 scope에서의 유효한 Ranked Solo 사용자 관측 수 |
 | `benchmarkCohort` | region, queue, tier, division, position 및 일치하는 nullable champion identity |
 | `benchmarkSampleCount`, `benchmarkUniquePlayerCount` | 대상 플레이어 self-exclusion 후의 benchmark 수 |
 | `metrics` | Backend가 계산한 player value, benchmark mean/median/p25/p75/p90, mean/median 차이 |
@@ -90,7 +96,7 @@ CHAMPION_POSITION 입력은 champion ID를 생략할 수 없다.
 `PlayerAnalysisInput`에는 PUUID, Riot ID, Match ID, raw Riot JSON, DB entity, Redis value, API key가 없다.
 target PUUID는 Backend의 aggregate self-exclusion 경계 안에서만 사용한다.
 
-## Completed-result cache v0.1
+## Completed-result cache
 
 `PlayerAnalysisService`는 mapper가 만든 effective `PlayerAnalysisInput` 바로 뒤, provider-independent
 `PlayerAnalysisGenerator` 바로 앞에서 Redis completed-result cache를 조회한다. HTTP URL이나 Riot ID가 아니라 실제로
@@ -104,12 +110,13 @@ PlayerAnalysisInput
         -> miss: OpenAI generation 성공 -> PlayerAnalysisResult 저장 -> 반환
 ```
 
-- key version 기본값은 `analysis-result-v1`, TTL 기본값은 `30m`이며 각각 `ANALYSIS_RESULT_CACHE_VERSION`,
+- key version 기본값은 `analysis-result-v2`, TTL 기본값은 `30m`이며 각각 `ANALYSIS_RESULT_CACHE_VERSION`,
   `ANALYSIS_RESULT_CACHE_TTL`로 override할 수 있다. freshness의 일차 기준은 TTL이 아니라 input fingerprint다. match/rank/
   benchmark 변화가 LLM 입력을 바꾸면 새 fingerprint가 miss를 만든다. 반대로 raw 데이터가 바뀌어도 최종 input이 같으면 같은
   결과를 재사용한다.
-- prompt semantics, Structured Output schema, result contract, generation policy처럼 output 의미를 바꾸는 경우 cache
-  version을 명시적으로 올린다. version은 자동으로 계산하지 않는다.
+- prompt semantics, Structured Output schema, result contract, generation policy 또는 AI 입력 의미를 바꾸는 경우 cache
+  version을 명시적으로 올린다. Ranked Solo 전용 사용자 입력으로 의미가 바뀌며 v2를 사용한다. 기존 v1 key는 삭제하거나
+  덮어쓰지 않고 TTL에 따라 만료한다. version은 자동으로 계산하지 않는다.
 - 성공적으로 생성된 provider-independent `PlayerAnalysisResult`만 JSON으로 저장한다. raw prompt/response, SDK object,
   request ID, token usage, Riot ID/PUUID/match ID/API key는 저장하지 않는다. fingerprint와 cache metric tag에도 raw input은 없다.
 - Redis lookup/write, fingerprint 생성, metric 기록 실패는 각각 miss 또는 저장 생략으로 처리한다. corrupted Redis value는

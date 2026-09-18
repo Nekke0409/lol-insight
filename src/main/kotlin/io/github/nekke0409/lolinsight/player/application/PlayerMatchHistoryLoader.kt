@@ -4,6 +4,7 @@ import io.github.nekke0409.lolinsight.match.application.MatchDetailBatchLoader
 import io.github.nekke0409.lolinsight.match.application.MatchDetailLoadFailure
 import io.github.nekke0409.lolinsight.match.application.MatchDetailLoadSuccess
 import io.github.nekke0409.lolinsight.match.domain.Match
+import io.github.nekke0409.lolinsight.match.domain.RankedSoloQueue
 import io.github.nekke0409.lolinsight.match.infrastructure.riot.RiotMatchClient
 import io.github.nekke0409.lolinsight.player.infrastructure.riot.RiotAccountClient
 import org.springframework.beans.factory.annotation.Autowired
@@ -33,12 +34,47 @@ class PlayerMatchHistoryLoader
             tagLine: String,
             start: Int,
             count: Int,
+        ): PlayerRecentMatchHistory =
+            loadMatches(
+                gameName = gameName,
+                tagLine = tagLine,
+                start = start,
+                count = count,
+                queue = null,
+            )
+
+        /**
+         * Loads one page from the player's Ranked Solo Match ID list for comparison analysis.
+         *
+         * `start` and `count` are applied by Match-V5 after the Ranked Solo queue filter, rather
+         * than selecting a page of all matches and filtering it locally.
+         */
+        fun loadRecentRankedSoloMatches(
+            gameName: String,
+            tagLine: String,
+            start: Int,
+            count: Int,
+        ): PlayerRecentMatchHistory =
+            loadMatches(
+                gameName = gameName,
+                tagLine = tagLine,
+                start = start,
+                count = count,
+                queue = RankedSoloQueue.ID,
+            )
+
+        private fun loadMatches(
+            gameName: String,
+            tagLine: String,
+            start: Int,
+            count: Int,
+            queue: Int?,
         ): PlayerRecentMatchHistory {
             require(start >= 0) { "start must be greater than or equal to zero." }
             require(count in MIN_COUNT..MAX_COUNT) { "count must be between $MIN_COUNT and $MAX_COUNT." }
 
             val account = riotAccountClient.findByRiotId(gameName, tagLine)
-            val matchIds = riotMatchClient.findMatchIdsByPuuid(account.puuid, start, count)
+            val matchIds = riotMatchClient.findMatchIdsByPuuid(account.puuid, start, count, queue)
             val detailResults = retrieveMatchDetails(matchIds, account.puuid)
             val matches = detailResults.filterNotNull()
             val unavailableCount = detailResults.count { it == null }

@@ -26,7 +26,7 @@ Riot의 공식 Ranked Ladder를 대체하는 MMR, ELO 또는 자체 Skill Rating
 | 영역 | 현재 구현 | 향후 방향 |
 | --- | --- | --- |
 | Riot 데이터 | Account-V1 Riot ID 조회, Match-V5 Match ID/Detail 조회, League-V4 기반 KR Ranked Solo 표본 player discovery | representative sampling, scheduled collection 정책 |
-| 데이터 처리·통계 | Riot DTO 정규화, 최근 경기 통계, participant-level `BenchmarkSample` 저장 | 추가 분석 feature와 freshness 정책 |
+| 데이터 처리·통계 | Riot DTO 정규화, 일반 전적용 최근 전체 경기 통계와 AI comparison용 최근 Ranked Solo 경기 통계, participant-level `BenchmarkSample` 저장 | 추가 분석 feature와 freshness 정책 |
 | Peer Benchmark | exact cohort 집계, target self-exclusion, role/champion-position scope 비교 | 표본 품질과 coverage 개선 |
 | AI 분석 | `PlayerAnalysisInput` fingerprint 기반 Redis completed-result cache, OpenAI Responses API Structured Outputs, sync·async 제공 | 결과 품질 평가, 인증 사용자 quota, provider 전략 |
 | 운영 경계 | Redis Match Detail·analysis result cache, PostgreSQL/Flyway, OpenAI usage·latency 계측, 분석 생성 rate limit, bounded async job과 in-flight dedupe | crash recovery, distributed 운영 정책, 배포·확장 구조 |
@@ -37,6 +37,11 @@ Riot의 공식 Ranked Ladder를 대체하는 MMR, ELO 또는 자체 Skill Rating
 completed-result cache는 `PlayerAnalysisInput`의 결정적인 JSON을 SHA-256 fingerprint로 만든 Redis key
 `analysis:result:{version}:{fingerprint}`에 성공한 `PlayerAnalysisResult`만 저장합니다. URL, Riot ID, PUUID, match ID는
 key나 value에 넣지 않습니다. sync와 async worker는 같은 `PlayerAnalysisService`를 거치므로 이 cache를 공유합니다.
+
+일반 전적·통계 조회의 최근 경기는 queue를 지정하지 않은 전체 Match-V5 목록을 사용합니다. 반면 AI comparison은
+`queue=RankedSoloQueue.ID`로 조회한 최근 **Ranked Solo** 목록만 사용하며, `start`와 `count`도 그 filtered 목록의
+pagination입니다. Detail 응답은 comparison 통계 직전에 다시 queue를 검증하므로, upstream 목록에 잘못 섞인 Flex·일반·ARAM
+경기는 games, 승률, 7개 지표와 AI 입력에 포함되지 않습니다.
 
 async 요청의 in-flight dedupe는 이 cache와 별개입니다. 같은 client의 같은 HTTP request가 `PENDING` 또는 `RUNNING`일 때만
 기존 job을 재사용하며, terminal `AnalysisJob`을 재사용하거나 다른 client에 job ID를 공유하지 않습니다.

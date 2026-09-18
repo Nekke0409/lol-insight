@@ -4,7 +4,9 @@
 계속 provider-independent input이며 benchmark를 query하지 않는다.
 
 ```text
-normalized target-player Matches
+recent Ranked Solo Match IDs
+    -> normalized target-player Matches
+    -> queueId == RankedSoloQueue.ID defensive validation
     -> per-match MatchParticipantMetricsCalculator metrics
     -> PlayerPositionStatistics
     -> PlayerChampionPositionStatistics
@@ -13,6 +15,10 @@ normalized target-player Matches
 
 Context는 target PUUID, 현재 Solo `rankContext`, resolved player data, Match sample metadata를 유지한다. Target PUUID는
 Backend 전용 정보이며 이후 aggregate self-exclusion에만 사용한다.
+
+이 context의 Match ID 목록은 `queue=RankedSoloQueue.ID`로 조회한다. `start`와 `count`는 최근 전체 경기의 window가 아니라
+Ranked Solo 목록의 pagination이다. Detail이 upstream filter를 우회해 들어와도 queue ID가 다른 Match는 observation과
+`analyzedCount`에 포함하지 않는다.
 
 | Field | Statistical unit |
 | --- | --- |

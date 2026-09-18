@@ -4,6 +4,7 @@ import io.github.nekke0409.lolinsight.global.riot.RiotApiHttpClient
 import io.github.nekke0409.lolinsight.global.riot.RiotApiProperties
 import io.github.nekke0409.lolinsight.global.riot.RiotApiResponseException
 import io.github.nekke0409.lolinsight.match.application.MatchNotFoundException
+import io.github.nekke0409.lolinsight.match.domain.RankedSoloQueue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.springframework.http.HttpStatus
@@ -86,7 +87,7 @@ class RiotMatchClientTest {
                     .body("[\"KR_100\",\"KR_99\"]"),
             )
 
-        val matchIds = client.findMatchIdsByPuuid(puuid = "test-puuid", count = 2, queue = 420)
+        val matchIds = client.findMatchIdsByPuuid(puuid = "test-puuid", count = 2, queue = RankedSoloQueue.ID)
 
         assertEquals(listOf("KR_100", "KR_99"), matchIds)
         server.verify()

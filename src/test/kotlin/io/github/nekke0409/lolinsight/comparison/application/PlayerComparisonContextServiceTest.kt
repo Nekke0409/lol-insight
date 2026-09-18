@@ -25,7 +25,7 @@ class PlayerComparisonContextServiceTest {
 
     @Test
     fun `combines the existing player match sample with the current Solo rank without querying a benchmark`() {
-        `when`(playerMatchHistoryLoader.loadRecentMatches("Hide on bush", "KR1", 5, 20))
+        `when`(playerMatchHistoryLoader.loadRecentRankedSoloMatches("Hide on bush", "KR1", 5, 20))
             .thenReturn(
                 PlayerRecentMatchHistory(
                     player = PlayerRecentMatchHistoryPlayer("target-puuid", "Hide on bush", "KR1"),
@@ -41,7 +41,7 @@ class PlayerComparisonContextServiceTest {
 
         val context = service.buildContext("Hide on bush", "KR1", 5, 20)
 
-        verify(playerMatchHistoryLoader).loadRecentMatches("Hide on bush", "KR1", 5, 20)
+        verify(playerMatchHistoryLoader).loadRecentRankedSoloMatches("Hide on bush", "KR1", 5, 20)
         verify(playerRankLookupService).findCurrentRankContext("target-puuid")
         assertEquals(PlayerComparisonContextPlayer("Hide on bush", "KR1"), context.player)
         assertEquals("target-puuid", context.targetPuuid)

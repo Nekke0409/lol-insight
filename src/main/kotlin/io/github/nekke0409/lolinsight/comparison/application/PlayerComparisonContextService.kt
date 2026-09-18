@@ -16,7 +16,7 @@ class PlayerComparisonContextService(
         start: Int,
         count: Int,
     ): PlayerComparisonContext {
-        val history = playerMatchHistoryLoader.loadRecentMatches(gameName, tagLine, start, count)
+        val history = playerMatchHistoryLoader.loadRecentRankedSoloMatches(gameName, tagLine, start, count)
         val rankContext = playerRankLookupService.findCurrentRankContext(history.player.puuid)
 
         return playerComparisonContextBuilder.build(

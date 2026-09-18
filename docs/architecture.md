@@ -111,8 +111,8 @@ dedupe한다. terminal `AnalysisJob`은 계속 재사용하지 않는다.
 
 플레이어 식별 및 검색과 관련된 기능을 담당한다.
 
-현재 Account-V1 기반 Riot ID 조회와 최근 Match 조회·통계 계산이 구현되어 있다. 저장 정책은 아직 결정하거나
-구현하지 않았다.
+현재 Account-V1 기반 Riot ID 조회와 최근 Match 조회·통계 계산이 구현되어 있다. 일반 전적·통계 조회는 queue를 지정하지
+않은 최근 전체 Match 목록을 사용한다. 저장 정책은 아직 결정하거나 구현하지 않았다.
 
 ### Match
 
@@ -124,8 +124,11 @@ Riot API의 원본 Match DTO와 서비스 내부에서 사용하는 모델을 �
 
 가공된 Match/통계 데이터를 이용해 분석 feature를 만든다. 현재는 개인 요약용 `PlayerAnalysisFeature`, peer
 comparison의 사용자 측 입력인 `PlayerComparisonContext`, 그리고 exact cohort benchmark와 결합한
-`PlayerComparisonFeature`가 구현되어 있다. `PlayerComparisonFeature`는 현재 Ranked Solo rank와 대상 사용자의
-position 및 `(championId, position)`별 통계를 각각 같은 scope benchmark와 연결해 availability와 numeric difference를 결정한다.
+`PlayerComparisonFeature`가 구현되어 있다. comparison의 사용자 Match 입력은 Match-V5에 `queue=RankedSoloQueue.ID`를
+전달해 최근 Ranked Solo Match ID 목록에서만 읽으며, `start`와 `count`는 이 목록의 pagination이다. Detail 응답도 context
+builder에서 같은 queue ID를 방어적으로 확인한 뒤에만 position 및 `(championId, position)` 통계에 포함한다.
+`PlayerComparisonFeature`는 현재 Ranked Solo rank와 이 사용자 통계를 각각 같은 scope benchmark와 연결해 availability와
+numeric difference를 결정한다.
 `PlayerAnalysisService`는 AVAILABLE comparison이 하나라도 있을 때만 `PlayerAnalysisGenerator`를 정확히 한 번 호출해
 `PlayerAnalysisResult`를 만든다. OpenAI prompt와 SDK DTO는 infrastructure에만 둔다.
 
@@ -253,8 +256,9 @@ representation으로 만들고, SHA-256 digest만 Redis key에 사용한다. key
 cache hit은 provider-independent `PlayerAnalysisResult`를 즉시 반환하므로 OpenAI SDK call, retry 및
 `ai.generation.*` metric을 만들지 않는다. miss에서만 generator를 호출하고 성공한 result만 typed JSON으로
 `ANALYSIS_RESULT_CACHE_TTL`(기본 30분) 동안 저장한다. `ANALYSIS_RESULT_CACHE_VERSION`의 기본값은
-`analysis-result-v1`이며 prompt semantics, output schema, analysis contract, generation policy처럼 output 의미가 바뀌면
-명시적으로 bump한다. freshness의 일차 기준은 TTL이 아니라 input fingerprint이므로 latest Riot/rank/benchmark 계산 결과가
+`analysis-result-v2`이며 prompt semantics, output schema, analysis contract, generation policy 또는 AI 입력 의미가 바뀌면
+명시적으로 bump한다. Ranked Solo 전용 comparison 입력을 도입하며 v1에서 v2로 올렸고, 기존 v1 key는 삭제하거나 덮어쓰지 않고
+TTL에 따라 자연 만료된다. freshness의 일차 기준은 TTL이 아니라 input fingerprint이므로 latest Riot/rank/benchmark 계산 결과가
 input을 바꾸면 miss가 발생한다.
 
 Redis read/write, corrupted value cleanup, fingerprint 생성, cache metric 기록은 fail-open이다. read failure와 corrupted
@@ -490,10 +494,12 @@ Riot Match DTO
     -> API 응답 또는 분석 feature
 ```
 
-플레이어 recent-Matches와 플레이어 통계 endpoint는 `Riot ID -> PUUID -> Match IDs -> domain Match`
-오케스트레이션을 위한 애플리케이션 수준 loader를 공유한다. loader는 제한된 Detail fan-out 및 부분 결과 정책을
-유지하며, 각 endpoint는 정규화된 Match 목록을 자신의 응답으로 변환한다. 통계 계산은 Riot이나 Redis를 직접 호출하지 않는
-별도 애플리케이션 컴포넌트다.
+플레이어 recent-Matches와 플레이어 통계 endpoint는 queue를 지정하지 않는 `loadRecentMatches`로
+`Riot ID -> PUUID -> Match IDs -> domain Match` 오케스트레이션을 위한 애플리케이션 수준 loader를 공유한다.
+AI comparison은 같은 Detail fan-out과 부분 결과 정책을 재사용하되, 별도 `loadRecentRankedSoloMatches` 진입점에서
+`queue=RankedSoloQueue.ID`를 보내 recent Ranked Solo Match ID 목록을 pagination한다. 따라서 전체 최근 20경기를 가져와
+로컬에서 Solo만 남기는 방식이 아니다. 각 endpoint는 정규화된 Match 목록을 자신의 응답으로 변환하며, 통계 계산은 Riot이나
+Redis를 직접 호출하지 않는 별도 애플리케이션 컴포넌트다.
 
 원본 데이터를 DB에 얼마나 저장할지,
 정규화된 데이터를 저장할지,
@@ -512,7 +518,7 @@ Riot API
     -> 정규화된 Match
     -> PlayerMatchStatistics
     -> PlayerAnalysisFeature
-    -> PlayerComparisonContext(현재 Solo rank + champion/position 사용자 지표)
+    -> PlayerComparisonContext(최근 Ranked Solo Match만 사용한 현재 Solo rank + champion/position 사용자 지표)
 
 Benchmark 흐름(수집과 집계 구현됨)
 랭크 플레이어 원천
@@ -529,7 +535,7 @@ Benchmark 흐름(수집과 집계 구현됨)
 
 `PlayerComparisonContext`는 `PlayerAnalysisFeature`와 별개의 comparison-ready 사용자 입력이다. 대상 PUUID와
 PUUID로 조회한 현재 `RANKED_SOLO_5x5` tier/division 및 그 조회 시각을 담고, rank가 없으면 `rankContext = null`로
-정상 표현한다. 대상 사용자의 Match 표본은 `(championId, position)`별로 분리하고,
+정상 표현한다. 대상 사용자의 Match 표본은 Ranked Solo queue ID와 일치하는 Detail만 사용해 `(championId, position)`별로 분리하고,
 `MatchParticipantMetricsCalculator`의 KDA, CS/min, gold/min, damage/min, vision/min, kill participation,
 damage share 공식을 재사용한다. 이 단계는 `PeerBenchmarkQueryService`를 호출하지 않는다.
 
@@ -736,7 +742,8 @@ source of truth로 사용하고, `automation_execution`의 `(automation_id, dete
 
 기본 disabled scheduler는 due enabled automation을 5분마다 최대 10명씩 순차 조회한다. Match-V5 recent ID를
 `start=0`, `count=20`, `queue=420`으로 읽어 head가 cursor와 달라질 때만 기존 `AnalysisJobService`로 rolling job 하나를
-만든다. 초기 등록은 현재 head를 cursor baseline으로 저장하므로 과거 경기를 생성하지 않고, 여러 신규 match는 하나의
+만든다. job은 공통 `PlayerAnalysisService`의 Ranked Solo comparison 입력 정책을 그대로 사용하므로, 이 `start`와 `count`도
+최근 Ranked Solo 목록의 pagination이다. 초기 등록은 현재 head를 cursor baseline으로 저장하므로 과거 경기를 생성하지 않고, 여러 신규 match는 하나의
 rolling job으로 coalesce한다. job creation/capacity/Riot polling 실패는 cursor를 전진시키지 않는다.
 
 Automation은 HTTP client IP를 만들지 않으므로 generation rate limit 또는 HTTP in-flight dedupe를 재사용하지 않는다.

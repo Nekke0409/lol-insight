@@ -17,7 +17,7 @@ PlayerChampionPositionStatistics
 benchmark count와 AVAILABLE일 때만 존재하는 metric을 가진다. Benchmark cohort가 존재하면 comparison과 같은 scope,
 position, champion identity여야 한다.
 
-User sample heuristic은 기존과 같이 `games >= 5`이며 scope별로 적용한다. Benchmark availability도 target
+User sample heuristic은 유효한 Ranked Solo observation만 센 `games >= 5`이며 scope별로 적용한다. Benchmark availability도 target
 self-exclusion 후 각 scope에 독립적으로 30 samples와 10 unique players를 요구한다. 다음 상태는 유효하며 기대한
 결과다.
 

@@ -75,6 +75,17 @@ class PlayerAnalysisServiceTest {
     }
 
     @Test
+    fun `does not build a comparison input or call OpenAI when no Ranked Solo observation remains`() {
+        stubFeature(feature())
+
+        val response = service.analyze(GAME_NAME, TAG_LINE, 0, 20)
+
+        assertEquals(PlayerAnalysisResponseStatus.INSUFFICIENT_COMPARISON_DATA, response.status)
+        assertEquals(null, response.analysis)
+        verifyNoInteractions(playerAnalysisInputMapper, playerAnalysisResultCache, playerAnalysisGenerator)
+    }
+
+    @Test
     fun `returns a completed result cache hit without generating again`() {
         val feature = feature(positionAvailable())
         val input = analysisInput()

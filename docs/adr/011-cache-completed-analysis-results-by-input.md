@@ -61,3 +61,10 @@ async in-flight dedupe의 관측 결과로 실제 필요성이 확인될 때까�
 Redis는 source of truth가 아닌 비용·latency 최적화다. Redis 장애가 분석 기능을 중단시키지 않지만, cache miss가 동시에 여러
 instance에서 발생할 때 중복 generation을 막지는 않는다. cache version을 잊고 output semantics를 바꾸면 stale result를
 재사용할 위험이 있으므로 release checklist에 version 검토를 포함한다.
+
+## 후속 구현: Ranked Solo comparison 입력
+
+AI comparison의 사용자 표본은 이후 일반 최근 경기에서 최근 Ranked Solo 경기로 바뀌었다. 이 변경은 같은
+`PlayerAnalysisInput` 모양을 유지하더라도 결과가 해석하는 사용자 성과의 의미를 바꾸므로, 이 ADR의 명시적 version bump 규칙을
+적용해 기본 key version을 `analysis-result-v2`로 올린다. 기존 `analysis-result-v1` key는 삭제하거나 결과를 덮어쓰지 않고
+TTL에 따라 자연 만료한다.
