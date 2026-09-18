@@ -11,6 +11,10 @@ class AutomationObservationRecorder(
 
     fun recordPollFailure() = increment("analysis.automation.polls", "outcome", "failure")
 
+    fun recordPollRateLimited() = increment("analysis.automation.polls", "outcome", "rate_limited")
+
+    fun recordPollCooldownSkipped() = increment("analysis.automation.polls", "outcome", "cooldown_skipped")
+
     fun recordNewMatchDetected() = increment("analysis.automation.matches.detected")
 
     fun recordTriggerTriggered() = increment("analysis.automation.triggers", "outcome", "triggered")

@@ -6,6 +6,7 @@ import io.github.nekke0409.lolinsight.analysis.application.PlayerAnalysisRespons
 import io.github.nekke0409.lolinsight.analysis.application.PlayerAnalysisResult
 import io.github.nekke0409.lolinsight.analysis.application.PlayerAnalysisService
 import io.github.nekke0409.lolinsight.analysis.ratelimit.AnalysisRateLimitKey
+import io.github.nekke0409.lolinsight.global.riot.RiotApiCooldownException
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.verify
@@ -51,6 +52,19 @@ class AnalysisJobWorkerTest {
         `when`(lifecycleService.markFailedIfRunning(COMMAND.jobId, AnalysisJobFailureCode.RATE_LIMITED)).thenReturn(true)
         `when`(playerAnalysisService.analyze(COMMAND.gameName, COMMAND.tagLine, COMMAND.start, COMMAND.count))
             .thenThrow(PlayerAnalysisRateLimitException(IllegalStateException("provider response body")))
+
+        worker.process(COMMAND)
+
+        verify(lifecycleService).markFailedIfRunning(COMMAND.jobId, AnalysisJobFailureCode.RATE_LIMITED)
+        verify(inFlightRegistry).remove(requireNotNull(COMMAND.dedupeKey), COMMAND.jobId)
+    }
+
+    @Test
+    fun `classifies a locally blocked Riot request as rate limited`() {
+        `when`(lifecycleService.markRunningIfPending(COMMAND.jobId)).thenReturn(true)
+        `when`(lifecycleService.markFailedIfRunning(COMMAND.jobId, AnalysisJobFailureCode.RATE_LIMITED)).thenReturn(true)
+        `when`(playerAnalysisService.analyze(COMMAND.gameName, COMMAND.tagLine, COMMAND.start, COMMAND.count))
+            .thenThrow(RiotApiCooldownException(60))
 
         worker.process(COMMAND)
 

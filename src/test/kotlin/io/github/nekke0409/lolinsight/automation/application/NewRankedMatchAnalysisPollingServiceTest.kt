@@ -9,6 +9,10 @@ import io.github.nekke0409.lolinsight.automation.domain.AutomationExecutionStatu
 import io.github.nekke0409.lolinsight.automation.domain.TrackedPlayerAutomation
 import io.github.nekke0409.lolinsight.automation.observability.AutomationObservationRecorder
 import io.github.nekke0409.lolinsight.automation.scheduling.AnalysisAutomationProperties
+import io.github.nekke0409.lolinsight.global.riot.RiotApiCooldown
+import io.github.nekke0409.lolinsight.global.riot.RiotApiCooldownException
+import io.github.nekke0409.lolinsight.global.riot.RiotApiProperties
+import io.github.nekke0409.lolinsight.global.riot.RiotApiResponseException
 import io.github.nekke0409.lolinsight.global.riot.RiotApiTransportException
 import io.github.nekke0409.lolinsight.match.domain.RankedSoloQueue
 import io.github.nekke0409.lolinsight.match.infrastructure.riot.RiotMatchClient
@@ -21,6 +25,7 @@ import org.mockito.Mockito.never
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.verifyNoInteractions
 import org.mockito.Mockito.`when`
+import org.springframework.http.HttpStatus
 import java.time.Clock
 import java.time.Duration
 import java.time.Instant
@@ -36,6 +41,7 @@ class NewRankedMatchAnalysisPollingServiceTest {
     private val playerService = mock(PlayerService::class.java)
     private val analysisJobService = mock(AnalysisJobService::class.java)
     private val now = Instant.parse("2026-09-18T12:00:00Z")
+    private val riotApiCooldown = RiotApiCooldown(RiotApiProperties(key = "test-api-key"), Clock.fixed(now, ZoneOffset.UTC))
     private val service =
         NewRankedMatchAnalysisPollingService(
             trackedPlayerAutomationService,
@@ -46,6 +52,7 @@ class NewRankedMatchAnalysisPollingServiceTest {
             AnalysisAutomationProperties(pollInterval = Duration.ofMinutes(5), batchSize = 10),
             Clock.fixed(now, ZoneOffset.UTC),
             AutomationObservationRecorder(SimpleMeterRegistry()),
+            riotApiCooldown,
         )
 
     @Test
@@ -136,6 +143,52 @@ class NewRankedMatchAnalysisPollingServiceTest {
 
         verifyNoInteractions(automationExecutionService, playerService, analysisJobService)
         verify(trackedPlayerAutomationService, never()).markCheckedIfCursorUnchanged(AUTOMATION, now)
+    }
+
+    @Test
+    fun `stops the current tick after a Riot 429 without polling later automations`() {
+        val laterAutomation = AUTOMATION.copy(id = UUID.fromString("ebba5c25-c974-4465-86b5-7e4b6449dd82"), puuid = "later-puuid")
+        `when`(trackedPlayerAutomationService.findDue(now.minus(Duration.ofMinutes(5)), 10))
+            .thenReturn(listOf(AUTOMATION, laterAutomation))
+        `when`(trackedPlayerAutomationService.findEnabled(AUTOMATION_ID)).thenReturn(AUTOMATION)
+        `when`(riotMatchClient.findMatchIdsByPuuid(PUUID, 0, 20, RankedSoloQueue.ID))
+            .thenThrow(RiotApiResponseException(HttpStatus.TOO_MANY_REQUESTS, "rate limited", retryAfterSeconds = 10))
+
+        service.pollDue()
+
+        verify(riotMatchClient).findMatchIdsByPuuid(PUUID, 0, 20, RankedSoloQueue.ID)
+        verify(trackedPlayerAutomationService, never()).findEnabled(laterAutomation.id)
+        verifyNoInteractions(automationExecutionService, playerService, analysisJobService)
+        verify(trackedPlayerAutomationService, never()).markCheckedIfCursorUnchanged(AUTOMATION, now)
+    }
+
+    @Test
+    fun `skips an entire tick while the shared Riot cooldown is active`() {
+        riotApiCooldown.registerRateLimit(10 * 60)
+
+        service.pollDue()
+
+        verifyNoInteractions(
+            trackedPlayerAutomationService,
+            riotMatchClient,
+            automationExecutionService,
+            playerService,
+            analysisJobService,
+        )
+    }
+
+    @Test
+    fun `stops the current tick when the common HTTP boundary reports local cooldown`() {
+        val laterAutomation = AUTOMATION.copy(id = UUID.fromString("ebba5c25-c974-4465-86b5-7e4b6449dd82"), puuid = "later-puuid")
+        `when`(trackedPlayerAutomationService.findDue(now.minus(Duration.ofMinutes(5)), 10))
+            .thenReturn(listOf(AUTOMATION, laterAutomation))
+        `when`(trackedPlayerAutomationService.findEnabled(AUTOMATION_ID)).thenReturn(AUTOMATION)
+        `when`(riotMatchClient.findMatchIdsByPuuid(PUUID, 0, 20, RankedSoloQueue.ID)).thenThrow(RiotApiCooldownException(10))
+
+        service.pollDue()
+
+        verify(trackedPlayerAutomationService, never()).findEnabled(laterAutomation.id)
+        verifyNoInteractions(automationExecutionService, playerService, analysisJobService)
     }
 
     @Test

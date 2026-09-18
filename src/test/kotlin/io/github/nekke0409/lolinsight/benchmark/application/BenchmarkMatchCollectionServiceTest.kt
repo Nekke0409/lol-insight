@@ -2,6 +2,7 @@ package io.github.nekke0409.lolinsight.benchmark.application
 
 import io.github.nekke0409.lolinsight.benchmark.domain.BenchmarkSample
 import io.github.nekke0409.lolinsight.benchmark.domain.SampledRankedPlayer
+import io.github.nekke0409.lolinsight.global.riot.RiotApiCooldownException
 import io.github.nekke0409.lolinsight.global.riot.RiotApiResponseException
 import io.github.nekke0409.lolinsight.match.application.MatchDetailBatchLoader
 import io.github.nekke0409.lolinsight.match.domain.Match
@@ -157,6 +158,19 @@ class BenchmarkMatchCollectionServiceTest {
         assertEquals(9, result.retryAfterSeconds)
         verify(riotMatchClient, never()).findMatchIdsByPuuid("player-b", 0, 2, 420)
         verify(riotMatchClient, never()).findMatchById(anyString())
+    }
+
+    @Test
+    fun `stops Match ID collection when the local Riot cooldown is active`() {
+        `when`(riotMatchClient.findMatchIdsByPuuid("player-a", 0, 2, 420)).thenThrow(RiotApiCooldownException(9))
+
+        val result = service.collect(listOf(sampledPlayer("player-a"), sampledPlayer("player-b")), matchesPerPlayer = 2)
+
+        assertEquals(1, result.playersProcessed)
+        assertEquals(1, result.playerMatchListFailures)
+        assertTrue(result.rateLimitStopped)
+        assertEquals(9, result.retryAfterSeconds)
+        verify(riotMatchClient, never()).findMatchIdsByPuuid("player-b", 0, 2, 420)
     }
 
     @Test

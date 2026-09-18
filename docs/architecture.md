@@ -753,6 +753,29 @@ distributed scheduler 및 automation quota는 구현하지 않았다. 상세 con
 [새 Ranked Solo Match 기반 Analysis Automation v0.1](automation/new-ranked-match-analysis-v0.1.md), 결정 근거는
 [ADR-012](adr/012-use-persisted-ranked-match-automation-trigger.md)를 따른다.
 
+### Riot 429 JVM-local cooldown
+
+`RiotApiHttpClient`는 upstream 429를 body 해석보다 먼저 `RiotApiCooldown`에 등록한다. 이후 같은 JVM의 모든 Riot
+outbound HTTP admission은 shared deadline을 확인하며, 대기 중이면 upstream으로 전송하지 않고 safe local exception을
+반환한다. 현재 application은 Riot routing·endpoint별 quota를 독립적이라고 가정할 근거가 없으므로 platform 및 regional
+routing을 하나의 보수적인 process-wide gate로 묶는다. 여러 429의 deadline은 atomic max로 갱신되고, 기존 in-flight
+호출을 강제 interrupt하거나 HTTP 통신 전체를 lock하지 않는다.
+
+Riot의 유효한 0 이상의 정수 `Retry-After`는 초 단위로 사용하며, header가 없거나 음수·비정수·overflow면
+`RIOT_COOLDOWN_FALLBACK`(기본 60초)을 적용한다. local blockage의 외부 `Retry-After`는 남은 시간을 올림해 아직
+대기 중인데 0초를 반환하지 않는다. cached Match Detail은 HTTP admission을 거치지 않아 cooldown 중에도 hit할 수 있다.
+
+Automation은 cooldown이 이미 active면 DB due 대상 조회와 Riot 호출 없이 tick을 종료한다. tick 중 실제 upstream 429 또는
+local block이 생기면 다음 automation의 polling과 새 AnalysisJob 생성을 중단하며, 해당 cursor와 `lastCheckedAt`은
+전진하지 않는다. worker 안에서 이미 생성된 job이 받는 429는 기존 terminal `RATE_LIMITED` lifecycle만 따르고 scheduler가
+cursor나 execution record를 되돌리지 않는다. `analysis.automation.polls`에는 low-cardinality `rate_limited`와
+`cooldown_skipped` outcome을 추가한다.
+
+이 state는 JVM memory에만 있으므로 process restart 후 소실되고, 여러 instance 또는 외부 script가 공유 API key를 사용할
+때는 함께 동작하지 않는다. 이는 첫 429를 예방하는 proactive limiter, retry/backoff, distributed coordination이 아니다.
+multi-instance 운영 전에 shared rate-limit coordination이 별도 필요하다. 결정 근거와 대안은
+[ADR-013](adr/013-use-jvm-local-riot-outbound-cooldown.md)을 따른다.
+
 Automation은 기존 통계와 `PlayerAnalysisService`를 복제하지 않고 다음 경계를 따른다.
 
 ```text

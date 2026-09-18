@@ -6,6 +6,7 @@ import io.github.nekke0409.lolinsight.analysis.application.PlayerAnalysisInvalid
 import io.github.nekke0409.lolinsight.analysis.application.PlayerAnalysisProviderException
 import io.github.nekke0409.lolinsight.analysis.application.PlayerAnalysisRateLimitException
 import io.github.nekke0409.lolinsight.analysis.application.PlayerAnalysisTransportException
+import io.github.nekke0409.lolinsight.global.riot.RiotApiCooldownException
 import io.github.nekke0409.lolinsight.global.riot.RiotApiEmptyResponseException
 import io.github.nekke0409.lolinsight.global.riot.RiotApiInvalidResponseException
 import io.github.nekke0409.lolinsight.global.riot.RiotApiResponseException
@@ -25,6 +26,7 @@ class AnalysisJobFailureCodeMapper {
             is PlayerAnalysisProviderException -> AnalysisJobFailureCode.UPSTREAM_UNAVAILABLE
             is PlayerAnalysisTransportException -> AnalysisJobFailureCode.TIMEOUT_NETWORK
             is PlayerAnalysisInvalidResponseException -> AnalysisJobFailureCode.MALFORMED_RESPONSE
+            is RiotApiCooldownException -> AnalysisJobFailureCode.RATE_LIMITED
             is RiotApiResponseException ->
                 if (exception.statusCode == HttpStatus.TOO_MANY_REQUESTS) {
                     AnalysisJobFailureCode.RATE_LIMITED

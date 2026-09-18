@@ -4,6 +4,9 @@ import io.github.nekke0409.lolinsight.analysis.job.application.AnalysisJobServic
 import io.github.nekke0409.lolinsight.automation.domain.AutomationExecutionStatus
 import io.github.nekke0409.lolinsight.automation.observability.AutomationObservationRecorder
 import io.github.nekke0409.lolinsight.automation.scheduling.AnalysisAutomationProperties
+import io.github.nekke0409.lolinsight.global.riot.RiotApiCooldown
+import io.github.nekke0409.lolinsight.global.riot.RiotApiException
+import io.github.nekke0409.lolinsight.global.riot.isRateLimited
 import io.github.nekke0409.lolinsight.match.domain.RankedSoloQueue
 import io.github.nekke0409.lolinsight.match.infrastructure.riot.RiotMatchClient
 import io.github.nekke0409.lolinsight.player.application.PlayerService
@@ -22,9 +25,15 @@ class NewRankedMatchAnalysisPollingService(
     private val properties: AnalysisAutomationProperties,
     private val clock: Clock,
     private val observationRecorder: AutomationObservationRecorder,
+    private val riotApiCooldown: RiotApiCooldown,
 ) {
     /** Runs one bounded, sequential scheduler tick. Failures leave the affected cursor unchanged. */
     fun pollDue() {
+        if (riotApiCooldown.isBlocked()) {
+            observationRecorder.recordPollCooldownSkipped()
+            return
+        }
+
         val now = Instant.now(clock)
         val dueAutomations =
             trackedPlayerAutomationService.findDue(
@@ -32,9 +41,15 @@ class NewRankedMatchAnalysisPollingService(
                 batchSize = properties.batchSize,
             )
 
-        dueAutomations.forEach { automation ->
+        for (automation in dueAutomations) {
             try {
                 poll(automation.id)
+            } catch (exception: RiotApiException) {
+                if (exception.isRateLimited()) {
+                    observationRecorder.recordPollRateLimited()
+                    break
+                }
+                observationRecorder.recordPollFailure()
             } catch (_: Exception) {
                 observationRecorder.recordPollFailure()
             }

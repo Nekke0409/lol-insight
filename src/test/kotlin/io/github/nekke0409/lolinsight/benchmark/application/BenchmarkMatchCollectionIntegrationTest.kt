@@ -2,6 +2,7 @@ package io.github.nekke0409.lolinsight.benchmark.application
 
 import io.github.nekke0409.lolinsight.benchmark.domain.SampledRankedPlayer
 import io.github.nekke0409.lolinsight.benchmark.persistence.BenchmarkSampleJpaRepository
+import io.github.nekke0409.lolinsight.global.riot.RiotApiCooldown
 import io.github.nekke0409.lolinsight.global.riot.RiotApiHttpClient
 import io.github.nekke0409.lolinsight.global.riot.RiotApiProperties
 import io.github.nekke0409.lolinsight.match.application.MatchDetailBatchLoader
@@ -65,6 +66,11 @@ class BenchmarkMatchCollectionIntegrationTest {
                             key = "test-api-key",
                             platformBaseUrl = URI.create("https://kr.api.riotgames.com"),
                             regionalBaseUrl = URI.create("https://asia.api.riotgames.com"),
+                        ),
+                    cooldown =
+                        RiotApiCooldown(
+                            RiotApiProperties(key = "test-api-key"),
+                            Clock.fixed(COLLECTED_AT, ZoneOffset.UTC),
                         ),
                 ),
             )

@@ -61,8 +61,8 @@ ADR은 "현재 구조가 무엇인가"보다 다음 질문에 답하는 기록�
 현재 구조 자체를 빠르게 파악할 때는 `architecture.md`,
 그 구조가 만들어진 이유를 추적할 때는 ADR을 사용합니다.
 
-Automation과 Tool-using Agent의 세부 문서는 아직 만들지 않는다. 해당 기능의 실제 구현을 시작할 때에만 각각
-`docs/automation/`, `docs/agent/`에 contract와 운영 제약을 기록한다.
+Automation의 현재 contract는 [`automation/new-ranked-match-analysis-v0.1.md`](automation/new-ranked-match-analysis-v0.1.md)에
+기록한다. Tool-using Agent의 세부 문서는 실제 구현을 시작할 때에만 `docs/agent/`에 추가한다.
 
 ## 현재 결정
 
@@ -77,3 +77,5 @@ Automation과 Tool-using Agent의 세부 문서는 아직 만들지 않는다. �
 - [`ADR-009: 비동기 Player Analysis Job 도입`](adr/009-introduce-asynchronous-player-analysis-jobs.md)
 - [`ADR-010: 단일 인스턴스 분석 생성 요청에 인메모리 rate limit 사용`](adr/010-use-in-memory-analysis-generation-rate-limit.md)
 - [`ADR-011: 구조화된 분석 입력 기반 Redis completed-result cache 사용`](adr/011-cache-completed-analysis-results-by-input.md)
+- [`ADR-012: Persisted Ranked Solo Match Automation Trigger 사용`](adr/012-use-persisted-ranked-match-automation-trigger.md)
+- [`ADR-013: JVM-local Riot outbound cooldown 사용`](adr/013-use-jvm-local-riot-outbound-cooldown.md)

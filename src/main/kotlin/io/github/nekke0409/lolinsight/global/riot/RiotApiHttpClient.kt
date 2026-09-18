@@ -12,6 +12,7 @@ import java.nio.charset.StandardCharsets
 class RiotApiHttpClient(
     private val restClient: RestClient,
     private val properties: RiotApiProperties,
+    private val cooldown: RiotApiCooldown,
 ) {
     fun <T : Any> get(
         routing: RiotApiRouting,
@@ -34,15 +35,20 @@ class RiotApiHttpClient(
                 .toUri()
 
         return try {
+            cooldown.checkAdmission()
             restClient
                 .get()
                 .uri(uri)
                 .retrieve()
                 .onStatus(HttpStatusCode::isError) { _, response ->
+                    val retryAfterSeconds = parseRetryAfterSeconds(response.headers.getFirst("Retry-After"))
+                    if (response.statusCode.value() == TOO_MANY_REQUESTS) {
+                        cooldown.registerRateLimit(retryAfterSeconds)
+                    }
                     throw RiotApiResponseException(
                         statusCode = response.statusCode,
                         responseBody = response.body.readAllBytes().toString(StandardCharsets.UTF_8),
-                        retryAfterSeconds = parseRetryAfterSeconds(response.headers.getFirst("Retry-After")),
+                        retryAfterSeconds = retryAfterSeconds,
                     )
                 }.body(responseType)
                 ?: throw RiotApiEmptyResponseException()
@@ -60,4 +66,8 @@ class RiotApiHttpClient(
             ?.trim()
             ?.toLongOrNull()
             ?.takeIf { it >= 0 }
+
+    private companion object {
+        const val TOO_MANY_REQUESTS = 429
+    }
 }

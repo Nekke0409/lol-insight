@@ -1,5 +1,6 @@
 package io.github.nekke0409.lolinsight.match.infrastructure.riot
 
+import io.github.nekke0409.lolinsight.global.riot.RiotApiCooldown
 import io.github.nekke0409.lolinsight.global.riot.RiotApiHttpClient
 import io.github.nekke0409.lolinsight.global.riot.RiotApiProperties
 import io.github.nekke0409.lolinsight.global.riot.RiotApiResponseException
@@ -14,6 +15,7 @@ import org.springframework.test.web.client.match.MockRestRequestMatchers.request
 import org.springframework.test.web.client.response.MockRestResponseCreators.withStatus
 import org.springframework.web.client.RestClient
 import java.net.URI
+import java.time.Clock
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
@@ -33,7 +35,7 @@ class RiotMatchClientTest {
                 platformBaseUrl = URI.create("https://kr.api.riotgames.com"),
                 regionalBaseUrl = URI.create("https://asia.api.riotgames.com"),
             )
-        client = RiotMatchClient(RiotApiHttpClient(builder.build(), properties))
+        client = RiotMatchClient(RiotApiHttpClient(builder.build(), properties, RiotApiCooldown(properties, Clock.systemUTC())))
     }
 
     @Test

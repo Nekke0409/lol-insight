@@ -26,8 +26,13 @@ cursor 전진을 재시도할 수 있다.
 Ranked Solo 경기가 아직 없으면 cursor는 null이지만 등록 시각은 남긴다. 이후 처음 생긴 ID는 신규 경기로 처리한다.
 
 각 tick은 `lastCheckedAt <= now - pollInterval`인 enabled automation을 `batchSize`만큼 가져와 순차 처리한다. 기본은
-5분/10명이다. 이 값은 real-time 보장이 아니라 Personal/Development 환경에서도 보수적인 polling의 시작점이며, 실제
-Riot application·method·service rate limit과 `429 Retry-After`를 운영 환경에서 계속 고려해야 한다.
+5분/10명이다. 이 값은 real-time 보장이 아니라 Personal/Development 환경에서도 보수적인 polling의 시작점이다.
+
+공통 `RiotApiHttpClient`가 upstream 429를 받으면 `Retry-After` 동안 JVM-local shared cooldown을 등록한다. cooldown이
+active인 tick은 due 대상 조회와 Riot HTTP 호출 없이 종료한다. tick 도중 upstream 429 또는 local cooldown block이
+발생하면 남은 automation의 polling과 새 job 생성을 중단한다. 해당 실패는 `lastSeenMatchId`와 `lastCheckedAt`을
+전진시키지 않으며, cooldown 종료 직후 별도 즉시 retry scheduler도 만들지 않는다. header가 없거나 유효하지 않으면
+`RIOT_COOLDOWN_FALLBACK`(기본 60초)을 쓰며, 이 값은 Riot quota가 아니라 서비스 안전 정책이다.
 
 recent list의 첫 ID가 cursor와 같으면 job을 만들지 않는다. 다르면 새 경기가 하나 이상 존재한 것으로 보고 첫 ID 하나에
 대해서만 execution을 claim하고 `start=0`, `count=20` AnalysisJob을 하나 생성한다. 예를 들어 cursor가 `M100`이고
@@ -36,7 +41,7 @@ recent list의 첫 ID가 cursor와 같으면 job을 만들지 않는다. 다르�
 ## 실패와 순서
 
 Riot polling 실패(429, 5xx, transport 포함)는 `lastSeenMatchId`와 `lastCheckedAt`을 바꾸지 않고 다음 tick에서 다시
-시도한다. job creation 또는 executor capacity rejection도 cursor를 움직이지 않으며, capacity job은 기존
+시도한다. 다만 429 또는 local cooldown은 같은 tick의 뒤쪽 automation까지 계속 처리하지 않는다. job creation 또는 executor capacity rejection도 cursor를 움직이지 않으며, capacity job은 기존
 `FAILED(CAPACITY_EXCEEDED)` audit row를 유지한다. OpenAI/provider 실패는 새 retry를 만들지 않고 기존 worker가
 terminal `FAILED` lifecycle으로 기록한다.
 
@@ -55,10 +60,11 @@ IP를 만들지 않으며, execution unique constraint가 자신의 idempotency 
 않는다.
 
 low-cardinality metrics는 `analysis.automation.polls{outcome}`, `analysis.automation.matches.detected`,
-`analysis.automation.triggers{outcome}`이다. PUUID, Riot ID, Match ID, automation ID는 metric tag나 log에 넣지 않는다.
+`analysis.automation.triggers{outcome}`이다. poll outcome에는 `success`, `failure`, `rate_limited`,
+`cooldown_skipped`가 있다. PUUID, Riot ID, Match ID, automation ID는 metric tag나 log에 넣지 않는다.
 
 ## v0.1의 범위 밖
 
 notification, account ownership, public subscription API, distributed scheduler/lock, persistent queue, stale job recovery,
-automation-specific quota, provider retry, single-match 전용 LLM analysis는 포함하지 않는다. multi-instance 운영이나 실제
+automation-specific quota, provider retry, single-match 전용 LLM analysis, Redis distributed Riot cooldown은 포함하지 않는다. multi-instance 운영이나 실제
 polling scale 요구가 확인되면 distributed claim/lease와 automation quota를 별도 결정한다.

@@ -16,6 +16,7 @@ import io.github.nekke0409.lolinsight.analysis.ratelimit.AnalysisGenerationRateL
 import io.github.nekke0409.lolinsight.analysis.ratelimit.AnalysisRateLimitKey
 import io.github.nekke0409.lolinsight.analysis.ratelimit.AnalysisRateLimitKeyResolver
 import io.github.nekke0409.lolinsight.analysis.ratelimit.AnalysisRateLimitProperties
+import io.github.nekke0409.lolinsight.global.riot.RiotApiCooldownException
 import io.github.nekke0409.lolinsight.global.riot.RiotApiResponseException
 import io.github.nekke0409.lolinsight.global.riot.RiotApiTransportException
 import io.github.nekke0409.lolinsight.global.web.GlobalExceptionHandler
@@ -410,6 +411,19 @@ class PlayerControllerTest {
             .andExpect(status().isTooManyRequests)
             .andExpect(header().string(HttpHeaders.RETRY_AFTER, "3"))
             .andExpect(jsonPath("$.detail").value("Unable to retrieve data from Riot Games."))
+    }
+
+    @Test
+    fun `maps a local Riot cooldown to a safe rate limit response`() {
+        `when`(playerMatchHistoryService.findRecentMatches("Hide on bush", "KR1", 0, 20))
+            .thenThrow(RiotApiCooldownException(4))
+
+        mockMvc
+            .perform(get("/api/v1/players/{gameName}/{tagLine}/matches", "Hide on bush", "KR1"))
+            .andExpect(status().isTooManyRequests)
+            .andExpect(header().string(HttpHeaders.RETRY_AFTER, "4"))
+            .andExpect(jsonPath("$.code").value("RIOT_API_COOLDOWN_ACTIVE"))
+            .andExpect(jsonPath("$.detail").value("Riot Games requests are temporarily rate limited."))
     }
 
     @Test

@@ -30,7 +30,7 @@ Riot의 공식 Ranked Ladder를 대체하는 MMR, ELO 또는 자체 Skill Rating
 | Peer Benchmark | exact cohort 집계, target self-exclusion, role/champion-position scope 비교 | 표본 품질과 coverage 개선 |
 | AI 분석 | `PlayerAnalysisInput` fingerprint 기반 Redis completed-result cache, OpenAI Responses API Structured Outputs, sync·async 제공 | 결과 품질 평가, 인증 사용자 quota, provider 전략 |
 | 운영 경계 | Redis Match Detail·analysis result cache, PostgreSQL/Flyway, OpenAI usage·latency 계측, 분석 생성 rate limit, bounded async job과 in-flight dedupe | crash recovery, distributed 운영 정책, 배포·확장 구조 |
-| AI Automation | 구현하지 않음 | 명시적 trigger와 Backend rule을 기반으로 기존 분석 job을 재사용 |
+| AI Automation | persisted Ranked Solo cursor·idempotent execution·bounded scheduler와 기존 analysis job 재사용, 429 이후 JVM-local Riot cooldown | distributed scheduler/claim, automation quota, notification |
 | Tool-using Agent | 구현하지 않음 | Application Service를 감싼 Backend Tool로 질의 응답을 구성 |
 | RAG / Vector Search | 구현하지 않음 | 비정형 지식 검색이 실제 필요할 때 PostgreSQL + pgvector부터 검토 |
 
@@ -65,6 +65,8 @@ Riot Games API
 
 분석 생성을 보호하기 위해 sync·async POST는 같은 client/IP 기반 quota를 사용합니다. async POST는 quota를 먼저 소비한 뒤 in-flight dedupe를 확인합니다. 따라서 중복 POST도 quota를 소비하지만, dedupe hit은 새 executor 작업이나 Riot/OpenAI 호출을 만들지 않습니다. 구체적인 lifecycle, backpressure, recovery 제한과 rate-limit 정책은 [아키텍처](docs/architecture.md), [ADR-009](docs/adr/009-introduce-asynchronous-player-analysis-jobs.md), [ADR-010](docs/adr/010-use-in-memory-analysis-generation-rate-limit.md)을 따릅니다.
 
+Riot 429를 받으면 공통 HTTP 경계가 `Retry-After` 동안 같은 JVM의 신규 Riot 호출을 보수적으로 멈춥니다. header가 없거나 유효하지 않으면 `RIOT_COOLDOWN_FALLBACK`(기본 `60s`)을 사용합니다. Automation은 이 기간 중 tick을 건너뛰며 cursor를 성공처럼 갱신하지 않습니다. 이 state는 process restart·여러 instance·외부 script와 공유되지 않고, 첫 429를 예방하거나 자동 retry하지 않습니다. 자세한 trade-off는 [ADR-013](docs/adr/013-use-jvm-local-riot-outbound-cooldown.md)을 따릅니다.
+
 ## Backend와 LLM의 책임
 
 ```text
@@ -92,7 +94,7 @@ LangChain, LangGraph, 별도 Vector DB 같은 framework는 실제 복잡도를 �
 
 현재 사용 중인 기술은 Kotlin, Spring Boot, JDK 21, Spring MVC `RestClient`, PostgreSQL, Spring Data JPA, Flyway, Redis, Caffeine, Bucket4j, Docker, OpenAI Java SDK입니다.
 
-Spring Security, AWS, 인증 사용자 기준 quota, 다중 LLM Provider, AI Automation, Tool-using Agent, RAG는 현재 구현 범위가 아닙니다.
+Spring Security, AWS, 인증 사용자 기준 quota, 다중 LLM Provider, Tool-using Agent, RAG는 현재 구현 범위가 아닙니다.
 
 ## 문서
 

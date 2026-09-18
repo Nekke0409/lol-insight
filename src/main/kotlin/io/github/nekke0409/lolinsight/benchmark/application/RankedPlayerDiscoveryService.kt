@@ -2,9 +2,10 @@ package io.github.nekke0409.lolinsight.benchmark.application
 
 import io.github.nekke0409.lolinsight.benchmark.domain.SampledRankedPlayer
 import io.github.nekke0409.lolinsight.benchmark.infrastructure.riot.RiotLeagueClient
-import io.github.nekke0409.lolinsight.global.riot.RiotApiResponseException
+import io.github.nekke0409.lolinsight.global.riot.RiotApiException
+import io.github.nekke0409.lolinsight.global.riot.isRateLimited
+import io.github.nekke0409.lolinsight.global.riot.rateLimitRetryAfterSeconds
 import io.github.nekke0409.lolinsight.match.domain.RankedSoloQueue
-import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
 import java.time.Clock
 
@@ -62,14 +63,14 @@ class RankedPlayerDiscoveryService(
             val pagePuuids =
                 try {
                     riotLeagueClient.findRankedPlayerPuuidsOnPage(tier, division, page)
-                } catch (exception: RiotApiResponseException) {
-                    if (exception.statusCode == HttpStatus.TOO_MANY_REQUESTS) {
+                } catch (exception: RiotApiException) {
+                    if (exception.isRateLimited()) {
                         return PagedRankedPlayerDiscoveryResult(
                             players = playersByPuuid.values.toList(),
                             discoveredPlayers = discoveredPlayers,
                             pagesProcessed = pagesProcessed,
                             rateLimitStopped = true,
-                            retryAfterSeconds = exception.retryAfterSeconds,
+                            retryAfterSeconds = exception.rateLimitRetryAfterSeconds(),
                         )
                     }
                     throw exception

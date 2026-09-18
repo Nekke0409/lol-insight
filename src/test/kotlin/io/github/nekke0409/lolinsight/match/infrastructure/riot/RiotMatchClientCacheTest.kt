@@ -1,5 +1,6 @@
 package io.github.nekke0409.lolinsight.match.infrastructure.riot
 
+import io.github.nekke0409.lolinsight.global.riot.RiotApiCooldownException
 import io.github.nekke0409.lolinsight.global.riot.RiotApiEmptyResponseException
 import io.github.nekke0409.lolinsight.global.riot.RiotApiHttpClient
 import io.github.nekke0409.lolinsight.global.riot.RiotApiInvalidResponseException
@@ -111,6 +112,17 @@ class RiotMatchClientCacheTest {
             }
         }
         verifyMatchDetailRequest("KR_invalid", 2)
+    }
+
+    @Test
+    fun `returns a cached Match Detail while the shared Riot HTTP gate is cooling down`() {
+        stubMatchDetail("KR_cached")
+
+        val first = client.findMatchById("KR_cached")
+        stubMatchDetailFailure("KR_cached", RiotApiCooldownException(60))
+
+        assertEquals(first, client.findMatchById("KR_cached"))
+        verifyMatchDetailRequest("KR_cached", 1)
     }
 
     private fun stubMatchDetail(matchId: String) {

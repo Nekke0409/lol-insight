@@ -14,6 +14,7 @@ import org.springframework.web.client.RestClient
 import org.springframework.web.client.RestClientException
 import java.net.InetSocketAddress
 import java.net.URI
+import java.time.Clock
 import java.time.Duration
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -37,6 +38,11 @@ class RiotApiHttpClientTest {
                         key = "test-api-key",
                         platformBaseUrl = java.net.URI.create("https://platform.test"),
                         regionalBaseUrl = java.net.URI.create("https://regional.test"),
+                    ),
+                cooldown =
+                    RiotApiCooldown(
+                        RiotApiProperties(key = "test-api-key"),
+                        Clock.systemUTC(),
                     ),
             )
     }
@@ -93,21 +99,27 @@ class RiotApiHttpClientTest {
     }
 
     @Test
-    fun `missing or invalid Retry-After is ignored without replacing the Riot response exception`() {
-        server
-            .expect(requestTo("https://platform.test/missing-retry-after"))
-            .andRespond(withStatus(HttpStatus.TOO_MANY_REQUESTS))
-        server
-            .expect(requestTo("https://platform.test/invalid-retry-after"))
-            .andRespond(
-                withStatus(HttpStatus.TOO_MANY_REQUESTS)
-                    .header(HttpHeaders.RETRY_AFTER, "not-a-number"),
-            )
+    fun `missing or invalid Retry-After is preserved as absent while activating fallback cooldown`() {
+        listOf(null, "not-a-number", "-1").forEachIndexed { index, retryAfter ->
+            val builder = RestClient.builder()
+            val individualServer = MockRestServiceServer.bindTo(builder).build()
+            val properties = RiotApiProperties(key = "test-api-key", platformBaseUrl = URI.create("https://platform.test"))
+            val individualClient =
+                RiotApiHttpClient(
+                    restClient = builder.build(),
+                    properties = properties,
+                    cooldown = RiotApiCooldown(properties, Clock.systemUTC()),
+                )
+            val path = "/retry-after-$index"
+            val response = withStatus(HttpStatus.TOO_MANY_REQUESTS)
+            if (retryAfter != null) {
+                response.header(HttpHeaders.RETRY_AFTER, retryAfter)
+            }
+            individualServer.expect(requestTo("https://platform.test$path")).andRespond(response)
 
-        listOf("/missing-retry-after", "/invalid-retry-after").forEach { path ->
             val exception =
                 assertFailsWith<RiotApiResponseException> {
-                    client.get(
+                    individualClient.get(
                         routing = RiotApiRouting.PLATFORM,
                         path = path,
                         responseType = String::class.java,
@@ -116,9 +128,59 @@ class RiotApiHttpClientTest {
 
             assertEquals(HttpStatus.TOO_MANY_REQUESTS, exception.statusCode)
             assertNull(exception.retryAfterSeconds)
+            assertEquals(
+                60,
+                assertFailsWith<RiotApiCooldownException> {
+                    individualClient.get(
+                        routing = RiotApiRouting.REGIONAL,
+                        path = "/must-not-reach-upstream",
+                        responseType = String::class.java,
+                    )
+                }.retryAfterSeconds,
+            )
+            individualServer.verify()
         }
+    }
 
-        server.verify()
+    @Test
+    fun `a 429 on one routing blocks a later request on the other routing before it reaches Riot`() {
+        val builder = RestClient.builder()
+        val individualServer = MockRestServiceServer.bindTo(builder).build()
+        val properties =
+            RiotApiProperties(
+                key = "test-api-key",
+                platformBaseUrl = URI.create("https://platform.test"),
+                regionalBaseUrl = URI.create("https://regional.test"),
+            )
+        val sharedClient =
+            RiotApiHttpClient(
+                restClient = builder.build(),
+                properties = properties,
+                cooldown = RiotApiCooldown(properties, Clock.systemUTC()),
+            )
+        individualServer
+            .expect(requestTo("https://platform.test/rate-limited"))
+            .andRespond(withStatus(HttpStatus.TOO_MANY_REQUESTS).header(HttpHeaders.RETRY_AFTER, "7"))
+
+        assertFailsWith<RiotApiResponseException> {
+            sharedClient.get(
+                routing = RiotApiRouting.PLATFORM,
+                path = "/rate-limited",
+                responseType = String::class.java,
+            )
+        }
+        assertEquals(
+            7,
+            assertFailsWith<RiotApiCooldownException> {
+                sharedClient.get(
+                    routing = RiotApiRouting.REGIONAL,
+                    path = "/must-not-reach-upstream",
+                    responseType = String::class.java,
+                )
+            }.retryAfterSeconds,
+        )
+
+        individualServer.verify()
     }
 
     @Test
@@ -145,6 +207,7 @@ class RiotApiHttpClientTest {
                 RiotApiHttpClient(
                     restClient = RiotApiConfiguration().riotApiRestClient(properties),
                     properties = properties,
+                    cooldown = RiotApiCooldown(properties, Clock.systemUTC()),
                 )
 
             val exception =

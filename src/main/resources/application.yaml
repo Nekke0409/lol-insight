@@ -25,6 +25,8 @@ riot:
     regional-base-url: ${RIOT_REGIONAL_BASE_URL:https://asia.api.riotgames.com}
     connect-timeout: ${RIOT_CONNECT_TIMEOUT:2s}
     read-timeout: ${RIOT_READ_TIMEOUT:5s}
+    # 429에 Retry-After가 없거나 유효하지 않을 때의 JVM-local cooldown 보수값이다.
+    cooldown-fallback: ${RIOT_COOLDOWN_FALLBACK:60s}
 
 openai:
   api-key: ${OPENAI_API_KEY:}

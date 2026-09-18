@@ -3,7 +3,8 @@ package io.github.nekke0409.lolinsight.benchmark.application
 import io.github.nekke0409.lolinsight.benchmark.domain.BenchmarkSample
 import io.github.nekke0409.lolinsight.benchmark.domain.SampledRankedPlayer
 import io.github.nekke0409.lolinsight.global.riot.RiotApiException
-import io.github.nekke0409.lolinsight.global.riot.RiotApiResponseException
+import io.github.nekke0409.lolinsight.global.riot.isRateLimited
+import io.github.nekke0409.lolinsight.global.riot.rateLimitRetryAfterSeconds
 import io.github.nekke0409.lolinsight.match.application.MatchDetailBatchLoader
 import io.github.nekke0409.lolinsight.match.application.MatchDetailLoadFailure
 import io.github.nekke0409.lolinsight.match.application.MatchDetailLoadSuccess
@@ -11,7 +12,6 @@ import io.github.nekke0409.lolinsight.match.application.MatchParticipantMetricsC
 import io.github.nekke0409.lolinsight.match.domain.Match
 import io.github.nekke0409.lolinsight.match.domain.RankedSoloQueue
 import io.github.nekke0409.lolinsight.match.infrastructure.riot.RiotMatchClient
-import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
 import java.time.Clock
 
@@ -51,7 +51,7 @@ class BenchmarkMatchCollectionService(
                     playerMatchListFailures += 1
                     if (exception.isRateLimited()) {
                         rateLimitStopped = true
-                        retryAfterSeconds = exception.retryAfterSeconds
+                        retryAfterSeconds = exception.rateLimitRetryAfterSeconds()
                         break
                     }
                     continue
@@ -116,7 +116,7 @@ class BenchmarkMatchCollectionService(
                     val riotException = detailResult.exception as? RiotApiException
                     if (riotException?.isRateLimited() == true) {
                         rateLimitStopped = true
-                        retryAfterSeconds = riotException.retryAfterSeconds
+                        retryAfterSeconds = riotException.rateLimitRetryAfterSeconds()
                     }
                 }
 
@@ -193,12 +193,6 @@ class BenchmarkMatchCollectionService(
             collectedAt = clock.instant(),
         )
     }
-
-    private fun RiotApiException.isRateLimited(): Boolean =
-        this is RiotApiResponseException && statusCode.value() == HttpStatus.TOO_MANY_REQUESTS.value()
-
-    private val RiotApiException.retryAfterSeconds: Long?
-        get() = (this as? RiotApiResponseException)?.retryAfterSeconds
 
     private companion object {
         const val MIN_MATCHES_PER_PLAYER = 1

@@ -15,4 +15,11 @@ data class RiotApiProperties(
     val regionalBaseUrl: URI = URI.create("https://asia.api.riotgames.com"),
     val connectTimeout: Duration = Duration.ofSeconds(2),
     val readTimeout: Duration = Duration.ofSeconds(5),
-)
+    val cooldownFallback: Duration = Duration.ofSeconds(60),
+) {
+    init {
+        require(!cooldownFallback.isNegative && !cooldownFallback.isZero) {
+            "cooldownFallback must be positive."
+        }
+    }
+}

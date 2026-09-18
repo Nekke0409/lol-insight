@@ -9,6 +9,7 @@ import io.github.nekke0409.lolinsight.analysis.application.PlayerAnalysisTranspo
 import io.github.nekke0409.lolinsight.analysis.job.application.AnalysisJobCapacityExceededException
 import io.github.nekke0409.lolinsight.analysis.job.application.AnalysisJobNotFoundException
 import io.github.nekke0409.lolinsight.analysis.ratelimit.AnalysisGenerationRateLimitExceededException
+import io.github.nekke0409.lolinsight.global.riot.RiotApiCooldownException
 import io.github.nekke0409.lolinsight.global.riot.RiotApiEmptyResponseException
 import io.github.nekke0409.lolinsight.global.riot.RiotApiInvalidResponseException
 import io.github.nekke0409.lolinsight.global.riot.RiotApiResponseException
@@ -72,6 +73,19 @@ class GlobalExceptionHandler {
 
     @ExceptionHandler(MatchNotFoundException::class)
     fun handleMatchNotFoundException(): ProblemDetail = ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, "Match not found.")
+
+    @ExceptionHandler(RiotApiCooldownException::class)
+    fun handleRiotApiCooldownException(exception: RiotApiCooldownException): ResponseEntity<ProblemDetail> {
+        val problemDetail =
+            ProblemDetail.forStatusAndDetail(HttpStatus.TOO_MANY_REQUESTS, "Riot Games requests are temporarily rate limited.").apply {
+                setProperty("code", "RIOT_API_COOLDOWN_ACTIVE")
+            }
+
+        return ResponseEntity
+            .status(HttpStatus.TOO_MANY_REQUESTS)
+            .header(HttpHeaders.RETRY_AFTER, exception.retryAfterSeconds.toString())
+            .body(problemDetail)
+    }
 
     @ExceptionHandler(RiotApiResponseException::class)
     fun handleRiotApiResponseException(exception: RiotApiResponseException): ResponseEntity<ProblemDetail> {
