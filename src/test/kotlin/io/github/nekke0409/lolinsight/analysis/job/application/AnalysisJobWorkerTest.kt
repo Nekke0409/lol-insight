@@ -32,7 +32,7 @@ class AnalysisJobWorkerTest {
         verify(lifecycleService).markRunningIfPending(COMMAND.jobId)
         verify(playerAnalysisService).analyze(COMMAND.gameName, COMMAND.tagLine, COMMAND.start, COMMAND.count)
         verify(lifecycleService).markSucceededIfRunning(COMMAND.jobId, RESULT)
-        verify(inFlightRegistry).remove(COMMAND.dedupeKey, COMMAND.jobId)
+        verify(inFlightRegistry).remove(requireNotNull(COMMAND.dedupeKey), COMMAND.jobId)
     }
 
     @Test
@@ -55,7 +55,7 @@ class AnalysisJobWorkerTest {
         worker.process(COMMAND)
 
         verify(lifecycleService).markFailedIfRunning(COMMAND.jobId, AnalysisJobFailureCode.RATE_LIMITED)
-        verify(inFlightRegistry).remove(COMMAND.dedupeKey, COMMAND.jobId)
+        verify(inFlightRegistry).remove(requireNotNull(COMMAND.dedupeKey), COMMAND.jobId)
     }
 
     @Test

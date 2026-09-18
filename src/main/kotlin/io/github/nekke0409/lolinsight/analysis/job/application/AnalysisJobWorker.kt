@@ -51,20 +51,20 @@ class AnalysisJobWorker(
     private fun completeSucceeded(
         jobId: java.util.UUID,
         result: io.github.nekke0409.lolinsight.analysis.application.PlayerAnalysisResult,
-        dedupeKey: AnalysisJobDedupeKey,
+        dedupeKey: AnalysisJobDedupeKey?,
     ) {
         if (lifecycleService.markSucceededIfRunning(jobId, result)) {
-            inFlightRegistry.remove(dedupeKey, jobId)
+            dedupeKey?.let { inFlightRegistry.remove(it, jobId) }
         }
     }
 
     private fun completeFailed(
         jobId: java.util.UUID,
         failureCode: AnalysisJobFailureCode,
-        dedupeKey: AnalysisJobDedupeKey,
+        dedupeKey: AnalysisJobDedupeKey?,
     ) {
         if (lifecycleService.markFailedIfRunning(jobId, failureCode)) {
-            inFlightRegistry.remove(dedupeKey, jobId)
+            dedupeKey?.let { inFlightRegistry.remove(it, jobId) }
         }
     }
 

@@ -28,4 +28,19 @@ class RiotAccountClient(
             }
             throw exception
         }
+
+    fun findByPuuid(puuid: String): RiotAccountResponse =
+        try {
+            riotApiHttpClient.get(
+                routing = RiotApiRouting.REGIONAL,
+                path = "/riot/account/v1/accounts/by-puuid/{puuid}",
+                uriVariables = mapOf("puuid" to puuid),
+                responseType = RiotAccountResponse::class.java,
+            )
+        } catch (exception: RiotApiResponseException) {
+            if (exception.statusCode.value() == HttpStatus.NOT_FOUND.value()) {
+                throw PlayerNotFoundException(exception)
+            }
+            throw exception
+        }
 }

@@ -7,9 +7,10 @@
 
 아직 구현되지 않은 세부사항은 필요 이상으로 미리 확정하지 않는다.
 
-이 문서에서 **현재 구현**은 code와 현재 contract 문서로 검증된 동작만 뜻한다. Automation, Tool-using Agent,
+이 문서에서 **현재 구현**은 code와 현재 contract 문서로 검증된 동작만 뜻한다. Tool-using Agent,
 RAG / Vector Search, deployment 확장처럼 아직 구현되지 않은 항목은 미래 방향과 경계로만 기록하며, 현재 제공 기능처럼
-표현하지 않는다.
+표현하지 않는다. 새 Ranked Solo Match 기반 Automation v0.1은 구현된 현재 기능이며, 이후 Automation 확장은 별도
+요구가 확인될 때만 추가한다.
 
 ## 1. 아키텍처 목표
 
@@ -725,9 +726,27 @@ completed-result cache와 async job의 terminal result JSONB persistence, provid
 retry/backoff, stale-job recovery는 아직 구현하지 않았다. 상세 contract는 [Player Analysis v0.2](ai/player-analysis-v0.2.md),
 결정 근거는 [ADR-007](adr/007-use-structured-llm-analysis-boundary.md), [ADR-011](adr/011-cache-completed-analysis-results-by-input.md)을 따른다.
 
-### 향후 Automation 경계
+### AI Automation v0.1
 
-Automation은 아직 구현하지 않았다. 구현 시에는 기존 통계와 `PlayerAnalysisService`를 복제하지 않고 다음 경계를 따른다.
+새 Ranked Solo Match 감지 기반 Automation이 구현됐다. `tracked_player_automation`은 PUUID와 persisted cursor를
+source of truth로 사용하고, `automation_execution`의 `(automation_id, detected_match_id)` unique constraint가 scheduler
+중복 trigger를 막는다. PUUID는 stable tracking identity이며, Riot ID는 실행 직전에만 Account-V1으로 해석해 job command에
+메모리로 전달한다. 현재 Riot adapter는 region routing을 application configuration으로 결정하므로 player별 routing은 저장하지
+않는다.
+
+기본 disabled scheduler는 due enabled automation을 5분마다 최대 10명씩 순차 조회한다. Match-V5 recent ID를
+`start=0`, `count=20`, `queue=420`으로 읽어 head가 cursor와 달라질 때만 기존 `AnalysisJobService`로 rolling job 하나를
+만든다. 초기 등록은 현재 head를 cursor baseline으로 저장하므로 과거 경기를 생성하지 않고, 여러 신규 match는 하나의
+rolling job으로 coalesce한다. job creation/capacity/Riot polling 실패는 cursor를 전진시키지 않는다.
+
+Automation은 HTTP client IP를 만들지 않으므로 generation rate limit 또는 HTTP in-flight dedupe를 재사용하지 않는다.
+대신 persisted execution이 idempotency를 보장하며, 생성된 job은 기존 bounded executor, `PlayerAnalysisService`,
+completed-result cache, provider failure lifecycle을 그대로 공유한다. public registration API, ownership, notification,
+distributed scheduler 및 automation quota는 구현하지 않았다. 상세 contract는
+[새 Ranked Solo Match 기반 Analysis Automation v0.1](automation/new-ranked-match-analysis-v0.1.md), 결정 근거는
+[ADR-012](adr/012-use-persisted-ranked-match-automation-trigger.md)를 따른다.
+
+Automation은 기존 통계와 `PlayerAnalysisService`를 복제하지 않고 다음 경계를 따른다.
 
 ```text
 Trigger
@@ -895,6 +914,7 @@ Riot API 오류를 서비스 관점의 오류로 변환한 뒤
 - 최근 Match 통계, `BenchmarkSample` 수집·영속화, exact Peer Benchmark와 comparison feature
 - OpenAI Structured Outputs 기반 `PlayerAnalysisResult`, usage·latency 및 completed-result cache 관측성
 - sync analysis와 persisted async `AnalysisJob`, bounded executor, generation rate limit, same-process in-flight dedupe
+- persisted PUUID tracking/cursor와 idempotent Ranked Solo Match Automation trigger, 기존 `AnalysisJob` 재사용
 - Match Detail·completed analysis result Redis cache, PostgreSQL/JPA/Flyway, 핵심 단위·통합 테스트
 
 ### 다음 확장 순서

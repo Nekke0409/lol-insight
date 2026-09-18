@@ -13,10 +13,19 @@ class PlayerService(
     ): PlayerResponse {
         val account = riotAccountClient.findByRiotId(gameName, tagLine)
 
-        return PlayerResponse(
-            puuid = account.puuid,
-            gameName = account.gameName,
-            tagLine = account.tagLine,
-        )
+        return account.toPlayerResponse()
     }
+
+    fun findByPuuid(puuid: String): PlayerResponse {
+        val account = riotAccountClient.findByPuuid(puuid)
+
+        return account.toPlayerResponse()
+    }
+
+    private fun io.github.nekke0409.lolinsight.player.infrastructure.riot.RiotAccountResponse.toPlayerResponse(): PlayerResponse =
+        PlayerResponse(
+            puuid = puuid,
+            gameName = gameName,
+            tagLine = tagLine,
+        )
 }

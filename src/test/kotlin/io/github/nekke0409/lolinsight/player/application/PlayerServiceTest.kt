@@ -30,4 +30,17 @@ class PlayerServiceTest {
         assertEquals("Hide on bush", response.gameName)
         assertEquals("KR1", response.tagLine)
     }
+
+    @Test
+    fun `finds a player by stable PUUID when automation needs the current Riot ID`() {
+        `when`(riotAccountClient.findByPuuid("stable-puuid"))
+            .thenReturn(RiotAccountResponse("stable-puuid", "Hide on bush", "KR1"))
+
+        val response = playerService.findByPuuid("stable-puuid")
+
+        verify(riotAccountClient).findByPuuid("stable-puuid")
+        assertEquals("stable-puuid", response.puuid)
+        assertEquals("Hide on bush", response.gameName)
+        assertEquals("KR1", response.tagLine)
+    }
 }

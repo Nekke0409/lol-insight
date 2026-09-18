@@ -35,6 +35,15 @@ class AnalysisJobServiceTest {
     }
 
     @Test
+    fun `creates an automation job without reusing the HTTP in-flight registry`() {
+        `when`(lifecycleService.createPending()).thenReturn(CREATED)
+
+        assertEquals(CREATED, service.createFromAutomation(GAME_NAME, TAG_LINE, 0, 20))
+
+        verify(dispatcher).dispatch(AnalysisJobCommand(CREATED.jobId, GAME_NAME, TAG_LINE, 0, 20, null))
+    }
+
+    @Test
     fun `marks a rejected pending job as capacity exceeded and does not return it`() {
         `when`(lifecycleService.createPending()).thenReturn(CREATED)
         doThrow(RejectedExecutionException())

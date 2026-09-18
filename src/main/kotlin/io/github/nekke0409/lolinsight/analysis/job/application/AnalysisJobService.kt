@@ -51,4 +51,29 @@ class AnalysisJobService(
             }
         }
     }
+
+    /**
+     * Creates an asynchronous job for a backend-determined event.
+     *
+     * Automation has no HTTP client identity, so it intentionally does not participate in the
+     * HTTP in-flight registry. Its persisted trigger record provides the idempotency boundary.
+     */
+    fun createFromAutomation(
+        gameName: String,
+        tagLine: String,
+        start: Int,
+        count: Int,
+    ): AnalysisJobCreated {
+        val created = lifecycleService.createPending()
+        val command = AnalysisJobCommand(created.jobId, gameName, tagLine, start, count, dedupeKey = null)
+
+        try {
+            dispatcher.dispatch(command)
+        } catch (_: RejectedExecutionException) {
+            lifecycleService.markRejectedIfPending(created.jobId)
+            throw AnalysisJobCapacityExceededException()
+        }
+
+        return created
+    }
 }

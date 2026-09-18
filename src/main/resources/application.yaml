@@ -46,3 +46,12 @@ analysis:
     executor:
       worker-threads: ${ANALYSIS_JOB_WORKER_THREADS:1}
       queue-capacity: ${ANALYSIS_JOB_QUEUE_CAPACITY:2}
+  automation:
+    # 기본값은 false다. 명시적으로 켜기 전에는 Riot/OpenAI 비용을 발생시키지 않는다.
+    enabled: ${ANALYSIS_AUTOMATION_ENABLED:false}
+    poll-interval: ${ANALYSIS_AUTOMATION_POLL_INTERVAL:5m}
+    batch-size: ${ANALYSIS_AUTOMATION_BATCH_SIZE:10}
+    # 로컬에서만 opt-in으로 Riot ID를 초기 등록할 수 있다. 형식: gameName#tagLine,gameName#tagLine
+    bootstrap:
+      enabled: ${ANALYSIS_AUTOMATION_BOOTSTRAP_ENABLED:false}
+      players: ${ANALYSIS_AUTOMATION_BOOTSTRAP_PLAYERS:}

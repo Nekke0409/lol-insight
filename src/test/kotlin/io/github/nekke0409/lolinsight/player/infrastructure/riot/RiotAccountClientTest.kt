@@ -56,6 +56,24 @@ class RiotAccountClientTest {
     }
 
     @Test
+    fun `finds an account by PUUID using Asia regional routing`() {
+        server
+            .expect(requestTo("https://regional.test/riot/account/v1/accounts/by-puuid/stable-puuid"))
+            .andRespond(
+                withStatus(HttpStatus.OK)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body("{\"puuid\":\"stable-puuid\",\"gameName\":\"Hide on bush\",\"tagLine\":\"KR1\"}"),
+            )
+
+        val response = client.findByPuuid("stable-puuid")
+
+        assertEquals("stable-puuid", response.puuid)
+        assertEquals("Hide on bush", response.gameName)
+        assertEquals("KR1", response.tagLine)
+        server.verify()
+    }
+
+    @Test
     fun `converts an Account API 404 response to Player not found`() {
         server
             .expect(requestTo("https://regional.test/riot/account/v1/accounts/by-riot-id/unknown/KR1"))
