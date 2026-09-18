@@ -1,5 +1,6 @@
 package io.github.nekke0409.lolinsight.analysis.application
 
+import io.github.nekke0409.lolinsight.benchmark.application.BenchmarkSampleProperties
 import io.github.nekke0409.lolinsight.benchmark.domain.BenchmarkCohort
 import io.github.nekke0409.lolinsight.benchmark.domain.BenchmarkScope
 import io.github.nekke0409.lolinsight.comparison.application.MetricComparison
@@ -10,6 +11,7 @@ import io.github.nekke0409.lolinsight.comparison.application.PlayerComparisonMet
 import io.github.nekke0409.lolinsight.rank.application.PlayerRankContext
 import org.junit.jupiter.api.Test
 import tools.jackson.databind.json.JsonMapper
+import java.time.Duration
 import java.time.Instant
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -17,7 +19,7 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNull
 
 class PlayerAnalysisInputMapperTest {
-    private val mapper = PlayerAnalysisInputMapper()
+    private val mapper = PlayerAnalysisInputMapper(BenchmarkSampleProperties())
 
     @Test
     fun `maps an available POSITION comparison with role-level statistics`() {
@@ -36,6 +38,7 @@ class PlayerAnalysisInputMapperTest {
         assertNull(comparison.benchmarkCohort.championId)
         assertEquals(40, comparison.benchmarkSampleCount)
         assertEquals(13, comparison.benchmarkUniquePlayerCount)
+        assertEquals(Duration.ofDays(30), input.benchmarkFreshness.maxSampleAge)
         assertMetricValues(comparison, playerValue = 12.1, benchmarkMean = 11.1)
     }
 
@@ -98,6 +101,15 @@ class PlayerAnalysisInputMapperTest {
 
         assertFailsWith<IllegalArgumentException> { position.copy(scope = BenchmarkScope.CHAMPION_POSITION) }
         assertFailsWith<IllegalArgumentException> { championPosition.copy(scope = BenchmarkScope.POSITION) }
+    }
+
+    @Test
+    fun `maps the configured benchmark sample age without a query timestamp`() {
+        val input =
+            PlayerAnalysisInputMapper(BenchmarkSampleProperties(maxAge = Duration.ofDays(7)))
+                .map(feature(positionAvailable(playerValue = 12.1, benchmarkMean = 11.1)))
+
+        assertEquals(Duration.ofDays(7), input.benchmarkFreshness.maxSampleAge)
     }
 
     private fun assertMetricValues(

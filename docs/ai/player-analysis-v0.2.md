@@ -88,6 +88,7 @@ token optimizer, 분석 결과 영속화는 추가하지 않는다.
 | `benchmarkCohort` | region, queue, tier, division, position 및 일치하는 nullable champion identity |
 | `benchmarkSampleCount`, `benchmarkUniquePlayerCount` | 대상 플레이어 self-exclusion 후의 benchmark 수 |
 | `metrics` | Backend가 계산한 player value, benchmark mean/median/p25/p75/p90, mean/median 차이 |
+| `benchmarkFreshness.maxSampleAge` | LLM에 전달하는 peer 표본 유효기간 정책. query의 `asOf` timestamp는 포함하지 않는다. |
 
 모델은 scope와 champion identity 조합이 유효한지, 중첩된 benchmark cohort가 입력의 position 및 champion
 identity와 일치하는지 검증한다. 따라서 POSITION 입력에는 champion ID가 들어갈 수 없고,
@@ -95,6 +96,12 @@ CHAMPION_POSITION 입력은 champion ID를 생략할 수 없다.
 
 `PlayerAnalysisInput`에는 PUUID, Riot ID, Match ID, raw Riot JSON, DB entity, Redis value, API key가 없다.
 target PUUID는 Backend의 aggregate self-exclusion 경계 안에서만 사용한다.
+
+peer 표본은 `gameStartTimestamp` 기준 최근 30일 rolling window가 기본이지만, 사용자의 분석 표본은 최근 Ranked Solo 최대
+20경기다. 두 범위는 같은 기간으로 정렬됐다고 표현하지 않는다. `benchmarkFreshness`는 cache identity와 LLM 설명에 필요한
+정책 값만 전달하며, 매 요청의 `asOf`/`fromInclusive`/`toExclusive` 같은 query metadata는 넣지 않는다. 유효기간 안에도 여러
+patch가 섞일 수 있고 `rankCapturedAt`은 경기 당시 rank가 아니므로, prompt는 최신 patch, 정확한 patch 평균, 경기 당시 rank를
+주장하지 않는다.
 
 ## Completed-result cache
 
@@ -110,13 +117,13 @@ PlayerAnalysisInput
         -> miss: OpenAI generation 성공 -> PlayerAnalysisResult 저장 -> 반환
 ```
 
-- key version 기본값은 `analysis-result-v2`, TTL 기본값은 `30m`이며 각각 `ANALYSIS_RESULT_CACHE_VERSION`,
+- key version 기본값은 `analysis-result-v3`, TTL 기본값은 `30m`이며 각각 `ANALYSIS_RESULT_CACHE_VERSION`,
   `ANALYSIS_RESULT_CACHE_TTL`로 override할 수 있다. freshness의 일차 기준은 TTL이 아니라 input fingerprint다. match/rank/
   benchmark 변화가 LLM 입력을 바꾸면 새 fingerprint가 miss를 만든다. 반대로 raw 데이터가 바뀌어도 최종 input이 같으면 같은
   결과를 재사용한다.
 - prompt semantics, Structured Output schema, result contract, generation policy 또는 AI 입력 의미를 바꾸는 경우 cache
-  version을 명시적으로 올린다. Ranked Solo 전용 사용자 입력으로 의미가 바뀌며 v2를 사용한다. 기존 v1 key는 삭제하거나
-  덮어쓰지 않고 TTL에 따라 만료한다. version은 자동으로 계산하지 않는다.
+  version을 명시적으로 올린다. Ranked Solo 전용 사용자 입력으로 의미가 바뀌며 v2를 사용했고, peer 유효기간 정책을 입력에
+  포함하면서 v3를 사용한다. 기존 v1/v2 key는 삭제하거나 덮어쓰지 않고 TTL에 따라 만료한다. version은 자동으로 계산하지 않는다.
 - 성공적으로 생성된 provider-independent `PlayerAnalysisResult`만 JSON으로 저장한다. raw prompt/response, SDK object,
   request ID, token usage, Riot ID/PUUID/match ID/API key는 저장하지 않는다. fingerprint와 cache metric tag에도 raw input은 없다.
 - Redis lookup/write, fingerprint 생성, metric 기록 실패는 각각 miss 또는 저장 생략으로 처리한다. corrupted Redis value는

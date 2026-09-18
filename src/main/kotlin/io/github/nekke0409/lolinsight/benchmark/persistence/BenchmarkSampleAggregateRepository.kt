@@ -2,6 +2,7 @@ package io.github.nekke0409.lolinsight.benchmark.persistence
 
 import io.github.nekke0409.lolinsight.benchmark.domain.BenchmarkCohort
 import io.github.nekke0409.lolinsight.benchmark.domain.BenchmarkMetricDistribution
+import io.github.nekke0409.lolinsight.benchmark.domain.BenchmarkQueryWindow
 import io.github.nekke0409.lolinsight.benchmark.domain.BenchmarkScope
 import io.github.nekke0409.lolinsight.benchmark.domain.PeerBenchmark
 import org.springframework.jdbc.core.ResultSetExtractor
@@ -9,27 +10,33 @@ import org.springframework.jdbc.core.namedparam.MapSqlParameterSource
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
 import org.springframework.stereotype.Repository
 import java.sql.ResultSet
+import java.sql.Types
+import java.time.ZoneOffset
 
 @Repository
 class BenchmarkSampleAggregateRepository(
     private val jdbcTemplate: NamedParameterJdbcTemplate,
 ) {
-    fun findBenchmark(cohort: BenchmarkCohort): PeerBenchmark? = queryBenchmark(cohort, aggregateSql(cohort))
+    fun findBenchmark(
+        cohort: BenchmarkCohort,
+        window: BenchmarkQueryWindow,
+    ): PeerBenchmark? = queryBenchmark(cohort, aggregateSql(cohort), aggregateParameters(cohort, window))
 
     fun findBenchmarkExcludingPlayer(
         cohort: BenchmarkCohort,
         excludedPuuid: String,
+        window: BenchmarkQueryWindow,
     ): PeerBenchmark? =
         queryBenchmark(
             cohort = cohort,
             sql = "${aggregateSql(cohort)}\n  AND puuid <> :excludedPuuid",
-            parameters = aggregateParameters(cohort).addValue("excludedPuuid", excludedPuuid),
+            parameters = aggregateParameters(cohort, window).addValue("excludedPuuid", excludedPuuid),
         )
 
     private fun queryBenchmark(
         cohort: BenchmarkCohort,
         sql: String,
-        parameters: MapSqlParameterSource = aggregateParameters(cohort),
+        parameters: MapSqlParameterSource,
     ): PeerBenchmark? =
         jdbcTemplate.query(
             sql,
@@ -37,7 +44,10 @@ class BenchmarkSampleAggregateRepository(
             ResultSetExtractor { resultSet -> resultSet.toPeerBenchmark(cohort) },
         )
 
-    private fun aggregateParameters(cohort: BenchmarkCohort): MapSqlParameterSource =
+    private fun aggregateParameters(
+        cohort: BenchmarkCohort,
+        window: BenchmarkQueryWindow,
+    ): MapSqlParameterSource =
         MapSqlParameterSource(
             mapOf(
                 "region" to cohort.region,
@@ -47,6 +57,14 @@ class BenchmarkSampleAggregateRepository(
                 "position" to cohort.position,
                 "championId" to cohort.championId,
             ),
+        ).addValue(
+            "fromInclusive",
+            window.fromInclusive.atOffset(ZoneOffset.UTC),
+            Types.TIMESTAMP_WITH_TIMEZONE,
+        ).addValue(
+            "toExclusive",
+            window.toExclusive.atOffset(ZoneOffset.UTC),
+            Types.TIMESTAMP_WITH_TIMEZONE,
         )
 
     private fun ResultSet.toPeerBenchmark(cohort: BenchmarkCohort): PeerBenchmark? {
@@ -175,6 +193,8 @@ class BenchmarkSampleAggregateRepository(
               AND tier = :tier
               AND division = :division
               AND position = :position
+              AND game_start_timestamp >= :fromInclusive
+              AND game_start_timestamp < :toExclusive
             """.trimIndent()
 
         val CHAMPION_POSITION_AGGREGATE_SQL =

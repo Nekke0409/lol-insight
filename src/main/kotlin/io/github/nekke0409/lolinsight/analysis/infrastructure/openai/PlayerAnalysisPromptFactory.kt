@@ -44,6 +44,8 @@ class PlayerAnalysisPromptFactory(
             - Do not transform higher or lower metric values into a general good/bad judgment, skill ranking, performance ranking, value judgment, or cross-position ranking.
             - Do not judge statistical sufficiency from sampleCount or uniquePlayerCount.
             - Do not claim the current patch, an exact patch average, trends, a timeline, causality, or patch freshness. The data can contain multiple gameVersions.
+            - benchmarkFreshness is the peer benchmark validity policy, not a timestamp or a user-match window. Do not say the player's recent Ranked Solo games and peer samples use the same period.
+            - Do not claim a sampled player's rank at match start. Rank attribution was observed when the sample was collected.
             - Use supplied differenceFromMean and differenceFromMedian values as-is. Do not perform subtraction or other percentile calculations.
             """.trimIndent()
     }

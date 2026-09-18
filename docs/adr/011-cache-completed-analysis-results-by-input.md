@@ -68,3 +68,14 @@ AI comparison의 사용자 표본은 이후 일반 최근 경기에서 최근 Ra
 `PlayerAnalysisInput` 모양을 유지하더라도 결과가 해석하는 사용자 성과의 의미를 바꾸므로, 이 ADR의 명시적 version bump 규칙을
 적용해 기본 key version을 `analysis-result-v2`로 올린다. 기존 `analysis-result-v1` key는 삭제하거나 결과를 덮어쓰지 않고
 TTL에 따라 자연 만료한다.
+
+## 후속 구현: Peer Benchmark 유효기간 정책
+
+Peer Benchmark의 `gameStartTimestamp` 기반 rolling 유효기간을 도입하면서, LLM에 전달하는 provider-independent
+`PlayerAnalysisInput`에 `benchmarkFreshness.maxSampleAge` 정책 값을 포함한다. 각 query의 `asOf`와 window boundary는 Backend
+query context이며 입력에 넣지 않는다. 따라서 같은 effective input과 정책이면 시간이 흘러도 동일 fingerprint를 유지하고,
+유효 표본 분포·count·availability가 바뀌면 comparison 자체가 입력을 바꾼다. max age 정책을 바꾸면 직접 input에 반영돼
+fingerprint도 달라진다.
+
+이는 AI 입력 의미 변경이므로 기본 cache version을 `analysis-result-v3`로 올린다. 기존 v1/v2 key는 삭제·덮어쓰기 없이 TTL에
+따라 자연 만료한다. Peer Benchmark 유효기간 결정의 근거와 retention 구분은 ADR-014에 기록한다.

@@ -38,7 +38,7 @@ openai:
 analysis:
   result-cache:
     ttl: ${ANALYSIS_RESULT_CACHE_TTL:30m}
-    version: ${ANALYSIS_RESULT_CACHE_VERSION:analysis-result-v2}
+    version: ${ANALYSIS_RESULT_CACHE_VERSION:analysis-result-v3}
   rate-limit:
     capacity: ${ANALYSIS_RATE_LIMIT_CAPACITY:3}
     window: ${ANALYSIS_RATE_LIMIT_WINDOW:1m}
@@ -57,3 +57,8 @@ analysis:
     bootstrap:
       enabled: ${ANALYSIS_AUTOMATION_BOOTSTRAP_ENABLED:false}
       players: ${ANALYSIS_AUTOMATION_BOOTSTRAP_PLAYERS:}
+
+benchmark:
+  sample:
+    # gameStartTimestamp 기준 rolling validity window다. 저장 retention과 별개다.
+    max-age: ${BENCHMARK_SAMPLE_MAX_AGE:30d}

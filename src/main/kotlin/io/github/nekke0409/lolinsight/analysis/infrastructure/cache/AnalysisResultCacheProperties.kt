@@ -3,7 +3,7 @@ package io.github.nekke0409.lolinsight.analysis.infrastructure.cache
 import org.springframework.boot.context.properties.ConfigurationProperties
 import java.time.Duration
 
-const val ANALYSIS_RESULT_CACHE_VERSION = "analysis-result-v2"
+const val ANALYSIS_RESULT_CACHE_VERSION = "analysis-result-v3"
 
 @ConfigurationProperties("analysis.result-cache")
 data class AnalysisResultCacheProperties(

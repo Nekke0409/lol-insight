@@ -26,8 +26,8 @@ Riot의 공식 Ranked Ladder를 대체하는 MMR, ELO 또는 자체 Skill Rating
 | 영역 | 현재 구현 | 향후 방향 |
 | --- | --- | --- |
 | Riot 데이터 | Account-V1 Riot ID 조회, Match-V5 Match ID/Detail 조회, League-V4 기반 KR Ranked Solo 표본 player discovery | representative sampling, scheduled collection 정책 |
-| 데이터 처리·통계 | Riot DTO 정규화, 일반 전적용 최근 전체 경기 통계와 AI comparison용 최근 Ranked Solo 경기 통계, participant-level `BenchmarkSample` 저장 | 추가 분석 feature와 freshness 정책 |
-| Peer Benchmark | exact cohort 집계, target self-exclusion, role/champion-position scope 비교 | 표본 품질과 coverage 개선 |
+| 데이터 처리·통계 | Riot DTO 정규화, 일반 전적용 최근 전체 경기 통계와 AI comparison용 최근 Ranked Solo 경기 통계, participant-level `BenchmarkSample` 저장 | 추가 분석 feature |
+| Peer Benchmark | `gameStartTimestamp` 기준 최근 30일 rolling 유효 표본 집계, target self-exclusion, role/champion-position scope 비교 | 표본 품질과 coverage 개선 |
 | AI 분석 | `PlayerAnalysisInput` fingerprint 기반 Redis completed-result cache, OpenAI Responses API Structured Outputs, sync·async 제공 | 결과 품질 평가, 인증 사용자 quota, provider 전략 |
 | 운영 경계 | Redis Match Detail·analysis result cache, PostgreSQL/Flyway, OpenAI usage·latency 계측, 분석 생성 rate limit, bounded async job과 in-flight dedupe | crash recovery, distributed 운영 정책, 배포·확장 구조 |
 | AI Automation | persisted Ranked Solo cursor·idempotent execution·bounded scheduler와 기존 analysis job 재사용, 429 이후 JVM-local Riot cooldown | distributed scheduler/claim, automation quota, notification |
@@ -42,6 +42,11 @@ key나 value에 넣지 않습니다. sync와 async worker는 같은 `PlayerAnaly
 `queue=RankedSoloQueue.ID`로 조회한 최근 **Ranked Solo** 목록만 사용하며, `start`와 `count`도 그 filtered 목록의
 pagination입니다. Detail 응답은 comparison 통계 직전에 다시 queue를 검증하므로, upstream 목록에 잘못 섞인 Flex·일반·ARAM
 경기는 games, 승률, 7개 지표와 AI 입력에 포함되지 않습니다.
+
+Peer Benchmark의 표본은 `BENCHMARK_SAMPLE_MAX_AGE`(기본 `30d`)에 따라 `gameStartTimestamp`가 조회 기준 시각 이전의
+최근 30 × 24시간 `[fromInclusive, toExclusive)`에 있는 경우만 집계와 coverage에 포함합니다. 이는 query-time exclusion일
+뿐 DB retention·재수집 정책이 아니며, `collectedAt`이나 `rankCapturedAt`로 오래된 경기를 되살리지 않습니다. 사용자의 최근
+Ranked Solo 최대 20경기 분석 범위와 peer 표본의 30일 유효기간은 서로 다른 정책입니다.
 
 async 요청의 in-flight dedupe는 이 cache와 별개입니다. 같은 client의 같은 HTTP request가 `PENDING` 또는 `RUNNING`일 때만
 기존 job을 재사용하며, terminal `AnalysisJob`을 재사용하거나 다른 client에 job ID를 공유하지 않습니다.
@@ -104,6 +109,7 @@ Spring Security, AWS, 인증 사용자 기준 quota, 다중 LLM Provider, Tool-u
 - [플레이어 분석 v0.2](docs/ai/player-analysis-v0.2.md): Structured Output 분석 contract
 - [Async Player Analysis Job v0.1](docs/ai/async-player-analysis-jobs-v0.1.md): polling, lifecycle, dedupe와 recovery 제한
 - [Peer Benchmark v0.2](docs/benchmark/peer-benchmark-v0.2.md): scope와 availability 정책
+- [ADR-014](docs/adr/014-use-game-start-validity-window-for-peer-benchmark.md): Peer Benchmark 유효 표본 기간 결정
 
 현재 구현과 설정의 source of truth는 code, `README.md`, `docs/architecture.md`, `docs/adr/`입니다. Project Memory나 AI assistant context는 저장소의 실제 상태를 대체하지 않습니다.
 

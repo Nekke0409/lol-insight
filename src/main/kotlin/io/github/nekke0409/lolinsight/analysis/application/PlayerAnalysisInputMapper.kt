@@ -1,5 +1,6 @@
 package io.github.nekke0409.lolinsight.analysis.application
 
+import io.github.nekke0409.lolinsight.benchmark.application.BenchmarkSampleProperties
 import io.github.nekke0409.lolinsight.comparison.application.MetricComparison
 import io.github.nekke0409.lolinsight.comparison.application.PlayerCohortComparison
 import io.github.nekke0409.lolinsight.comparison.application.PlayerCohortComparisonStatus
@@ -8,7 +9,9 @@ import io.github.nekke0409.lolinsight.comparison.application.PlayerComparisonMet
 import org.springframework.stereotype.Component
 
 @Component
-class PlayerAnalysisInputMapper {
+class PlayerAnalysisInputMapper(
+    private val benchmarkSampleProperties: BenchmarkSampleProperties,
+) {
     fun map(feature: PlayerComparisonFeature): PlayerAnalysisInput {
         val comparisons =
             feature.comparisons
@@ -18,6 +21,7 @@ class PlayerAnalysisInputMapper {
         return PlayerAnalysisInput(
             comparisons = comparisons,
             analysisLimitations = ANALYSIS_LIMITATIONS.sortedBy(PlayerAnalysisLimitation::code),
+            benchmarkFreshness = PlayerAnalysisBenchmarkFreshness(benchmarkSampleProperties.maxAge),
         )
     }
 

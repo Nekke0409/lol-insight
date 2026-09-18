@@ -2,6 +2,7 @@ package io.github.nekke0409.lolinsight.comparison.application
 
 import io.github.nekke0409.lolinsight.benchmark.application.BenchmarkAvailabilityConfiguration
 import io.github.nekke0409.lolinsight.benchmark.application.BenchmarkAvailabilityPolicy
+import io.github.nekke0409.lolinsight.benchmark.application.BenchmarkQueryWindowFactory
 import io.github.nekke0409.lolinsight.benchmark.application.PeerBenchmarkQueryService
 import io.github.nekke0409.lolinsight.benchmark.domain.BenchmarkCohort
 import io.github.nekke0409.lolinsight.benchmark.domain.BenchmarkSample
@@ -24,7 +25,9 @@ import org.springframework.test.context.DynamicPropertySource
 import org.testcontainers.junit.jupiter.Container
 import org.testcontainers.junit.jupiter.Testcontainers
 import org.testcontainers.postgresql.PostgreSQLContainer
+import java.time.Clock
 import java.time.Instant
+import java.time.ZoneOffset
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
@@ -39,10 +42,12 @@ import kotlin.test.assertNull
 @Import(
     BenchmarkAvailabilityConfiguration::class,
     BenchmarkAvailabilityPolicy::class,
+    BenchmarkQueryWindowFactory::class,
     BenchmarkSampleAggregateRepository::class,
     PeerBenchmarkQueryService::class,
     PlayerComparisonFeatureService::class,
     PlayerComparisonFeatureServiceIntegrationTest.ContextServiceStubConfiguration::class,
+    PlayerComparisonFeatureServiceIntegrationTest.FixedClockConfiguration::class,
 )
 @Testcontainers
 class PlayerComparisonFeatureServiceIntegrationTest {
@@ -101,6 +106,12 @@ class PlayerComparisonFeatureServiceIntegrationTest {
     class ContextServiceStubConfiguration {
         @Bean
         fun playerComparisonContextService(): PlayerComparisonContextService = mock(PlayerComparisonContextService::class.java)
+    }
+
+    @TestConfiguration(proxyBeanMethods = false)
+    class FixedClockConfiguration {
+        @Bean
+        fun clock(): Clock = Clock.fixed(AS_OF, ZoneOffset.UTC)
     }
 
     private fun stubContext(targetPuuid: String) {
@@ -180,6 +191,7 @@ class PlayerComparisonFeatureServiceIntegrationTest {
         val RANK_CAPTURED_AT: Instant = Instant.parse("2026-09-13T10:15:30Z")
         val GAME_STARTED_AT: Instant = Instant.parse("2026-09-13T09:00:00Z")
         val COLLECTED_AT: Instant = Instant.parse("2026-09-13T10:16:00Z")
+        val AS_OF: Instant = Instant.parse("2026-09-14T00:00:00Z")
         const val TOLERANCE = 0.000001
 
         @Container

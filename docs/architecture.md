@@ -256,10 +256,11 @@ representation으로 만들고, SHA-256 digest만 Redis key에 사용한다. key
 cache hit은 provider-independent `PlayerAnalysisResult`를 즉시 반환하므로 OpenAI SDK call, retry 및
 `ai.generation.*` metric을 만들지 않는다. miss에서만 generator를 호출하고 성공한 result만 typed JSON으로
 `ANALYSIS_RESULT_CACHE_TTL`(기본 30분) 동안 저장한다. `ANALYSIS_RESULT_CACHE_VERSION`의 기본값은
-`analysis-result-v2`이며 prompt semantics, output schema, analysis contract, generation policy 또는 AI 입력 의미가 바뀌면
-명시적으로 bump한다. Ranked Solo 전용 comparison 입력을 도입하며 v1에서 v2로 올렸고, 기존 v1 key는 삭제하거나 덮어쓰지 않고
-TTL에 따라 자연 만료된다. freshness의 일차 기준은 TTL이 아니라 input fingerprint이므로 latest Riot/rank/benchmark 계산 결과가
-input을 바꾸면 miss가 발생한다.
+`analysis-result-v3`이며 prompt semantics, output schema, analysis contract, generation policy 또는 AI 입력 의미가 바뀌면
+명시적으로 bump한다. Ranked Solo 전용 comparison 입력을 도입하며 v1에서 v2로 올렸고, peer 유효기간 정책을 input에 포함하며
+v3로 올렸다. 기존 v1/v2 key는 삭제하거나 덮어쓰지 않고 TTL에 따라 자연 만료된다. query의 `asOf`/window boundary는 input에
+넣지 않지만 LLM 설명에 필요한 `maxSampleAge` 정책은 provider-independent input에 포함한다. freshness의 일차 기준은 TTL이
+아니라 input fingerprint이므로 latest Riot/rank/benchmark 계산 결과가 input을 바꾸면 miss가 발생한다.
 
 Redis read/write, corrupted value cleanup, fingerprint 생성, cache metric 기록은 fail-open이다. read failure와 corrupted
 value는 miss로, write failure는 저장 생략으로 처리하고 analysis result를 바꾸지 않는다. corrupted JSON은 가능하면
@@ -610,13 +611,18 @@ MVP의 rank는 일반적으로 **수집 시점의 rank**다. 이를 과거 Match
 
 `PeerBenchmark` v0.1 cohort dimension은 region, queue, tier, division, position, championId다. division을 포함해
 GOLD I sample을 전체 GOLD benchmark로 해석하지 않는다. 서로 다른 position을 같은 기준선으로 직접 비교하지 않는다.
-patch/gameVersion과 freshness window는 아직 cohort에 포함하지 않는다.
+patch/gameVersion은 cohort에 포함하지 않는다. 다만 유효 표본 기간은 cohort dimension이 아니라 모든 aggregate query에 공통으로
+적용하는 `gameStartTimestamp` predicate다.
 
 #### Match-level PeerBenchmark Aggregate
 
-`PeerBenchmarkQueryService.findBenchmark(cohort)`는 raw `benchmark_sample`의 전체 exact cohort를 PostgreSQL에서
-on-demand로 읽는다. Player comparison은 별도의
-`findBenchmarkExcludingPlayer(cohort, targetPuuid)`를 사용한다. `BenchmarkSampleAggregateRepository`가
+`PeerBenchmarkQueryService.findBenchmark(cohort)`는 raw `benchmark_sample`의 유효한 exact cohort를 PostgreSQL에서
+on-demand로 읽는다. 조회 시점의 `Clock`으로 `asOf`를 한 번 만들고 `BENCHMARK_SAMPLE_MAX_AGE`(기본 `30d`)를 빼
+`[fromInclusive, toExclusive)` rolling window를 만든다. 30일은 UTC 기준 30 × 24시간이며, repository는 각자의 현재 시각이나
+SQL `now()`를 계산하지 않는다. `game_start_timestamp >= :fromInclusive AND game_start_timestamp < :toExclusive`는
+`POSITION`, `CHAMPION_POSITION`, self-exclusion과 coverage SQL에 동일하게 적용된다. Player comparison의 모든 cohort는
+하나의 window를 공유한다. Player comparison은 별도의 `findBenchmarkExcludingPlayer(cohort, targetPuuid)`를 사용한다.
+`BenchmarkSampleAggregateRepository`가
 `COUNT(*)`, `COUNT(DISTINCT puuid)`, `AVG`와 `percentile_cont`를 실행하며, exclusion query는 같은 SQL predicate에
 `puuid <> :excludedPuuid`를 추가해 모든 aggregate statistic에서 target의 own sample을 제외한다. JPA Entity를
 application layer에 반환하지 않는다. `PeerBenchmark`는 KDA, CS/min, gold/min, damage/min, vision/min, kill
@@ -628,9 +634,11 @@ observation으로 분포에 기여하므로 `sampleCount`와 `uniquePlayerCount`
 휴리스틱(기본 30 samples 및 10 unique players) 미달의 `INSUFFICIENT_SAMPLE`, 그 외 `AVAILABLE`로 구분한다. Player
 comparison에서는 own sample exclusion 후의 count로 availability를 다시 평가한다.
 
-v0.1은 aggregate table, materialized view, Redis aggregate cache 없이 correctness를 먼저 검증한다. `gameVersion`과
-`gameStartTimestamp`는 저장하지만 patch-aware cohort나 retention policy는 아직 없다. 따라서 오래된 sample이 누적되면
-patch mixing이 발생할 수 있고 production 도입 전 freshness window 또는 patch-aware cohort 전략이 필요하다.
+v0.1은 aggregate table, materialized view, Redis aggregate cache 없이 correctness를 먼저 검증한다. 유효기간은
+`gameStartTimestamp`만으로 판정하며 `collectedAt`이나 `rankCapturedAt`이 최근이어도 과거 경기를 되살리지 않는다. query-time
+exclusion은 DB retention과 다르므로 오래된 row를 삭제·수정하거나 `collectedAt` 갱신으로 재활성화하지 않는다. 유효기간 안에도
+여러 gameVersion이 섞일 수 있고, `rankCapturedAt`은 경기 당시 rank history가 아니다. patch-aware cohort, rank history,
+물리 retention은 별도 정책이다.
 
 #### Initial Vertical Slice
 
@@ -653,14 +661,15 @@ player에 적용한다. 기존 non-paged discovery method는 기존 호출자를
 manual seed에서 Riot 429를 terminal condition으로 처리한다. 이후 discovery page 또는 새로운 collection 요청을
 시작하지 않으며, 유효한 `Retry-After` 초 값은 `BenchmarkSeedResult`에 포함하고 응답 전에 저장된 sample은 유지한다.
 
-`BenchmarkCohortCoverageQueryService`는 comparison query가 아닌 내부 개발용 read model이다. repository는 필수
+`BenchmarkCohortCoverageQueryService`는 comparison query가 아닌 내부 개발용 read model이다. repository는 유효기간과 필수
 region/queue/tier/division scope에서 PostgreSQL `GROUP BY region, queue_id, tier, division, position, champion_id`와
 `COUNT(*)`, `COUNT(DISTINCT puuid)`를 사용한다. corpus를 JVM으로 읽거나 metric distribution을 다시 계산하지 않는다.
 service는 `BenchmarkAvailabilityPolicy`를 재사용하고, 남은 sample 및 unique-player 수를 AVAILABLE 상태, unique player
 수, sample 수, position, champion ID 순으로 정렬해 반환한다.
 
-coverage는 제외할 target player 없이 전체 exact-cohort corpus를 기준으로 계산한다. 따라서 선택한 analysis target에
-대해 `findBenchmarkExcludingPlayer(cohort, targetPuuid)`가 부족한 상태여도 coverage는 AVAILABLE일 수 있다.
+coverage는 제외할 target player 없이 유효한 exact-cohort corpus를 기준으로 계산한다. 따라서 선택한 analysis target에
+대해 `findBenchmarkExcludingPlayer(cohort, targetPuuid)`가 부족한 상태여도 coverage는 AVAILABLE일 수 있다. `GROUP BY`는
+0건 cohort를 반환하지 않으므로, caller가 알려진 cohort를 표시한다면 이를 0건 `NO_DATA`로 해석한다.
 comparison flow는 반드시 exclusion 결과를 다시 확인해야 한다. 제한된 seed와 coverage report는 convenience sampling
 pipeline만 검증하며 corpus의 대표성이나 운영 준비 상태를 보장하지 않는다.
 
@@ -835,8 +844,9 @@ transaction 안에서 PostgreSQL `INSERT ... ON CONFLICT DO NOTHING`을 실행�
 
 aggregate query는 raw table의 PostgreSQL `AVG`와 `percentile_cont`로 on-demand 실행한다. 현재 dataset 규모와
 사용 패턴에서는 aggregate table, materialized view, Redis aggregate cache 및 추가 cohort index를 도입하지 않았다.
-저장 기간, freshness window, patch-aware cohort와 aggregate materialization은 실제 query latency 및 사용 패턴을
-측정한 뒤 별도 결정한다.
+DB 저장 기간은 유효 표본 기간과 분리한다. 현재 30일 유효기간은 read SQL에서만 적용하며 schema migration, expiry column,
+삭제 job, collector 재수집은 추가하지 않았다. patch-aware cohort와 aggregate materialization, 추가 index는 실제 query latency와
+사용 패턴을 측정한 뒤 별도 결정한다.
 
 이 persistence는 PostgreSQL Testcontainers `@DataJpaTest`로 migration, JPA mapping validation, round trip,
 unique constraint와 idempotent write를 검증한다. 별도 aggregate fixture test는 exact cohort isolation,

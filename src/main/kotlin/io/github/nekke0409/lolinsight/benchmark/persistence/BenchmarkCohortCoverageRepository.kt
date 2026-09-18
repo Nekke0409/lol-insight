@@ -2,16 +2,22 @@ package io.github.nekke0409.lolinsight.benchmark.persistence
 
 import io.github.nekke0409.lolinsight.benchmark.domain.BenchmarkCohort
 import io.github.nekke0409.lolinsight.benchmark.domain.BenchmarkCohortCoverageScope
+import io.github.nekke0409.lolinsight.benchmark.domain.BenchmarkQueryWindow
 import io.github.nekke0409.lolinsight.benchmark.domain.BenchmarkScope
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
 import org.springframework.stereotype.Repository
+import java.sql.Types
+import java.time.ZoneOffset
 
 @Repository
 class BenchmarkCohortCoverageRepository(
     private val jdbcTemplate: NamedParameterJdbcTemplate,
 ) {
-    fun findCoverage(scope: BenchmarkCohortCoverageScope): List<BenchmarkCohortCoverageRow> =
+    fun findCoverage(
+        scope: BenchmarkCohortCoverageScope,
+        window: BenchmarkQueryWindow,
+    ): List<BenchmarkCohortCoverageRow> =
         jdbcTemplate.query(
             COVERAGE_SQL,
             MapSqlParameterSource(
@@ -21,6 +27,14 @@ class BenchmarkCohortCoverageRepository(
                     "tier" to scope.tier,
                     "division" to scope.division,
                 ),
+            ).addValue(
+                "fromInclusive",
+                window.fromInclusive.atOffset(ZoneOffset.UTC),
+                Types.TIMESTAMP_WITH_TIMEZONE,
+            ).addValue(
+                "toExclusive",
+                window.toExclusive.atOffset(ZoneOffset.UTC),
+                Types.TIMESTAMP_WITH_TIMEZONE,
             ),
         ) { resultSet, _ ->
             BenchmarkCohortCoverageRow(
@@ -57,6 +71,8 @@ class BenchmarkCohortCoverageRepository(
               AND queue_id = :queueId
               AND tier = :tier
               AND division = :division
+              AND game_start_timestamp >= :fromInclusive
+              AND game_start_timestamp < :toExclusive
             GROUP BY region, queue_id, tier, division, position
 
             UNION ALL
@@ -76,6 +92,8 @@ class BenchmarkCohortCoverageRepository(
               AND queue_id = :queueId
               AND tier = :tier
               AND division = :division
+              AND game_start_timestamp >= :fromInclusive
+              AND game_start_timestamp < :toExclusive
             GROUP BY region, queue_id, tier, division, position, champion_id
             """.trimIndent()
     }

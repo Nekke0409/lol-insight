@@ -42,12 +42,17 @@ class PlayerComparisonFeatureService(
         rankContext: PlayerRankContext,
         targetPuuid: String,
     ): List<PlayerCohortComparison> {
+        if (isEmpty()) {
+            return emptyList()
+        }
+
+        val window = peerBenchmarkQueryService.currentWindow()
         val cohortsByStatistics = associateWith { statistics -> statistics.toBenchmarkCohort(rankContext) }
         val benchmarkResultsByCohort =
             cohortsByStatistics.values
                 .distinct()
                 .associateWith { cohort ->
-                    peerBenchmarkQueryService.findBenchmarkExcludingPlayer(cohort, targetPuuid)
+                    peerBenchmarkQueryService.findBenchmarkExcludingPlayer(cohort, targetPuuid, window)
                 }
 
         return map { statistics ->

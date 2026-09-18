@@ -2,7 +2,7 @@
 
 ## 범위
 
-v0.1의 `PeerBenchmark`는 저장된 `BenchmarkSample` 행을 대상으로 요청 시 실행하는 PostgreSQL 집계다. 이는
+v0.1의 `PeerBenchmark`는 저장된 `BenchmarkSample` 중 유효 표본을 대상으로 요청 시 실행하는 PostgreSQL 집계다. 이는
 애플리케이션/도메인 읽기 모델이며, 영속성 경계 밖으로 JPA entity를 반환하지 않는다.
 `PeerBenchmarkQueryService.findBenchmark(cohort)`는 전체 cohort corpus를 읽고,
 `findBenchmarkExcludingPlayer(cohort, puuid)`는 명시적인 플레이어 비교 조회다. 이 버전에는 공개 REST endpoint가 없다.
@@ -68,15 +68,18 @@ CS/분이 8.1인 플레이어가 상위 10%라는 뜻은 아니다. v0.1은 사�
 ## 조회와 저장 정책
 
 영속성 조회는 `benchmark_sample`에서 `COUNT(*)`, `COUNT(DISTINCT puuid)`, `AVG`, PostgreSQL `percentile_cont`를
-직접 실행한다. 모든 표본을 JVM으로 불러와 정렬하지 않는다. 플레이어 비교 조회는 정확한 cohort 조건에
-`puuid <> :excludedPuuid`를 추가하므로 대상 플레이어 자신의 표본은 모든 건수, 평균, 백분위 계산에서 제외한다.
+직접 실행한다. 모든 표본을 JVM으로 불러와 정렬하지 않는다. `Clock`에서 한 번 만든 `[asOf - maxSampleAge, asOf)`
+window를 각 query에 전달하고 `game_start_timestamp >= :fromInclusive AND game_start_timestamp < :toExclusive`로
+유효 표본을 제한한다. 기본 `maxSampleAge`는 `BENCHMARK_SAMPLE_MAX_AGE=30d`이며 UTC 기준 rolling duration이다.
+플레이어 비교 조회는 정확한 cohort와 기간 조건에 `puuid <> :excludedPuuid`를 추가하므로 대상 플레이어 자신의 표본은 모든 건수, 평균, 백분위 계산에서 제외한다.
 이 제외 집계로 사용 가능 여부를 평가하며, 일치하는 표본을 모두 제외한 경우는 정상적인 `NO_DATA`다. v0.1은
 aggregate table, materialized view, scheduler, retention job, Redis aggregate cache를 의도적으로 두지 않는다.
 데이터 규모와 조회 latency를 측정한 뒤에 이 선택을 다시 검토할 수 있다.
 
-`gameVersion`과 `gameStartTimestamp`는 각 표본에 이미 보존하지만 v0.1은 이를 조건으로 필터링하지 않는다. 집계는
-patch-aware하지 않으므로 데이터가 쌓이면 이전 패치와 새 패치가 섞일 수 있다. 운영 benchmark에는 이 혼합이 유의미해지기 전에
-freshness window 또는 patch-aware cohort 전략이 필요하다.
+기간 판정에는 오직 `gameStartTimestamp`를 사용한다. 최근 `collectedAt`이나 `rankCapturedAt`이 오래된 경기를
+재활성화하지 않는다. 이 것은 query exclusion일 뿐 물리 retention이 아니므로 row 삭제·`expiresAt` column·재수집은
+추가하지 않는다. 집계는 여전히 patch-aware하지 않으므로 30일 안에도 여러 patch가 섞일 수 있고, `rankCapturedAt`은
+경기 당시 rank history가 아니다.
 
 ## 제한된 개발용 seed 및 coverage
 
@@ -93,14 +96,14 @@ participant validation, metric 계산 및 idempotent persistence를 재사용한
 다음 discovery page 또는 새로운 collection request를 시작하지 않고 retry/sleep/backoff를 시도하지 않으며, 이미
 commit된 sample은 유지하고 유효한 `Retry-After` 값은 `BenchmarkSeedResult`에 보존한다.
 
-`BenchmarkCohortCoverageQueryService`는 seed 이후 exact-cohort 운영 coverage를 보고한다. PostgreSQL은 scope에 맞는
+`BenchmarkCohortCoverageQueryService`는 seed 이후 유효 exact-cohort 운영 coverage를 보고한다. PostgreSQL은 scope에 맞는
 row를 `region, queue_id, tier, division, position, champion_id`로 grouping하고 `COUNT(*)` 및
 `COUNT(DISTINCT puuid)`를 계산한다. distribution metric은 의도적으로 다시 계산하지 않는다. 각 row에는 cohort,
 count, 기존 availability 상태 및 현재 30/10 policy에 대한 음수가 아닌 `samplesNeeded` / `uniquePlayersNeeded` gap이
 포함된다. row는 AVAILABLE 우선, unique-player count 내림차순, sample count 내림차순, position, champion ID 순으로
 결정적으로 정렬한다.
 
-coverage에는 target player가 없으므로 항상 전체 corpus를 조회한다. AVAILABLE coverage row가 self-exclusion 뒤에도
+coverage에는 target player가 없으므로 항상 유효 corpus를 조회한다. AVAILABLE coverage row가 self-exclusion 뒤에도
 analysis target의 AVAILABLE을 보장하지는 않는다. 실제 comparison은
 `findBenchmarkExcludingPlayer(cohort, targetPuuid)`를 호출하고 그 결과를 적용해야 한다. smoke-test target은 30 samples와
 10 players보다 여유가 있는 row를 선택하는 편이 좋지만, 별도의 운영 availability threshold를 도입하지는 않는다. 이

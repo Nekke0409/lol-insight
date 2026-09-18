@@ -1,10 +1,12 @@
 package io.github.nekke0409.lolinsight.analysis.application
 
 import io.github.nekke0409.lolinsight.benchmark.domain.BenchmarkScope
+import java.time.Duration
 
 data class PlayerAnalysisInput(
     val comparisons: List<AnalysisComparisonInput>,
     val analysisLimitations: List<PlayerAnalysisLimitation>,
+    val benchmarkFreshness: PlayerAnalysisBenchmarkFreshness = PlayerAnalysisBenchmarkFreshness(Duration.ofDays(30)),
 ) {
     init {
         require(comparisons.isNotEmpty()) { "comparisons must not be empty" }
@@ -22,6 +24,14 @@ data class PlayerAnalysisInput(
                 .thenByDescending { it.userGames }
                 .thenBy { it.position }
                 .thenBy { it.championId ?: 0 }
+    }
+}
+
+data class PlayerAnalysisBenchmarkFreshness(
+    val maxSampleAge: Duration,
+) {
+    init {
+        require(!maxSampleAge.isNegative && !maxSampleAge.isZero) { "maxSampleAge must be positive" }
     }
 }
 

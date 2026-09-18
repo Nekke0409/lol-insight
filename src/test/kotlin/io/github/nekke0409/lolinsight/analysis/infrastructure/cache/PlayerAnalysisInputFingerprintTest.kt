@@ -3,6 +3,7 @@ package io.github.nekke0409.lolinsight.analysis.infrastructure.cache
 import io.github.nekke0409.lolinsight.analysis.infrastructure.openai.TestPlayerAnalysisInput
 import tools.jackson.databind.json.JsonMapper
 import tools.jackson.module.kotlin.KotlinModule
+import java.time.Duration
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -43,6 +44,14 @@ class PlayerAnalysisInputFingerprintTest {
                         }
                     },
             )
+
+        assertNotEquals(fingerprint.create(original), fingerprint.create(changed))
+    }
+
+    @Test
+    fun `changes the fingerprint when the LLM-visible benchmark freshness policy changes`() {
+        val original = TestPlayerAnalysisInput.input()
+        val changed = original.copy(benchmarkFreshness = original.benchmarkFreshness.copy(maxSampleAge = Duration.ofDays(7)))
 
         assertNotEquals(fingerprint.create(original), fingerprint.create(changed))
     }

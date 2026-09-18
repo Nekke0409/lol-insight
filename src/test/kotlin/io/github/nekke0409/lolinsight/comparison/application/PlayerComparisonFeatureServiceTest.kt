@@ -4,6 +4,7 @@ import io.github.nekke0409.lolinsight.benchmark.application.PeerBenchmarkQuerySe
 import io.github.nekke0409.lolinsight.benchmark.domain.BenchmarkAvailability
 import io.github.nekke0409.lolinsight.benchmark.domain.BenchmarkCohort
 import io.github.nekke0409.lolinsight.benchmark.domain.BenchmarkMetricDistribution
+import io.github.nekke0409.lolinsight.benchmark.domain.BenchmarkQueryWindow
 import io.github.nekke0409.lolinsight.benchmark.domain.BenchmarkScope
 import io.github.nekke0409.lolinsight.benchmark.domain.PeerBenchmark
 import io.github.nekke0409.lolinsight.benchmark.domain.PeerBenchmarkResult
@@ -56,7 +57,7 @@ class PlayerComparisonFeatureServiceTest {
         val statistics = positionStats(games = 4)
         val cohort = positionCohort(statistics)
         stubContext(positionStatistics = listOf(statistics), championPositionStatistics = emptyList())
-        `when`(peerBenchmarkQueryService.findBenchmarkExcludingPlayer(cohort, TARGET_PUUID))
+        `when`(peerBenchmarkQueryService.findBenchmarkExcludingPlayer(cohort, TARGET_PUUID, WINDOW))
             .thenReturn(availableResult(cohort))
 
         val comparison = service.buildFeature(GAME_NAME, TAG_LINE, 0, 20).comparisons.single()
@@ -73,9 +74,9 @@ class PlayerComparisonFeatureServiceTest {
         val positionCohort = positionCohort(positionStatistics)
         val championCohort = championPositionCohort(championStatistics)
         stubContext(positionStatistics = listOf(positionStatistics), championPositionStatistics = listOf(championStatistics))
-        `when`(peerBenchmarkQueryService.findBenchmarkExcludingPlayer(positionCohort, TARGET_PUUID))
+        `when`(peerBenchmarkQueryService.findBenchmarkExcludingPlayer(positionCohort, TARGET_PUUID, WINDOW))
             .thenReturn(availableResult(positionCohort))
-        `when`(peerBenchmarkQueryService.findBenchmarkExcludingPlayer(championCohort, TARGET_PUUID))
+        `when`(peerBenchmarkQueryService.findBenchmarkExcludingPlayer(championCohort, TARGET_PUUID, WINDOW))
             .thenReturn(PeerBenchmarkResult(BenchmarkAvailability.INSUFFICIENT_SAMPLE, 23, 5, null))
 
         val comparisons = service.buildFeature(GAME_NAME, TAG_LINE, 0, 20).comparisons
@@ -92,8 +93,9 @@ class PlayerComparisonFeatureServiceTest {
         assertEquals(5L, championComparison.benchmarkUniquePlayerCount)
         assertNull(championComparison.metrics)
 
-        verify(peerBenchmarkQueryService).findBenchmarkExcludingPlayer(positionCohort, TARGET_PUUID)
-        verify(peerBenchmarkQueryService).findBenchmarkExcludingPlayer(championCohort, TARGET_PUUID)
+        verify(peerBenchmarkQueryService).currentWindow()
+        verify(peerBenchmarkQueryService).findBenchmarkExcludingPlayer(positionCohort, TARGET_PUUID, WINDOW)
+        verify(peerBenchmarkQueryService).findBenchmarkExcludingPlayer(championCohort, TARGET_PUUID, WINDOW)
         verifyNoMoreInteractions(peerBenchmarkQueryService)
     }
 
@@ -104,9 +106,9 @@ class PlayerComparisonFeatureServiceTest {
         val positionCohort = positionCohort(positionStatistics)
         val championCohort = championPositionCohort(championStatistics)
         stubContext(positionStatistics = listOf(positionStatistics), championPositionStatistics = listOf(championStatistics))
-        `when`(peerBenchmarkQueryService.findBenchmarkExcludingPlayer(positionCohort, TARGET_PUUID))
+        `when`(peerBenchmarkQueryService.findBenchmarkExcludingPlayer(positionCohort, TARGET_PUUID, WINDOW))
             .thenReturn(availableResult(positionCohort))
-        `when`(peerBenchmarkQueryService.findBenchmarkExcludingPlayer(championCohort, TARGET_PUUID))
+        `when`(peerBenchmarkQueryService.findBenchmarkExcludingPlayer(championCohort, TARGET_PUUID, WINDOW))
             .thenReturn(availableResult(championCohort))
 
         val comparisons = service.buildFeature(GAME_NAME, TAG_LINE, 0, 20).comparisons
@@ -120,6 +122,7 @@ class PlayerComparisonFeatureServiceTest {
         positionStatistics: List<PlayerPositionStatistics> = listOf(positionStats()),
         championPositionStatistics: List<PlayerChampionPositionStatistics> = listOf(championPositionStats()),
     ) {
+        `when`(peerBenchmarkQueryService.currentWindow()).thenReturn(WINDOW)
         `when`(playerComparisonContextService.buildContext(GAME_NAME, TAG_LINE, 0, 20))
             .thenReturn(
                 PlayerComparisonContext(
@@ -212,5 +215,10 @@ class PlayerComparisonFeatureServiceTest {
         const val TAG_LINE = "KR1"
         const val TARGET_PUUID = "target-puuid"
         val RANK_CONTEXT = PlayerRankContext("GOLD", "I", Instant.parse("2026-09-14T01:23:45Z"))
+        val WINDOW =
+            BenchmarkQueryWindow(
+                fromInclusive = Instant.parse("2026-08-15T00:00:00Z"),
+                toExclusive = Instant.parse("2026-09-14T00:00:00Z"),
+            )
     }
 }

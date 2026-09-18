@@ -59,7 +59,7 @@ class RedisPlayerAnalysisResultCacheTest {
         val firstKey = requireNotNull(cache.keyFor(INPUT))
         val secondKey = requireNotNull(legacyVersion.keyFor(INPUT))
 
-        assertEquals("$ANALYSIS_RESULT_CACHE_KEY_PREFIX:analysis-result-v2", firstKey.substringBeforeLast(':'))
+        assertEquals("$ANALYSIS_RESULT_CACHE_KEY_PREFIX:analysis-result-v3", firstKey.substringBeforeLast(':'))
         assertEquals(64, firstKey.substringAfterLast(':').length)
         assertEquals(false, firstKey.contains("Hide on bush"))
         assertEquals(false, firstKey.contains("KR1"))

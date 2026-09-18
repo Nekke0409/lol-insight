@@ -79,3 +79,4 @@ Automation의 현재 contract는 [`automation/new-ranked-match-analysis-v0.1.md`
 - [`ADR-011: 구조화된 분석 입력 기반 Redis completed-result cache 사용`](adr/011-cache-completed-analysis-results-by-input.md)
 - [`ADR-012: Persisted Ranked Solo Match Automation Trigger 사용`](adr/012-use-persisted-ranked-match-automation-trigger.md)
 - [`ADR-013: JVM-local Riot outbound cooldown 사용`](adr/013-use-jvm-local-riot-outbound-cooldown.md)
+- [`ADR-014: Peer Benchmark에 경기 시작 시각 기반 유효 표본 기간 사용`](adr/014-use-game-start-validity-window-for-peer-benchmark.md)

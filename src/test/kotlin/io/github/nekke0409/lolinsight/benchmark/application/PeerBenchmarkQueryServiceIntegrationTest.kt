@@ -3,6 +3,7 @@ package io.github.nekke0409.lolinsight.benchmark.application
 import io.github.nekke0409.lolinsight.benchmark.domain.BenchmarkAvailability
 import io.github.nekke0409.lolinsight.benchmark.domain.BenchmarkCohort
 import io.github.nekke0409.lolinsight.benchmark.domain.BenchmarkMetricDistribution
+import io.github.nekke0409.lolinsight.benchmark.domain.BenchmarkQueryWindow
 import io.github.nekke0409.lolinsight.benchmark.domain.BenchmarkSample
 import io.github.nekke0409.lolinsight.benchmark.domain.BenchmarkScope
 import io.github.nekke0409.lolinsight.benchmark.persistence.BenchmarkSampleAggregateRepository
@@ -12,13 +13,18 @@ import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest
 import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase
+import org.springframework.boot.test.context.TestConfiguration
+import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Import
 import org.springframework.test.context.DynamicPropertyRegistry
 import org.springframework.test.context.DynamicPropertySource
 import org.testcontainers.junit.jupiter.Container
 import org.testcontainers.junit.jupiter.Testcontainers
 import org.testcontainers.postgresql.PostgreSQLContainer
+import java.time.Clock
+import java.time.Duration
 import java.time.Instant
+import java.time.ZoneOffset
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
@@ -33,8 +39,10 @@ import kotlin.test.assertNull
 @Import(
     BenchmarkAvailabilityConfiguration::class,
     BenchmarkAvailabilityPolicy::class,
+    BenchmarkQueryWindowFactory::class,
     BenchmarkSampleAggregateRepository::class,
     PeerBenchmarkQueryService::class,
+    PeerBenchmarkQueryServiceIntegrationTest.FixedClockConfiguration::class,
 )
 @Testcontainers
 class PeerBenchmarkQueryServiceIntegrationTest {
@@ -46,6 +54,9 @@ class PeerBenchmarkQueryServiceIntegrationTest {
 
     @Autowired
     private lateinit var peerBenchmarkQueryService: PeerBenchmarkQueryService
+
+    @Autowired
+    private lateinit var clock: MutableClock
 
     @Test
     fun `PostgreSQL aggregate calculates match observation distributions and isolates each cohort key`() {
@@ -63,7 +74,7 @@ class PeerBenchmarkQueryServiceIntegrationTest {
             ).map(BenchmarkSample::toEntity),
         )
 
-        val benchmark = requireNotNull(benchmarkSampleAggregateRepository.findBenchmark(TARGET_COHORT))
+        val benchmark = requireNotNull(benchmarkSampleAggregateRepository.findBenchmark(TARGET_COHORT, WINDOW))
 
         assertEquals(TARGET_COHORT, benchmark.cohort)
         assertEquals(4L, benchmark.sampleCount)
@@ -92,12 +103,12 @@ class PeerBenchmarkQueryServiceIntegrationTest {
 
         val excludingPlayerA =
             requireNotNull(
-                benchmarkSampleAggregateRepository.findBenchmarkExcludingPlayer(TARGET_COHORT, "player-a"),
+                benchmarkSampleAggregateRepository.findBenchmarkExcludingPlayer(TARGET_COHORT, "player-a", WINDOW),
             )
         val resultExcludingPlayerA = peerBenchmarkQueryService.findBenchmarkExcludingPlayer(TARGET_COHORT, "player-a")
         val excludingPlayerB =
             requireNotNull(
-                benchmarkSampleAggregateRepository.findBenchmarkExcludingPlayer(TARGET_COHORT, "player-b"),
+                benchmarkSampleAggregateRepository.findBenchmarkExcludingPlayer(TARGET_COHORT, "player-b", WINDOW),
             )
 
         assertEquals(4L, excludingPlayerA.sampleCount)
@@ -135,7 +146,7 @@ class PeerBenchmarkQueryServiceIntegrationTest {
             ).map(BenchmarkSample::toEntity),
         )
 
-        val benchmark = requireNotNull(benchmarkSampleAggregateRepository.findBenchmark(positionCohort))
+        val benchmark = requireNotNull(benchmarkSampleAggregateRepository.findBenchmark(positionCohort, WINDOW))
 
         assertEquals(BenchmarkScope.POSITION, benchmark.cohort.scope)
         assertEquals(null, benchmark.cohort.championId)
@@ -156,7 +167,8 @@ class PeerBenchmarkQueryServiceIntegrationTest {
             ).map(BenchmarkSample::toEntity),
         )
 
-        val benchmark = requireNotNull(benchmarkSampleAggregateRepository.findBenchmarkExcludingPlayer(positionCohort, "target-player"))
+        val benchmark =
+            requireNotNull(benchmarkSampleAggregateRepository.findBenchmarkExcludingPlayer(positionCohort, "target-player", WINDOW))
 
         assertEquals(2L, benchmark.sampleCount)
         assertEquals(2L, benchmark.uniquePlayerCount)
@@ -255,6 +267,90 @@ class PeerBenchmarkQueryServiceIntegrationTest {
         assertNull(result.benchmark)
     }
 
+    @Test
+    fun `aggregates only game starts in the inclusive-exclusive validity window for both benchmark scopes`() {
+        benchmarkSampleJpaRepository.saveAllAndFlush(
+            listOf(
+                metricSample("before-window", "old-player", TARGET_COHORT, 1_000.0, WINDOW.fromInclusive.minusMillis(1), AS_OF),
+                metricSample("from-inclusive", "player-a", TARGET_COHORT, 1.0, WINDOW.fromInclusive, AS_OF),
+                metricSample("inside-window", "player-b", TARGET_COHORT, 2.0, WINDOW.fromInclusive.plusSeconds(1), AS_OF),
+                metricSample("before-to-exclusive", "player-c", TARGET_COHORT, 3.0, WINDOW.toExclusive.minusMillis(1), AS_OF),
+                metricSample("at-to-exclusive", "future-player", TARGET_COHORT, 1_000.0, WINDOW.toExclusive, AS_OF),
+                metricSample("after-window", "future-player-2", TARGET_COHORT, 1_000.0, WINDOW.toExclusive.plusMillis(1), AS_OF),
+            ).map(BenchmarkSample::toEntity),
+        )
+
+        val championBenchmark = requireNotNull(benchmarkSampleAggregateRepository.findBenchmark(TARGET_COHORT, WINDOW))
+        val positionBenchmark =
+            requireNotNull(
+                benchmarkSampleAggregateRepository.findBenchmark(
+                    BenchmarkCohort.position("KR", 420, "GOLD", "I", "MIDDLE"),
+                    WINDOW,
+                ),
+            )
+
+        listOf(championBenchmark, positionBenchmark).forEach { benchmark ->
+            assertEquals(3L, benchmark.sampleCount)
+            assertEquals(3L, benchmark.uniquePlayerCount)
+            assertEquals(2.0, benchmark.kda.mean, TOLERANCE)
+            assertEquals(2.0, benchmark.kda.median, TOLERANCE)
+            assertEquals(1.5, benchmark.kda.p25, TOLERANCE)
+            assertEquals(2.5, benchmark.kda.p75, TOLERANCE)
+            assertEquals(2.8, benchmark.kda.p90, TOLERANCE)
+            assertEquals(20.0, benchmark.csPerMinute.mean, TOLERANCE)
+            assertEquals(200.0, benchmark.goldPerMinute.mean, TOLERANCE)
+            assertEquals(2_000.0, benchmark.damagePerMinute.mean, TOLERANCE)
+            assertEquals(0.2, benchmark.visionPerMinute.mean, TOLERANCE)
+            assertEquals(0.02, benchmark.killParticipation.mean, TOLERANCE)
+            assertEquals(0.002, benchmark.damageShare.mean, TOLERANCE)
+        }
+    }
+
+    @Test
+    fun `combines self exclusion and the validity window before availability is evaluated`() {
+        benchmarkSampleJpaRepository.saveAllAndFlush(
+            listOf(
+                metricSample("target-valid", "target-player", TARGET_COHORT, 100.0, WINDOW.fromInclusive, AS_OF),
+                metricSample("peer-valid", "peer-player", TARGET_COHORT, 2.0, WINDOW.fromInclusive.plusSeconds(1), AS_OF),
+                metricSample("peer-old", "peer-old", TARGET_COHORT, 1_000.0, WINDOW.fromInclusive.minusMillis(1), AS_OF),
+                metricSample("peer-future", "peer-future", TARGET_COHORT, 1_000.0, WINDOW.toExclusive, AS_OF),
+            ).map(BenchmarkSample::toEntity),
+        )
+
+        val result = peerBenchmarkQueryService.findBenchmarkExcludingPlayer(TARGET_COHORT, "target-player", WINDOW)
+
+        assertEquals(BenchmarkAvailability.INSUFFICIENT_SAMPLE, result.status)
+        assertEquals(1L, result.sampleCount)
+        assertEquals(1L, result.uniquePlayerCount)
+        assertNull(result.benchmark)
+    }
+
+    @Test
+    fun `advancing the injected clock expires samples and changes availability without writes`() {
+        benchmarkSampleJpaRepository.saveAllAndFlush(
+            (1..30)
+                .map { index ->
+                    metricSample(
+                        matchSuffix = "expiring-$index",
+                        puuid = "player-${index % 10}",
+                        cohort = AVAILABLE_COHORT,
+                        metricValue = index.toDouble(),
+                        gameStartTimestamp = AS_OF.minus(Duration.ofDays(29)),
+                    )
+                }.map(BenchmarkSample::toEntity),
+        )
+
+        val beforeExpiry = peerBenchmarkQueryService.findBenchmark(AVAILABLE_COHORT)
+        clock.set(AS_OF.plus(Duration.ofDays(2)))
+        val afterExpiry = peerBenchmarkQueryService.findBenchmark(AVAILABLE_COHORT)
+        clock.set(AS_OF)
+
+        assertEquals(BenchmarkAvailability.AVAILABLE, beforeExpiry.status)
+        assertEquals(30L, beforeExpiry.sampleCount)
+        assertEquals(BenchmarkAvailability.NO_DATA, afterExpiry.status)
+        assertEquals(0L, afterExpiry.sampleCount)
+    }
+
     private fun targetSamples(): List<BenchmarkSample> =
         listOf(
             metricSample("target-1", "player-a", TARGET_COHORT, 1.0),
@@ -268,6 +364,8 @@ class PeerBenchmarkQueryServiceIntegrationTest {
         puuid: String,
         cohort: BenchmarkCohort,
         metricValue: Double,
+        gameStartTimestamp: Instant = GAME_STARTED_AT,
+        collectedAt: Instant = COLLECTED_AT,
     ): BenchmarkSample =
         BenchmarkSample(
             matchId = "KR_$matchSuffix",
@@ -280,7 +378,7 @@ class PeerBenchmarkQueryServiceIntegrationTest {
             championId = checkNotNull(cohort.championId),
             position = cohort.position,
             gameVersion = "16.18.1",
-            gameStartTimestamp = GAME_STARTED_AT,
+            gameStartTimestamp = gameStartTimestamp,
             kills = metricValue.toInt(),
             deaths = 1,
             assists = metricValue.toInt(),
@@ -291,7 +389,7 @@ class PeerBenchmarkQueryServiceIntegrationTest {
             visionPerMinute = metricValue * 0.1,
             killParticipation = metricValue * 0.01,
             damageShare = metricValue * 0.001,
-            collectedAt = COLLECTED_AT,
+            collectedAt = collectedAt,
         )
 
     private fun expectedDistribution(scale: Double): BenchmarkMetricDistribution =
@@ -329,6 +427,8 @@ class PeerBenchmarkQueryServiceIntegrationTest {
         val RANK_CAPTURED_AT: Instant = Instant.parse("2026-09-13T10:15:30Z")
         val GAME_STARTED_AT: Instant = Instant.parse("2026-09-13T09:00:00Z")
         val COLLECTED_AT: Instant = Instant.parse("2026-09-13T10:16:00Z")
+        val AS_OF: Instant = Instant.parse("2026-09-14T00:00:00Z")
+        val WINDOW = BenchmarkQueryWindow(AS_OF.minus(Duration.ofDays(30)), AS_OF)
         const val TOLERANCE = 0.000001
 
         @Container
@@ -342,5 +442,25 @@ class PeerBenchmarkQueryServiceIntegrationTest {
             registry.add("spring.datasource.username", postgres::getUsername)
             registry.add("spring.datasource.password", postgres::getPassword)
         }
+    }
+
+    @TestConfiguration(proxyBeanMethods = false)
+    class FixedClockConfiguration {
+        @Bean
+        fun clock(): MutableClock = MutableClock(AS_OF)
+    }
+
+    class MutableClock(
+        private var now: Instant,
+    ) : Clock() {
+        fun set(now: Instant) {
+            this.now = now
+        }
+
+        override fun getZone(): ZoneOffset = ZoneOffset.UTC
+
+        override fun withZone(zone: java.time.ZoneId): Clock = this
+
+        override fun instant(): Instant = now
     }
 }
