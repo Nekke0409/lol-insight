@@ -5,6 +5,7 @@ import io.github.nekke0409.lolinsight.analysis.application.PlayerAnalysisRespons
 import io.github.nekke0409.lolinsight.analysis.application.PlayerAnalysisResponseStatus
 import io.github.nekke0409.lolinsight.analysis.application.PlayerAnalysisResult
 import io.github.nekke0409.lolinsight.analysis.application.PlayerAnalysisService
+import io.github.nekke0409.lolinsight.analysis.ratelimit.AnalysisRateLimitKey
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.verify
@@ -16,11 +17,13 @@ class AnalysisJobWorkerTest {
     private val lifecycleService = mock(AnalysisJobLifecycleService::class.java)
     private val playerAnalysisService = mock(PlayerAnalysisService::class.java)
     private val failureCodeMapper = AnalysisJobFailureCodeMapper()
-    private val worker = AnalysisJobWorker(lifecycleService, playerAnalysisService, failureCodeMapper)
+    private val inFlightRegistry = mock(AnalysisJobInFlightRegistry::class.java)
+    private val worker = AnalysisJobWorker(lifecycleService, playerAnalysisService, failureCodeMapper, inFlightRegistry)
 
     @Test
     fun `runs the existing PlayerAnalysisService and persists its analysis result`() {
         `when`(lifecycleService.markRunningIfPending(COMMAND.jobId)).thenReturn(true)
+        `when`(lifecycleService.markSucceededIfRunning(COMMAND.jobId, RESULT)).thenReturn(true)
         `when`(playerAnalysisService.analyze(COMMAND.gameName, COMMAND.tagLine, COMMAND.start, COMMAND.count))
             .thenReturn(PlayerAnalysisResponse(PlayerAnalysisResponseStatus.ANALYZED, RESULT))
 
@@ -29,6 +32,7 @@ class AnalysisJobWorkerTest {
         verify(lifecycleService).markRunningIfPending(COMMAND.jobId)
         verify(playerAnalysisService).analyze(COMMAND.gameName, COMMAND.tagLine, COMMAND.start, COMMAND.count)
         verify(lifecycleService).markSucceededIfRunning(COMMAND.jobId, RESULT)
+        verify(inFlightRegistry).remove(COMMAND.dedupeKey, COMMAND.jobId)
     }
 
     @Test
@@ -44,17 +48,20 @@ class AnalysisJobWorkerTest {
     @Test
     fun `stores only a safe failure code when the analysis service fails`() {
         `when`(lifecycleService.markRunningIfPending(COMMAND.jobId)).thenReturn(true)
+        `when`(lifecycleService.markFailedIfRunning(COMMAND.jobId, AnalysisJobFailureCode.RATE_LIMITED)).thenReturn(true)
         `when`(playerAnalysisService.analyze(COMMAND.gameName, COMMAND.tagLine, COMMAND.start, COMMAND.count))
             .thenThrow(PlayerAnalysisRateLimitException(IllegalStateException("provider response body")))
 
         worker.process(COMMAND)
 
         verify(lifecycleService).markFailedIfRunning(COMMAND.jobId, AnalysisJobFailureCode.RATE_LIMITED)
+        verify(inFlightRegistry).remove(COMMAND.dedupeKey, COMMAND.jobId)
     }
 
     @Test
     fun `stores the existing deterministic unavailable status as a safe failure code`() {
         `when`(lifecycleService.markRunningIfPending(COMMAND.jobId)).thenReturn(true)
+        `when`(lifecycleService.markFailedIfRunning(COMMAND.jobId, AnalysisJobFailureCode.UNRANKED)).thenReturn(true)
         `when`(playerAnalysisService.analyze(COMMAND.gameName, COMMAND.tagLine, COMMAND.start, COMMAND.count))
             .thenReturn(PlayerAnalysisResponse(PlayerAnalysisResponseStatus.UNRANKED, null))
 
@@ -71,6 +78,14 @@ class AnalysisJobWorkerTest {
                 tagLine = "KR1",
                 start = 0,
                 count = 20,
+                dedupeKey =
+                    AnalysisJobDedupeKey.of(
+                        AnalysisRateLimitKey("analysis-generation:client-a"),
+                        "Hide on bush",
+                        "KR1",
+                        0,
+                        20,
+                    ),
             )
         val RESULT = PlayerAnalysisResult("summary", emptyList(), emptyList(), emptyList(), emptyList())
     }

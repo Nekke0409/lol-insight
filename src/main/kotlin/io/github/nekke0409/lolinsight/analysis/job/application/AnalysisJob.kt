@@ -10,6 +10,7 @@ data class AnalysisJobCommand(
     val tagLine: String,
     val start: Int,
     val count: Int,
+    val dedupeKey: AnalysisJobDedupeKey,
 )
 
 data class AnalysisJobCreated(

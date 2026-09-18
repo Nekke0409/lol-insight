@@ -38,6 +38,8 @@ analysis:
     capacity: ${ANALYSIS_RATE_LIMIT_CAPACITY:3}
     window: ${ANALYSIS_RATE_LIMIT_WINDOW:1m}
   jobs:
+    dedupe:
+      expiry: ${ANALYSIS_JOB_DEDUPE_EXPIRY:5m}
     executor:
       worker-threads: ${ANALYSIS_JOB_WORKER_THREADS:1}
       queue-capacity: ${ANALYSIS_JOB_QUEUE_CAPACITY:2}

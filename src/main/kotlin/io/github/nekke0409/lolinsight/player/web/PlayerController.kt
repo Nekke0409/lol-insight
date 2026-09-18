@@ -3,6 +3,7 @@ package io.github.nekke0409.lolinsight.player.web
 import io.github.nekke0409.lolinsight.analysis.application.PlayerAnalysisResponse
 import io.github.nekke0409.lolinsight.analysis.application.PlayerAnalysisService
 import io.github.nekke0409.lolinsight.analysis.job.application.AnalysisJobCreated
+import io.github.nekke0409.lolinsight.analysis.job.application.AnalysisJobDedupeKey
 import io.github.nekke0409.lolinsight.analysis.job.application.AnalysisJobService
 import io.github.nekke0409.lolinsight.analysis.ratelimit.AnalysisGenerationRateLimiter
 import io.github.nekke0409.lolinsight.analysis.ratelimit.AnalysisRateLimitKeyResolver
@@ -78,8 +79,17 @@ class PlayerController(
         @RequestParam(defaultValue = "20") @Min(1) @Max(20) count: Int,
         request: HttpServletRequest,
     ): ResponseEntity<AnalysisJobCreated> {
-        analysisGenerationRateLimiter.check(analysisRateLimitKeyResolver.resolve(request))
-        val created = analysisJobService.create(gameName, tagLine, start, count)
+        val clientIdentity = analysisRateLimitKeyResolver.resolve(request)
+        analysisGenerationRateLimiter.check(clientIdentity)
+        val dedupeKey =
+            AnalysisJobDedupeKey.of(
+                clientIdentity,
+                gameName,
+                tagLine,
+                start,
+                count,
+            )
+        val created = analysisJobService.create(gameName, tagLine, start, count, dedupeKey)
         return ResponseEntity
             .accepted()
             .header(HttpHeaders.LOCATION, "/api/v1/analysis-jobs/${created.jobId}")

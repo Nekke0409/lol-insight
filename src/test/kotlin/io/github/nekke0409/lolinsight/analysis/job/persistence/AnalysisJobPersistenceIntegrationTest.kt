@@ -65,8 +65,11 @@ class AnalysisJobPersistenceIntegrationTest {
             )
 
         assertEquals(AnalysisJobStatus.PENDING, queryService.find(created.jobId).status)
+        assertEquals(created, lifecycleService.findInFlight(created.jobId))
         assertTrue(lifecycleService.markRunningIfPending(created.jobId))
+        assertEquals(AnalysisJobStatus.RUNNING, lifecycleService.findInFlight(created.jobId)?.status)
         assertTrue(lifecycleService.markSucceededIfRunning(created.jobId, result))
+        assertNull(lifecycleService.findInFlight(created.jobId))
 
         val restored = queryService.find(created.jobId)
         assertEquals(AnalysisJobStatus.SUCCEEDED, restored.status)
@@ -90,6 +93,7 @@ class AnalysisJobPersistenceIntegrationTest {
 
         assertTrue(lifecycleService.markRunningIfPending(created.jobId))
         assertTrue(lifecycleService.markFailedIfRunning(created.jobId, AnalysisJobFailureCode.RATE_LIMITED))
+        assertNull(lifecycleService.findInFlight(created.jobId))
 
         val restored = queryService.find(created.jobId)
         assertEquals(AnalysisJobStatus.FAILED, restored.status)

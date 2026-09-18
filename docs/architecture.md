@@ -150,6 +150,18 @@ in-memory command를 bounded Spring executor에 제출하고 `202 Accepted` 및 
 `GET /api/v1/analysis-jobs/{jobId}`는 `PENDING`, `RUNNING`, `SUCCEEDED`, `FAILED`와 terminal result 또는 safe
 failure code를 조회한다.
 
+async POST에는 same-process in-flight dedupe가 있다. HTTP boundary에서 기존 `AnalysisRateLimitKeyResolver`로 얻은
+client identity와 validation을 통과한 exact `gameName`, `tagLine`, `start`, `count`, `analysis-v0.2` contract version을
+SHA-256 digest key로 만든다. 같은 client·같은 request의 `PENDING`/`RUNNING` job만 재사용하며, 다른 client는 job ID를
+공유하지 않는다. `SUCCEEDED`/`FAILED` result는 cache하지 않으므로 다음 요청은 새 job을 만든다. sync `/analysis`는
+response contract를 유지하기 위해 이 dedupe 대상이 아니다.
+
+Caffeine registry는 key별 atomic mapping으로 DB PENDING commit 뒤 job을 연결하고 그 다음 dispatch한다. hit마다 DB
+lifecycle을 확인해 terminal entry를 제거하며, worker의 terminal transition도 matching entry를 즉시 제거한다. cleanup
+실패를 위한 `expireAfterWrite(5m)` safety expiration은 OpenAI timeout 60초와 기본 worker 1개/queue 2개 lifecycle보다
+길다. registry는 DB에 persistence하지 않고 raw Riot ID/client identity를 log·DB·metric tag에 남기지 않는다. process
+restart와 multi-instance 사이에는 공유되지 않는다.
+
 worker는 conditional `PENDING -> RUNNING` update로 중복 실행을 막은 뒤, DB transaction 밖에서 기존
 `PlayerAnalysisService`를 호출한다. 성공 snapshot은 provider-independent `PlayerAnalysisResult` JSONB만 저장하며,
 OpenAI SDK type, raw provider response/prompt, token usage, Riot identifier는 저장하지 않는다. lifecycle 전이와
@@ -189,6 +201,10 @@ limiter는 두 POST에서 `PlayerAnalysisService` 호출 또는 `AnalysisJob` ro
 올림한 `Retry-After` 초 header로 응답한다. 반면 executor queue 용량 초과는 기존처럼 `503 Service Unavailable`과
 `CAPACITY_EXCEEDED` audit row를 사용한다. rate limit은 client의 요청 빈도를, executor capacity는 서버가 동시에
 수용할 수 있는 작업 수를 각각 보호하므로 서로 대체하지 않는다.
+
+async POST의 순서는 rate limit 후 dedupe다. 따라서 duplicate POST도 quota를 소비하지만, dedupe hit은 새 DB row,
+executor slot, Riot/OpenAI 호출을 만들지 않는다. 기존 rate-limit-before-row/dispatch invariant를 보존하는 single-instance
+MVP 선택이며, quota를 실제 generation에만 연결하는 reservation/refund protocol은 도입하지 않는다.
 
 현재 Bucket4j local bucket state는 process memory에만 있고 Caffeine `expireAfterAccess(window)`와 library scheduler가
 유휴 client bucket을 정리한다. v0.1에는 별도 rate-limit metric을 추가하지 않는다. client IP는 cache key로만 사용하며

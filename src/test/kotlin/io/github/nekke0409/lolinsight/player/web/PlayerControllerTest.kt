@@ -8,6 +8,7 @@ import io.github.nekke0409.lolinsight.analysis.application.PlayerAnalysisResult
 import io.github.nekke0409.lolinsight.analysis.application.PlayerAnalysisService
 import io.github.nekke0409.lolinsight.analysis.job.application.AnalysisJobCapacityExceededException
 import io.github.nekke0409.lolinsight.analysis.job.application.AnalysisJobCreated
+import io.github.nekke0409.lolinsight.analysis.job.application.AnalysisJobDedupeKey
 import io.github.nekke0409.lolinsight.analysis.job.application.AnalysisJobService
 import io.github.nekke0409.lolinsight.analysis.job.application.AnalysisJobStatus
 import io.github.nekke0409.lolinsight.analysis.ratelimit.AnalysisGenerationRateLimitExceededException
@@ -243,7 +244,7 @@ class PlayerControllerTest {
     @Test
     fun `accepts an asynchronous analysis job and returns its polling location`() {
         val jobId = UUID.fromString("e8741722-84c8-4d4f-9c1b-09c7a63418cf")
-        `when`(analysisJobService.create("Hide on bush", "KR1", 0, 20))
+        `when`(analysisJobService.create("Hide on bush", "KR1", 0, 20, dedupeKey(DEFAULT_CLIENT_IP)))
             .thenReturn(AnalysisJobCreated(jobId, AnalysisJobStatus.PENDING, Instant.parse("2026-09-16T10:00:00Z")))
 
         mockMvc
@@ -257,7 +258,7 @@ class PlayerControllerTest {
 
     @Test
     fun `does not return accepted when analysis job capacity is exhausted`() {
-        `when`(analysisJobService.create("Hide on bush", "KR1", 0, 20))
+        `when`(analysisJobService.create("Hide on bush", "KR1", 0, 20, dedupeKey(DEFAULT_CLIENT_IP)))
             .thenThrow(AnalysisJobCapacityExceededException())
 
         mockMvc
@@ -332,7 +333,7 @@ class PlayerControllerTest {
         sharedQuotaMockMvcBuilder.setControllerAdvice(GlobalExceptionHandler())
         val sharedQuotaMockMvc = sharedQuotaMockMvcBuilder.build()
         val created = AnalysisJobCreated(UUID.randomUUID(), AnalysisJobStatus.PENDING, Instant.parse("2026-09-17T00:00:00Z"))
-        `when`(analysisJobService.create("Hide on bush", "KR1", 0, 20)).thenReturn(created)
+        `when`(analysisJobService.create("Hide on bush", "KR1", 0, 20, dedupeKey(clientIp))).thenReturn(created)
         `when`(playerAnalysisService.analyze("Hide on bush", "KR1", 0, 20))
             .thenReturn(PlayerAnalysisResponse(PlayerAnalysisResponseStatus.INSUFFICIENT_COMPARISON_DATA, null))
 
@@ -369,7 +370,7 @@ class PlayerControllerTest {
                     },
             ).andExpect(status().isTooManyRequests)
 
-        verify(analysisJobService, times(2)).create("Hide on bush", "KR1", 0, 20)
+        verify(analysisJobService, times(2)).create("Hide on bush", "KR1", 0, 20, dedupeKey(clientIp))
         verify(playerAnalysisService).analyze("Hide on bush", "KR1", 0, 20)
     }
 
@@ -491,4 +492,17 @@ class PlayerControllerTest {
                     averageDamageShare = 0.3,
                 ),
         )
+
+    private fun dedupeKey(clientIp: String): AnalysisJobDedupeKey =
+        AnalysisJobDedupeKey.of(
+            AnalysisRateLimitKey("analysis-generation:$clientIp"),
+            "Hide on bush",
+            "KR1",
+            0,
+            20,
+        )
+
+    private companion object {
+        const val DEFAULT_CLIENT_IP = "127.0.0.1"
+    }
 }

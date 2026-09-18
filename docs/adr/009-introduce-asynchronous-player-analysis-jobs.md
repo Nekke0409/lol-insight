@@ -40,6 +40,11 @@ HTTP 호출은 DB transaction 안에서 실행되지 않는다.
 terminal job은 다시 실행하지 않는다. `CAPACITY_EXCEEDED`만 worker 시작 전 `PENDING -> FAILED`로 전이하는
 명시적인 backpressure 예외다.
 
+같은 JVM 안에서 동일 client와 동일 분석 request가 `PENDING` 또는 `RUNNING`인 동안에는 SHA-256 digest 기반 in-flight
+registry로 기존 job을 재사용한다. registry는 PENDING row commit 후 job을 연결하고 dispatcher가 성공한 뒤에만 대기 중인
+duplicate 요청을 진행시킨다. terminal transition은 entry를 제거하며, 기본 5분 safety expiration은 cleanup 실패에만
+대응한다. 이는 completed-result cache나 distributed dedupe가 아니고 sync endpoint에는 적용하지 않는다.
+
 기존 OpenAI timeout 60초, `maxRetries(0)`, low/low generation policy와 adapter metrics는 그대로 유지한다.
 async job은 HTTP request lifecycle만 분리하며 provider timeout이나 retry 정책을 바꾸지 않는다.
 
@@ -55,5 +60,8 @@ async job은 HTTP request lifecycle만 분리하며 provider timeout이나 retry
   추가하지 않는다.
 - 현재 인증이 없으므로 UUID는 ownership/security boundary가 아니다. 사용자 계정 단계에서 `ownerUserId`와 인가를
   별도로 도입해야 한다.
+- dedupe identity도 현재는 `AnalysisRateLimitKeyResolver`의 client identity를 사용한다. 따라서 서로 다른 client는 같은
+  Riot ID 요청을 공유하지 않으며, 인증 도입 시 authenticated `userId`로 교체한다. raw Riot ID/client identity는 DB,
+  log, metric tag에 저장하지 않는다.
 - Kafka, RabbitMQ, Redis queue, SQS, WebSocket, SSE는 이 결정에 포함하지 않는다. 실제 deployment의 recovery와
   throughput 요구가 확인되면 persistent queue/SQS worker를 다음 단계로 검토한다.

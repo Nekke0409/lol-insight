@@ -26,7 +26,7 @@ Riot의 공식 Ranked Ladder를 대체하는 MMR, ELO 또는 자체 Skill Rating
 | Analysis feature | 개인 요약용 `PlayerAnalysisFeature`, comparison-ready `PlayerComparisonContext`, deterministic `PlayerComparisonFeature`, 그리고 AVAILABLE cohort만 설명하는 `PlayerAnalysisResult` | locale, result quality evaluation |
 | Redis | 성공한 Match Detail을 7일 TTL로 캐시 | benchmark 전용 Redis 기능은 도입하지 않음 |
 | Persistence | PostgreSQL, JPA, Flyway 기반 `BenchmarkSample`과 `AnalysisJob` schema, idempotent sample 저장, JSONB analysis snapshot | retention 정책, job crash recovery |
-| LLM | OpenAI Responses API + Structured Outputs, sync `/analysis`와 polling `/analysis-jobs`, provider-independent `PlayerAnalysisGenerator`, client/IP 기준 분석 생성 rate limit | result cache, 인증 사용자 기준 quota, cost observability, multi-provider |
+| LLM | OpenAI Responses API + Structured Outputs, sync `/analysis`와 polling `/analysis-jobs`, async in-flight dedupe, provider-independent `PlayerAnalysisGenerator`, client/IP 기준 분석 생성 rate limit | completed-result cache, 인증 사용자 기준 quota, cost observability, multi-provider |
 
 ## 현재 아키텍처
 
@@ -55,6 +55,12 @@ client당 1분마다 최대 3회이며, 초과하면 `429 Too Many Requests`, `R
 `ANALYSIS_RATE_LIMIT_EXCEEDED`를 반환합니다. polling `GET /analysis-jobs/{jobId}`는 생성 quota 대상이 아닙니다.
 이는 단일 인스턴스 비용 보호용 MVP 정책이며, executor 용량 초과의 `503`과는 별개입니다. 자세한 한계와 전환 경로는
 [ADR-010](docs/adr/010-use-in-memory-analysis-generation-rate-limit.md)을 따릅니다.
+
+async `POST /analysis-jobs`는 같은 client가 같은 Riot ID와 pagination으로 이미 진행 중인 `PENDING`/`RUNNING` 분석을
+다시 요청하면 기존 job을 반환합니다. 다른 client와 terminal job은 공유하지 않으며, 완료 결과 cache는 아직 없습니다.
+in-flight registry는 raw Riot ID를 저장하지 않는 SHA-256 key를 쓰는 single-process memory 상태이므로 restart와 여러
+instance 사이에서는 공유되지 않습니다. 생성 quota는 dedupe보다 먼저 소비하므로 duplicate POST도 quota를 소비하지만,
+새 executor slot이나 Riot/OpenAI 호출을 만들지 않습니다.
 
 Peer Benchmark의 ranked player discovery와 제한된 collection vertical slice가 구현됐습니다. League-V4의 KR
 `RANKED_SOLO_5x5` entry를 page 단위로 읽어 entry가 제공하는 PUUID를 `SampledRankedPlayer`로 정규화합니다.

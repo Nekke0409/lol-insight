@@ -74,4 +74,12 @@ class AnalysisJobLifecycleService(
             failureCode = AnalysisJobFailureCode.CAPACITY_EXCEEDED,
             completedAt = Instant.now(clock),
         ) == 1
+
+    @Transactional(readOnly = true)
+    fun findInFlight(jobId: UUID): AnalysisJobCreated? =
+        analysisJobJpaRepository
+            .findById(jobId)
+            .filter { it.status == AnalysisJobStatus.PENDING || it.status == AnalysisJobStatus.RUNNING }
+            .map { AnalysisJobCreated(it.id, it.status, it.createdAt) }
+            .orElse(null)
 }

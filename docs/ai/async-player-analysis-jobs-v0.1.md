@@ -8,7 +8,10 @@ contract를 설명한다.
 
 ```text
 POST analysis-jobs
-    -> AnalysisJob PENDING 저장 및 commit
+    -> generation rate limit 소비
+    -> in-flight dedupe registry 확인
+    -> miss면 AnalysisJob PENDING 저장 및 commit
+    -> registry에 job 연결
     -> in-memory AnalysisJobCommand dispatch
     -> 202 Accepted
 
@@ -36,6 +39,39 @@ queue가 가득 차서 command 제출이 거절되면 response는 `503 Service U
 않고 `FAILED / CAPACITY_EXCEEDED` audit row로 남는다. 따라서 실제 queue에 들어가지 않은 job ID를 202로 노출하지
 않는다.
 
+### In-flight dedupe
+
+async POST만 같은 process 안에서 진행 중인 generation을 dedupe한다. 기존 sync `POST /analysis`는 즉시
+`PlayerAnalysisResponse`를 반환하는 contract를 유지해야 하므로 이 정책의 대상이 아니며, 기존 generation rate limit만
+적용한다.
+
+같은 client와 정확히 같은 `gameName`, `tagLine`, `start`, `count`, 현재 analysis contract version(`analysis-v0.2`)으로
+만든 요청은 기존 job이 `PENDING` 또는 `RUNNING`일 때 그 job을 재사용한다. 응답은 새 schema나
+`deduplicated` field 없이 기존 `202`, `jobId`, 현재 status, 기존 `createdAt`, 기존 polling `Location`을 그대로 사용한다.
+`SUCCEEDED`와 `FAILED` job은 재사용하지 않으므로 같은 요청은 새 job을 만든다.
+
+client identity는 기존 `AnalysisRateLimitKeyResolver`가 HTTP boundary에서 해석한 `remoteAddr`를 재사용한다. 따라서
+다른 client는 같은 Riot ID와 pagination을 요청해도 job ID를 공유하지 않는다. 인증을 도입하면 이 resolver의 입력을
+authenticated `userId`로 교체한다. 임의의 `X-Forwarded-For`를 신뢰하지 않는 정책도 rate limit과 동일하다.
+
+registry key는 client identity와 위 request identity를 length-delimited SHA-256 digest로 만든다. raw Riot ID와 client
+identity는 DB, log, metric tag에 저장하거나 기록하지 않는다. Riot ID의 lowercase/case-folding 규칙을 새로 만들지 않고,
+validation을 통과한 정확한 request 값을 사용한다.
+
+key별 Caffeine atomic mapping이 check-and-register를 수행한다. 서로 다른 request는 전역 lock으로 직렬화하지 않는다.
+registry hit은 DB에서 job이 실제로 `PENDING` 또는 `RUNNING`인지 확인하고, terminal/stale entry는 제거한 뒤 새 job
+생성 경로로 진행한다. 새 job은 PENDING row commit 이후에만 registry에 연결하고 dispatch한다. dispatch 중인 entry를
+먼저 본 동시 요청은 dispatch 결과까지만 합류하므로 capacity rejection job을 성공한 202로 노출하지 않는다.
+
+worker가 `SUCCEEDED` 또는 `FAILED` 전이를 저장하면 job ID가 일치하는 registry entry만 제거한다. 예외적으로 cleanup이
+되지 않아도 Caffeine `expireAfterWrite` safety expiration이 stale reservation을 정리한다. 기본
+`ANALYSIS_JOB_DEDUPE_EXPIRY=5m`은 OpenAI timeout 60초와 기본 worker 1개/queue 2개 lifecycle보다 충분히 길게 둔
+값이다. 이 TTL은 completed-result cache가 아니며, entry hit으로 연장되지 않는다. process restart 시 registry는
+사라지므로 restart 이후 in-flight dedupe는 보장하지 않는다.
+
+이 MVP는 distributed dedupe를 제공하지 않는다. 여러 instance에서는 instance별 registry가 독립적이므로, horizontal
+scaling 전에 Redis 등의 atomic distributed coordination 필요성을 별도로 판단한다.
+
 ### 분석 생성 rate limit
 
 이 POST와 기존 sync `POST /api/v1/players/{gameName}/{tagLine}/analysis`는 client/IP별 같은
@@ -53,6 +89,11 @@ quota를 통과한 요청은 이후 provider failure, timeout, provider 429, ana
 발생해도 반환하지 않는다. capacity rejection은 기존 `503`과 `FAILED(CAPACITY_EXCEEDED)` audit row semantics를
 유지한다. rate limit은 특정 client의 비용 유발 빈도를, executor capacity는 전체 서버의 동시 작업 수를 제한하는 별도
 정책이다.
+
+현재 순서는 **rate limit → dedupe**다. 따라서 same-client duplicate POST도 token 하나를 소비한다. 이 Option A는 기존
+rate-limit-before-row/dispatch invariant를 유지하고 dedupe reservation과 quota 소비를 하나의 atomic protocol로 결합하지
+않는 대신, 실제 새 generation을 만들지 않는 duplicate 요청에도 quota가 든다는 제한이 있다. dedupe hit은 새 executor
+slot, Riot API 호출, `PlayerAnalysisService` 호출, OpenAI 호출을 만들지 않는다.
 
 ### Job 조회
 
@@ -115,6 +156,7 @@ async job이 provider timeout을 제거하거나 연장하지 않는다.
 ```text
 ANALYSIS_JOB_WORKER_THREADS=1
 ANALYSIS_JOB_QUEUE_CAPACITY=2
+ANALYSIS_JOB_DEDUPE_EXPIRY=5m
 ```
 
 same-process executor이므로 process crash 뒤 command recovery가 없다. PENDING command는 잃을 수 있고 RUNNING row는
