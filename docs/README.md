@@ -32,7 +32,7 @@ Riot API endpoint별 routing host와 용도를 빠르게 확인하는 참고 문
 ### Peer Benchmark v0.2
 
 - [`benchmark/peer-benchmark-v0.2.md`](benchmark/peer-benchmark-v0.2.md): 명시적인 `POSITION`,
-  `CHAMPION_POSITION` aggregate, coverage, 한계
+  `CHAMPION_POSITION` aggregate, coverage, bounded replenishment와 한계
 - [`ai/player-comparison-context-v0.2.md`](ai/player-comparison-context-v0.2.md): scope에 맞춘 user statistic
 - [`ai/player-comparison-feature-v0.2.md`](ai/player-comparison-feature-v0.2.md): fallback 없는 독립 comparison 결과
 - [`adr/008-use-explicit-benchmark-scopes.md`](adr/008-use-explicit-benchmark-scopes.md): scope 결정 기록
@@ -80,3 +80,4 @@ Automation의 현재 contract는 [`automation/new-ranked-match-analysis-v0.1.md`
 - [`ADR-012: Persisted Ranked Solo Match Automation Trigger 사용`](adr/012-use-persisted-ranked-match-automation-trigger.md)
 - [`ADR-013: JVM-local Riot outbound cooldown 사용`](adr/013-use-jvm-local-riot-outbound-cooldown.md)
 - [`ADR-014: Peer Benchmark에 경기 시작 시각 기반 유효 표본 기간 사용`](adr/014-use-game-start-validity-window-for-peer-benchmark.md)
+- [`ADR-015: Coverage-driven bounded Benchmark Replenishment 사용`](adr/015-use-coverage-driven-benchmark-replenishment.md)

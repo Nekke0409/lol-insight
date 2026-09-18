@@ -9,8 +9,8 @@ data class BenchmarkCohortCoverage(
     val uniquePlayersNeeded: Long,
 ) {
     init {
-        require(sampleCount > 0) { "sampleCount must be positive" }
-        require(uniquePlayerCount > 0) { "uniquePlayerCount must be positive" }
+        require(sampleCount >= 0) { "sampleCount cannot be negative" }
+        require(uniquePlayerCount >= 0) { "uniquePlayerCount cannot be negative" }
         require(uniquePlayerCount <= sampleCount) { "uniquePlayerCount cannot exceed sampleCount" }
         require(samplesNeeded >= 0) { "samplesNeeded cannot be negative" }
         require(uniquePlayersNeeded >= 0) { "uniquePlayersNeeded cannot be negative" }

@@ -71,8 +71,34 @@ cohort를 보완하는 caller는 이를 0건 `NO_DATA`로 처리한다.
 `POSITION`은 role-level baseline이다. Champion kit과 playstyle 차이가 metric distribution에 큰 영향을 줄 수
 있으므로 champion-specific benchmark로 표현하지 않는다.
 
+## Coverage Replenishment v0.1
+
+`BenchmarkReplenishmentTickService`는 동일한 rolling window에서 `POSITION` coverage만 읽고, TOP, JUNGLE,
+MIDDLE, BOTTOM, UTILITY 다섯 position이 모두 AVAILABLE일 때만 cohort를 healthy로 판단한다. `GROUP BY`에 없는
+position은 0 samples / 0 unique players의 `NO_DATA`로 보완한다. `CHAMPION_POSITION` sparse 상태는 trigger도 fallback도
+아니며, 수집 결과로 늘어나는 opportunistic scope다.
+
+지원 cohort는 `BENCHMARK_REPLENISHMENT_COHORTS`의 명시 allowlist(`TIER:DIVISION`, 기본 `GOLD:I`)다. 현재
+League-V4 page discovery가 검증된 IRON~DIAMOND와 I~IV만 허용하며, 지원하지 않는 tier의 분석 요청이 인접 tier
+benchmark를 사용하거나 수집을 시작하지 않는다.
+
+tick은 `BENCHMARK_REPLENISHMENT_MAX_COHORTS_PER_TICK=1`, page 1개, player 10명, player당 match 5개라는
+작은 budget만 사용한다. 부족한 coverage를 while loop로 채우지 않고 다음 tick에서 동일 window 기준으로 다시 판정한다.
+선택 우선순위는 `NO_DATA` position 수, unavailable POSITION 수, sample/unique-player deficit, tier/division의
+결정적인 tie-break 순서다.
+
+각 cohort의 `benchmark_replenishment_cursor`는 다음 discovery page를 저장한다. 정상적으로 discovery가 끝난 page는
+다음 page로 전진하고, 빈 page는 1로 wrap한다. discovery 자체가 local cooldown 또는 Riot 429로 중단되면 마지막 시도 시각만
+갱신하고 같은 page를 보존한다. discovery 뒤의 Match collection 429는 새 page cursor를 유지하되, 해당 tick의 이후 cohort 수집을 중단한다.
+
+스케줄러는 `BENCHMARK_REPLENISHMENT_ENABLED=false`가 기본이며 `BENCHMARK_REPLENISHMENT_INTERVAL`(기본 `24h`)로
+opt-in 한다. `RUN_BENCHMARK_REPLENISHMENT_ONCE=true`는 명시적인 startup one-tick 검증용이다. public replenishment
+endpoint, request-time seed, automatic retry, sleep, distributed lock은 없다. process 내부 guard만 동일 JVM의 중복 tick을
+막으므로 multi-instance 운영에는 shared claim/lock 정책이 별도로 필요하다. metric은 outcome만 tag로 사용하며 PUUID,
+Riot ID, Match ID, tier/division을 tag나 log에 넣지 않는다.
+
 두 scope 모두 patch-aware하지 않고 유효기간 안에서도 여러 `gameVersion`이 섞일 수 있다. `rankCapturedAt`은 수집 시점에
 확인한 rank이며 경기 시작 시점 rank history가 아니다. heavy contributor가 match-level distribution에 영향을 줄 수 있으며,
 player percentile, rank history, top-X-percent, player-level benchmark claim을 제공하지 않는다. 사용자의 최근 Ranked Solo
-최대 20경기 분석 범위는 peer의 30일 유효기간과 별도다. Redis aggregate cache, aggregate table, scheduler, 새 Riot seed
-request, public benchmark endpoint도 범위 밖이다.
+최대 20경기 분석 범위는 peer의 30일 유효기간과 별도다. Redis aggregate cache, aggregate table, demand-driven cohort
+activation, public benchmark endpoint는 범위 밖이다.

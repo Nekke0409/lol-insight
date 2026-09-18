@@ -62,3 +62,14 @@ benchmark:
   sample:
     # gameStartTimestamp 기준 rolling validity window다. 저장 retention과 별개다.
     max-age: ${BENCHMARK_SAMPLE_MAX_AGE:30d}
+  replenishment:
+    # 명시적으로 켜기 전에는 scheduler와 one-tick runner 모두 Riot 호출을 만들지 않는다.
+    enabled: ${BENCHMARK_REPLENISHMENT_ENABLED:false}
+    interval: ${BENCHMARK_REPLENISHMENT_INTERVAL:24h}
+    max-cohorts-per-tick: ${BENCHMARK_REPLENISHMENT_MAX_COHORTS_PER_TICK:1}
+    page-count-per-cohort: ${BENCHMARK_REPLENISHMENT_PAGE_COUNT_PER_COHORT:1}
+    player-limit-per-cohort: ${BENCHMARK_REPLENISHMENT_PLAYER_LIMIT_PER_COHORT:10}
+    matches-per-player: ${BENCHMARK_REPLENISHMENT_MATCHES_PER_PLAYER:5}
+    # 형식: GOLD:I,PLATINUM:I. 현재 검증된 League-V4 discovery 범위만 허용한다.
+    cohorts: ${BENCHMARK_REPLENISHMENT_COHORTS:GOLD:I}
+    run-once: ${RUN_BENCHMARK_REPLENISHMENT_ONCE:false}

@@ -281,8 +281,9 @@ entry가 제공하는 PUUID를 사용하는 ranked player discovery, `SampledRan
 domain/entity, Flyway schema 및 idempotent persistence 진입점은 구현됐다. collector는 Match-V5의 `queue=420` Match ID
 filter와 Detail 검증을 함께 사용하고, Match ID deduplication·sampled player 관계 보존·participant metric 계산·sample
 저장까지 수행한다. raw `benchmark_sample`을 PostgreSQL에서 on-demand 집계하는 `PeerBenchmarkQueryService`와
-match-level percentile threshold, 이를 사용자 context와 결합하는 `PlayerComparisonFeature`는 구현됐다. scheduler,
-player percentile rank는 아직 구현되지 않았고, LLM integration은 ADR-007의 범위에서 구현됐다. 확정된 데이터 모델 원칙은
+match-level percentile threshold, 이를 사용자 context와 결합하는 `PlayerComparisonFeature`는 구현됐다. POSITION coverage를
+기준으로 bounded batch를 수집하는 internal replenishment scheduler도 구현됐으며, player percentile rank는 아직 구현되지
+않았다. LLM integration은 ADR-007의 범위에서 구현됐다. 확정된 데이터 모델 원칙은
 [ADR-006](adr/006-use-sampled-peer-benchmark.md)을 따른다.
 
 ## 5. 애플리케이션 의존 방향
@@ -521,7 +522,7 @@ Riot API
     -> PlayerAnalysisFeature
     -> PlayerComparisonContext(최근 Ranked Solo Match만 사용한 현재 Solo rank + champion/position 사용자 지표)
 
-Benchmark 흐름(수집과 집계 구현됨)
+Benchmark 흐름(수집·집계·bounded replenishment 구현됨)
 랭크 플레이어 원천
     -> 표본 플레이어(구현됨)
     -> 최근 Ranked Solo Match ID(구현됨)
@@ -532,6 +533,13 @@ Benchmark 흐름(수집과 집계 구현됨)
     -> Benchmark 집계(구현됨)
     -> PeerBenchmark(구현됨)
     -> PlayerComparisonFeature(구현됨)
+
+Replenishment 흐름(기본 disabled)
+유효 POSITION coverage
+    -> deterministic cohort planner
+    -> persisted discovery page cursor
+    -> 기존 BenchmarkSeedService bounded batch
+    -> 다음 tick의 coverage 재평가
 ```
 
 `PlayerComparisonContext`는 `PlayerAnalysisFeature`와 별개의 comparison-ready 사용자 입력이다. 대상 PUUID와
@@ -648,12 +656,12 @@ slice다. 이 단계의 `SampledRankedPlayer`는 수집 시점의 rank context�
 production-quality benchmark로 표현하지 않는다. 여러 division/page와 sampling policy는 실제 benchmark 품질을 높이는
 별도 결정이다.
 
-### 제한된 개발용 Benchmark Seed
+### 제한된 개발용 Benchmark Seed와 Coverage Replenishment
 
 Benchmark module은 개발 전용 opt-in manual seed test도 제공한다. 이는 제한된 League-V4 page 범위와 player 및
 match 예산을 받아 KR `RANKED_SOLO_5x5` / queue 420으로 수집 범위를 고정하고, 중복을 제거한
-`SampledRankedPlayer` 목록을 기존 `BenchmarkMatchCollectionService`에 전달한다. public endpoint,
-`ApplicationRunner`, scheduler, Spring Batch job, retry loop, sleep, rate limiter 또는 schema 변경은 추가하지 않는다.
+`SampledRankedPlayer` 목록을 기존 `BenchmarkMatchCollectionService`에 전달한다. manual seed는 유지되며 public endpoint,
+Spring Batch job, retry loop, sleep, benchmark 전용 rate limiter는 추가하지 않는다.
 
 `RankedPlayerDiscoveryService.discoverPaged`는 요청한 1-based page를 순서대로 조회하고 최초의 빈 page에서
 중단한다. 각 page의 PUUID를 정렬하고 그 결정적인 순서에서 처음 나타난 PUUID만 유지한다. player 예산은 unique
@@ -672,6 +680,34 @@ coverage는 제외할 target player 없이 유효한 exact-cohort corpus를 기�
 0건 cohort를 반환하지 않으므로, caller가 알려진 cohort를 표시한다면 이를 0건 `NO_DATA`로 해석한다.
 comparison flow는 반드시 exclusion 결과를 다시 확인해야 한다. 제한된 seed와 coverage report는 convenience sampling
 pipeline만 검증하며 corpus의 대표성이나 운영 준비 상태를 보장하지 않는다.
+
+`BenchmarkReplenishmentTickService`는 manual seed의 discovery와 collector를 복제하지 않고
+`BenchmarkSeedService.seed(...)`를 재사용한다. 동일한 `BenchmarkQueryWindow`의 POSITION coverage에서 TOP, JUNGLE,
+MIDDLE, BOTTOM, UTILITY 다섯 row를 기대 집합으로 보며 없는 row는 0 samples / 0 unique players의 `NO_DATA`로 보완한다.
+다섯 position이 모두 AVAILABLE일 때만 healthy다. CHAMPION_POSITION coverage는 계속 보고하지만 scheduler trigger,
+threshold 완화, silent fallback에는 사용하지 않는다.
+
+지원 cohort는 `BENCHMARK_REPLENISHMENT_COHORTS` allowlist의 `TIER:DIVISION`이며 기본값은 기존 corpus가 있는 `GOLD:I`다.
+현재 League-V4 discovery가 검증한 IRON~DIAMOND, I~IV 범위 외의 high-tier route를 추측해 추가하지 않는다. 분석 request가
+allowlist 외 tier를 받더라도 인접 cohort fallback이나 request-time collection을 시작하지 않는다.
+
+`BenchmarkReplenishmentPlanner`는 Riot I/O 없이 `NO_DATA` position 수, unavailable POSITION 수, sample/unique-player
+deficit, tier/division 순서로 부족 cohort를 결정한다. `BENCHMARK_REPLENISHMENT_MAX_COHORTS_PER_TICK`(기본 1), page 1개,
+player 10명, player당 Match 5개가 한 tick의 최대 예산이다. collector는 특정 position을 목표로 discovery하지 않으므로
+실제 결과가 부족 position을 정확히 채운다는 보장은 없고, 다음 tick은 coverage를 다시 읽는다. 부족분까지 반복 호출하는
+while loop는 없다.
+
+`benchmark_replenishment_cursor`는 `region / queue / tier / division`별 next page를 PostgreSQL에 저장한다. cursor read/create와
+advance는 각각 짧은 transaction이며 Riot HTTP 호출은 transaction 밖이다. discovery가 정상 완료되면 page를 전진하고 빈 page는
+1로 wrap한다. discovery의 429/local cooldown은 last-attempt metadata만 갱신하고 같은 page를 보존한다. discovery 뒤 collection의 429는 page cursor를 전진한
+상태로 해당 tick의 이후 cohort를 중단한다. `RiotApiCooldown`이 tick 시작에 active면 수집 없이 종료한다. 자동 retry와 sleep은
+없다.
+
+scheduler는 `BENCHMARK_REPLENISHMENT_ENABLED=false`가 기본이고 `BENCHMARK_REPLENISHMENT_INTERVAL`(기본 `24h`)로 opt-in
+한다. `RUN_BENCHMARK_REPLENISHMENT_ONCE=true`는 startup에서 한 tick만 호출하는 명시적인 운영 검증 경로다. scheduler adapter는
+`runOneTick()`만 호출한다. AtomicBoolean guard는 같은 JVM의 중복 tick만 막으며 distributed claim/lock은 없다. low-cardinality
+`benchmark.replenishment.*` metrics는 outcome만 tag로 기록하고 cohort, PUUID, Riot ID, Match ID를 tag나 log에 넣지 않는다.
+결정 근거는 [ADR-015](adr/015-use-coverage-driven-benchmark-replenishment.md)를 따른다.
 
 ## 9. AI 분석 아키텍처
 
@@ -829,7 +865,7 @@ champion/item 문서, 공식 gameplay knowledge 같은 비정형 지식 검색�
 
 ## 10. 영속성
 
-PostgreSQL, JPA/Hibernate, Flyway는 `BenchmarkSample` persistence에 도입됐다. schema source of truth는
+PostgreSQL, JPA/Hibernate, Flyway는 `BenchmarkSample`과 `benchmark_replenishment_cursor` persistence에 도입됐다. schema source of truth는
 Flyway migration이며, JPA는 `ddl-auto=validate`로 mapping만 검증한다. datasource의 production credentials는
 `POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD` 환경변수로 제공한다.
 `local` profile에만 Compose와 일치하는 개발 기본값이 있다. Redis는 Match Detail cache와 ephemeral completed analysis
@@ -952,6 +988,7 @@ Riot API 오류를 서비스 관점의 오류로 변환한 뒤
 - 단일 Spring Boot Modular Monolith
 - Account-V1, Match-V5, League-V4 Riot API 연동과 internal model 정규화
 - 최근 Match 통계, `BenchmarkSample` 수집·영속화, exact Peer Benchmark와 comparison feature
+- POSITION-first bounded benchmark coverage replenishment, persisted discovery page cursor, JVM-local cooldown 재사용
 - OpenAI Structured Outputs 기반 `PlayerAnalysisResult`, usage·latency 및 completed-result cache 관측성
 - sync analysis와 persisted async `AnalysisJob`, bounded executor, generation rate limit, same-process in-flight dedupe
 - persisted PUUID tracking/cursor와 idempotent Ranked Solo Match Automation trigger, 기존 `AnalysisJob` 재사용

@@ -24,5 +24,9 @@ class NoDataSourceBenchmarkPersistenceTestConfiguration {
     fun benchmarkSampleJpaRepository(): BenchmarkSampleJpaRepository = mock(BenchmarkSampleJpaRepository::class.java)
 
     @Bean
+    fun benchmarkReplenishmentCursorJpaRepository(): BenchmarkReplenishmentCursorJpaRepository =
+        mock(BenchmarkReplenishmentCursorJpaRepository::class.java)
+
+    @Bean
     fun namedParameterJdbcTemplate(): NamedParameterJdbcTemplate = mock(NamedParameterJdbcTemplate::class.java)
 }

@@ -71,6 +71,7 @@ class RankedPlayerDiscoveryService(
                             pagesProcessed = pagesProcessed,
                             rateLimitStopped = true,
                             retryAfterSeconds = exception.rateLimitRetryAfterSeconds(),
+                            emptyPageEncountered = false,
                         )
                     }
                     throw exception
@@ -78,7 +79,14 @@ class RankedPlayerDiscoveryService(
 
             pagesProcessed += 1
             if (pagePuuids.isEmpty()) {
-                break
+                return PagedRankedPlayerDiscoveryResult(
+                    players = playersByPuuid.values.toList(),
+                    discoveredPlayers = discoveredPlayers,
+                    pagesProcessed = pagesProcessed,
+                    rateLimitStopped = false,
+                    retryAfterSeconds = null,
+                    emptyPageEncountered = true,
+                )
             }
 
             for (puuid in pagePuuids.sorted()) {
@@ -101,6 +109,7 @@ class RankedPlayerDiscoveryService(
                         pagesProcessed = pagesProcessed,
                         rateLimitStopped = false,
                         retryAfterSeconds = null,
+                        emptyPageEncountered = false,
                     )
                 }
             }
@@ -112,6 +121,7 @@ class RankedPlayerDiscoveryService(
             pagesProcessed = pagesProcessed,
             rateLimitStopped = false,
             retryAfterSeconds = null,
+            emptyPageEncountered = false,
         )
     }
 
@@ -126,6 +136,7 @@ data class PagedRankedPlayerDiscoveryResult(
     val pagesProcessed: Int,
     val rateLimitStopped: Boolean,
     val retryAfterSeconds: Long?,
+    val emptyPageEncountered: Boolean = false,
 ) {
     init {
         require(discoveredPlayers >= uniquePlayers) { "discoveredPlayers cannot be less than unique players" }

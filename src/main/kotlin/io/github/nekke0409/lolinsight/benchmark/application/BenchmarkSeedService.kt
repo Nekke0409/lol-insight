@@ -29,6 +29,7 @@ class BenchmarkSeedService(
                 collectionResult = null,
                 rateLimitStopped = true,
                 retryAfterSeconds = discoveryResult.retryAfterSeconds,
+                emptyPageEncountered = discoveryResult.emptyPageEncountered,
             )
         }
 
@@ -47,6 +48,7 @@ class BenchmarkSeedService(
             collectionResult = collectionResult,
             rateLimitStopped = collectionResult.rateLimitStopped,
             retryAfterSeconds = collectionResult.retryAfterSeconds,
+            emptyPageEncountered = discoveryResult.emptyPageEncountered,
         )
     }
 }

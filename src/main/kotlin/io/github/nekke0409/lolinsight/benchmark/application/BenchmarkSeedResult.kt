@@ -9,6 +9,7 @@ data class BenchmarkSeedResult(
     val collectionResult: BenchmarkCollectionResult?,
     val rateLimitStopped: Boolean,
     val retryAfterSeconds: Long?,
+    val emptyPageEncountered: Boolean = false,
 ) {
     init {
         require(requestedStartPage > 0) { "requestedStartPage must be positive" }
