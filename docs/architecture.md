@@ -7,6 +7,10 @@
 
 아직 구현되지 않은 세부사항은 필요 이상으로 미리 확정하지 않는다.
 
+이 문서에서 **현재 구현**은 code와 현재 contract 문서로 검증된 동작만 뜻한다. Automation, Tool-using Agent,
+RAG / Vector Search, deployment 확장처럼 아직 구현되지 않은 항목은 미래 방향과 경계로만 기록하며, 현재 제공 기능처럼
+표현하지 않는다.
+
 ## 1. 아키텍처 목표
 
 이 프로젝트의 아키텍처는 다음 목표를 우선한다.
@@ -74,6 +78,27 @@ persistence 및 OpenAI Responses API Structured Outputs 분석 경계를 사용�
 - 오류 처리
 - 분석 feature 생성
 - LLM 요청 비용 관리
+
+### 현재 구현 흐름
+
+플레이어 분석의 현재 data flow는 다음과 같다.
+
+```text
+Riot API
+    -> normalization
+    -> deterministic statistics
+    -> peer benchmark
+    -> comparison feature
+    -> PlayerAnalysisInput
+    -> OpenAI Structured Output
+    -> PlayerAnalysisResult
+    -> sync response 또는 async job polling
+```
+
+`POST /analysis`는 이 pipeline을 동기로 반환한다. `POST /analysis-jobs`는 `AnalysisJob` lifecycle을 저장하고 bounded
+worker에서 같은 `PlayerAnalysisService`를 실행한 뒤 polling으로 결과를 전달한다. async POST는 generation rate limit을
+먼저 적용하고 같은 client·같은 exact request의 `PENDING`/`RUNNING` job만 in-flight dedupe한다. terminal result cache는
+구현하지 않았다.
 
 ## 4. 주요 기능 영역
 
@@ -226,13 +251,6 @@ match-level percentile threshold, 이를 사용자 context와 결합하는 `Play
 player percentile rank는 아직 구현되지 않았고, LLM integration은 ADR-007의 범위에서 구현됐다. 확정된 데이터 모델 원칙은
 [ADR-006](adr/006-use-sampled-peer-benchmark.md)을 따른다.
 
-### Community
-
-사용자 계정, 게시글, 댓글 등의 일반적인 웹 서비스 기능을 담당한다.
-
-현재 우선순위는 Riot 데이터 기능과 AI 분석 기능보다 낮으므로
-구체적인 내부 구조는 실제 구현 단계에서 결정한다.
-
 ## 5. 애플리케이션 의존 방향
 
 기본적인 요청 흐름은 다음 형태를 우선한다.
@@ -312,7 +330,8 @@ src/main/kotlin/<base-package>/
 ├── player/
 ├── match/
 ├── analysis/
-├── community/
+├── benchmark/
+├── comparison/
 └── global/
 ```
 
@@ -637,6 +656,7 @@ Riot API 데이터
 - LLM에게 전달할 구조화된 입력
 - cohort 선택과 sample size 검증
 - average, median, match-level percentile threshold 및 player와 benchmark의 numeric difference 계산
+- 기간 비교, availability, threshold와 Automation trigger에 필요한 명시적 rule 평가
 
 ### LLM 책임
 
@@ -659,7 +679,7 @@ Analysis 핵심 모델 전체로 전파되지 않도록 Client/Adapter 경계를
 Provider 교체 가능성을 이유로 과도한 추상화를 미리 만들지는 않지만,
 최소한 외부 SDK 타입과 핵심 애플리케이션 로직은 분리한다.
 
-### 구현된 v0.1 LLM 분석
+### 구현된 v0.2 Structured Output 분석
 
 `POST /api/v1/players/{gameName}/{tagLine}/analysis`는 기존 `PlayerComparisonFeatureService`를 그대로 사용한다.
 rank가 없으면 `UNRANKED`, AVAILABLE comparison이 없으면 `INSUFFICIENT_COMPARISON_DATA`를 반환하며, 두 경우 모두
@@ -667,13 +687,58 @@ provider를 호출하지 않는다. AVAILABLE comparison이 있으면 `PlayerAna
 
 입력은 exact cohort, 사용자 경기 수, benchmark sample/unique player 수, Backend가 계산한 7개 metric의 값·평균·중앙값·
 percentile threshold·difference뿐이다. PUUID, Riot ID, Match ID, raw Riot JSON, DB/Redis 데이터, API key와 raw provider
-error는 제외한다. v0.1은 OpenAI Responses API Structured Outputs를 사용하되, OpenAI SDK와 schema DTO는
+error는 제외한다. 현재 분석은 OpenAI Responses API Structured Outputs를 사용하되, OpenAI SDK와 schema DTO는
 `analysis/infrastructure/openai`에만 두고 application 결과로 즉시 변환한다.
 
 Prompt는 모든 사용자 노출 문장을 한국어로 제한하며, player percentile/top X%, player-level aggregate, 보편적인
 good/bad·지표 방향성, cross-position/champion ranking, LLM의 표본 적격성 판단, patch/freshness/timeline 추론을 금지한다.
-결과 cache, DB persistence, retry/backoff 및 비용 관측은 v0.1 범위 밖이다. 상세 contract는
-[Player Analysis v0.1](ai/player-analysis-v0.1.md), 결정 근거는 [ADR-007](adr/007-use-structured-llm-analysis-boundary.md)을 따른다.
+완료 결과 cache, automatic retry/backoff, stale-job recovery는 아직 구현하지 않았다. async job의 terminal result JSONB
+persistence와 provider 호출 관측성은 별도 현재 구현 범위다. 상세 contract는
+[Player Analysis v0.2](ai/player-analysis-v0.2.md), 결정 근거는 [ADR-007](adr/007-use-structured-llm-analysis-boundary.md)을 따른다.
+
+### 향후 Automation 경계
+
+Automation은 아직 구현하지 않았다. 구현 시에는 기존 통계와 `PlayerAnalysisService`를 복제하지 않고 다음 경계를 따른다.
+
+```text
+Trigger
+    -> Riot / internal data collection
+    -> deterministic Backend analysis
+    -> explicit condition / rule
+    -> existing AI Analysis Job
+    -> result persistence
+    -> delivery / notification
+```
+
+예를 들어 "최근 경기 성과가 유의하게 하락했다"는 판단은 기간 비교와 statistical rule을 Backend가 계산한다. LLM은
+계산된 결과를 자연어로 설명할 수 있지만 trigger condition을 임의로 결정하지 않는다. 실제 구현을 시작할 때에만
+`docs/automation/`에 세부 contract를 추가한다.
+
+### 향후 Tool-using Agent 경계
+
+Tool-using Agent도 아직 구현하지 않았다. 초기 구조는 다음처럼 LLM과 기존 application boundary를 분리한다.
+
+```text
+User question
+    -> LLM tool selection
+    -> Backend Tool
+    -> existing Application Service
+    -> structured Tool Result
+    -> optional additional tool call
+    -> final LLM response
+```
+
+Tool은 existing Application Service를 감싸는 boundary다. Agent가 Riot HTTP client, PostgreSQL repository, Redis,
+OpenAI SDK 같은 infrastructure를 직접 다루지 않는다. 초기에는 OpenAI Tool Calling, 명시적 Tool 정의와 직접 작성한
+dispatcher / bounded Agent loop를 우선 검토하며, LangChain·LangGraph 같은 framework는 실제 복잡도를 해결할 근거가
+있을 때만 도입한다. 실제 구현을 시작할 때에만 `docs/agent/`에 세부 contract를 추가한다.
+
+### RAG와 Vector Search의 위치
+
+구조화된 player/game data는 RAG가 아니라 Backend Tool과 Application Service로 제공한다. RAG는 Riot Patch Notes,
+champion/item 문서, 공식 gameplay knowledge 같은 비정형 지식 검색이 필요할 때의 선택지이며 Agent의 필수 선행 조건이
+아니다. 필요성이 확인된 초기 도입에서는 현재 PostgreSQL 운영 경계를 활용할 수 있는 pgvector를 우선 검토한다.
+그러나 pgvector, 별도 Vector DB, embedding pipeline은 현재 dependency나 필수 architecture component가 아니다.
 
 ## 10. 영속성
 
@@ -791,44 +856,33 @@ Riot API 오류를 서비스 관점의 오류로 변환한 뒤
 
 구체적인 로깅/메트릭 스택은 배포 구조를 정할 때 결정한다.
 
-## 15. MVP와 향후 계획
+## 15. 현재 구현과 향후 방향
 
-### MVP
+### 현재 구현
 
-현재 구현:
+- 단일 Spring Boot Modular Monolith
+- Account-V1, Match-V5, League-V4 Riot API 연동과 internal model 정규화
+- 최근 Match 통계, `BenchmarkSample` 수집·영속화, exact Peer Benchmark와 comparison feature
+- OpenAI Structured Outputs 기반 `PlayerAnalysisResult`, usage·latency 관측성
+- sync analysis와 persisted async `AnalysisJob`, bounded executor, generation rate limit, same-process in-flight dedupe
+- Match Detail Redis cache, PostgreSQL/JPA/Flyway, 핵심 단위·통합 테스트
 
-- 단일 Spring Boot Backend
-- Account-V1, Match-V5, League-V4 Riot API 연동
-- 플레이어/Match 조회와 normalized Match 생성
-- 최근 Match 기반 통계 계산과 `PlayerAnalysisFeature` 생성
-- 현재 Solo rank와 champion/position별 사용자 지표를 담는 `PlayerComparisonContext` 생성
-- exact benchmark availability와 numeric difference를 담는 `PlayerComparisonFeature` 생성
-- 명확한 오류 처리
-- 핵심 테스트
-- Match Detail Redis cache와 bounded detail fan-out
+### 다음 확장 순서
 
-다음 우선순위:
+1. Riot data와 player statistics의 품질·표본 정책 강화
+2. Peer Benchmark coverage, freshness, representative/scheduled collection 개선
+3. AI analysis 품질과 completed-result cache를 포함한 운영 안정성 강화
+4. explicit Backend rule을 기반으로 한 AI Automation
+5. Application Service boundary를 사용하는 Tool-using AI Agent
+6. 비정형 지식 검색이 실제 필요할 때만 RAG / Vector Search
+7. 인증, 배포, multi-instance 운영과 scaling 요구가 확인된 뒤의 구조 진화
 
-- representative sampling과 scheduled benchmark collection
-- player percentile rank
-- player percentile rank
+사용자 계정·인증은 community CRUD를 위한 선행 기능으로 두지 않는다. automation 설정, 분석 이력, 개인화,
+job ownership, Agent 개인화에 필요한 요구가 구체화되면 별도 결정한다.
 
-### 향후 고려사항
-
-실제 필요가 생겼을 때 검토한다.
-
-- 비동기 Job 처리
-- scheduled benchmark collection
-- 메시지 큐
-- 분석 결과 사전 계산
-- 대규모 Match 데이터 파이프라인
-- rank snapshot, larger/stratified sampling, patch-aware benchmark
-- Read Model 분리
-- 검색 엔진
-- 서비스 모듈 분리 또는 마이크로서비스
-- 다중 LLM Provider 전략
-
-미래 가능성만으로 MVP 구조를 복잡하게 만들지 않는다.
+completed-result cache, scheduled collection, crash/stale-job recovery, distributed rate limit/dedupe, persistent queue,
+multi-provider, patch-aware benchmark, deployment scaling은 아직 구현하지 않았다. 이러한 항목은 필요성과 운영 요구가
+확인될 때 기존 application boundary를 유지하는 가장 작은 변경부터 검토한다.
 
 ## 16. 아키텍처 변경 정책
 

@@ -10,7 +10,13 @@
 
 1. Riot Games API를 이용한 플레이어 검색 및 전적/통계 조회
 2. Peer Benchmark 기반 상대 분석과 AI 플레이 피드백
-3. 사용자 계정, 게시글, 댓글 등을 포함한 League of Legends 커뮤니티
+3. 운영 안정성, 비용 통제, 관측성 강화
+4. AI Automation
+5. LLM 기반 Tool-using AI Agent
+6. 실제 필요가 확인된 경우에만 RAG / Vector Search
+
+일반적인 게시글·댓글 중심 community CRUD는 현재 핵심 roadmap이 아니다. 사용자 계정과 인증은 automation 설정,
+분석 이력, 개인화, job ownership, Agent 개인화에 실제로 필요해지는 시점에 검토한다.
 
 이 프로젝트는 단순한 기능 구현보다 실제 운영 가능한 서비스 수준의 설계와 구현을 목표로 한다.
 기능 구현 시 유지보수성, 확장성, 테스트 가능성, 명확한 책임 분리와 실무적인 개발 관행을 우선한다.
@@ -85,6 +91,11 @@ AI 기능은 단순한 API 호출 데모가 아니라 사용자에게 실질적�
 - 외부 API DTO를 내부 도메인 모델처럼 직접 사용하지 않는다.
 - 핵심 통계 계산은 Backend에서 수행하고 LLM에게 계산 책임을 넘기지 않는다.
 - LLM에는 정제되고 구조화된 feature를 전달하며 자연어 분석과 피드백 생성에 집중시킨다.
+- Automation과 Agent 기능을 위해 기존 Application Service나 통계 계산을 복제하지 않는다.
+- Agent Tool은 Riot HTTP client, PostgreSQL repository, Redis, LLM SDK 같은 infrastructure가 아니라 기존
+  Application Service를 감싼 boundary로 둔다.
+- RAG는 structured gameplay data 조회를 대체하지 않는다. 이 데이터는 Backend Tool과 Application Service로 제공한다.
+- 새로운 AI framework나 Vector DB는 실제 해결해야 할 복잡도가 확인된 경우에만 도입한다.
 
 구체적인 클래스 수나 계층 수를 맞추기 위해 불필요한 인터페이스를 만들지 않는다.
 테스트 대역, 구현 교체, 의존성 역전 등 실제 필요가 있는 경계에 추상화를 둔다.
@@ -146,6 +157,12 @@ LLM은 원본 Match JSON 전체를 그대로 받아 핵심 통계를 임의로 �
 
 LLM Provider에 종속된 요청/응답 형식이 핵심 도메인 로직으로 퍼지지 않도록 경계를 둔다.
 
+Automation의 trigger, 기간 비교, threshold와 rule 평가는 Backend가 결정적으로 수행한다. LLM은 계산된 조건과
+결과를 설명할 수 있지만 trigger를 임의로 결정하는 역할을 맡지 않는다.
+
+향후 Agent는 명시적인 Tool 정의와 bounded loop를 우선 검토한다. Agent가 infrastructure를 직접 호출하지 않고
+Tool을 통해 기존 Application Service의 구조화된 결과만 받도록 한다.
+
 Peer Benchmark를 도입할 때는 `(sampled player PUUID, matchId)` 한 건을 participant-level
 `BenchmarkSample`로 다룬다. 수집 시점에 확인한 sampled player의 rank만 sample에 귀속하며,
 같은 Match의 다른 participant에게 tier를 추정하거나 부여하지 않는다.
@@ -189,6 +206,11 @@ Peer Benchmark를 도입할 때는 `(sampled player PUUID, matchId)` 한 건을 
 
 - 중요한 기술적 결정은 `docs/adr/`에 기록한다.
 
+- 현재 구현과 설정의 source of truth는 code, `README.md`, `docs/architecture.md`, `docs/adr/`이다.
+  Project Memory나 AI assistant context는 저장소의 실제 상태를 대체하지 않는다.
+- `README.md`와 이 파일에는 프로젝트 방향과 안정적인 원칙을 기록한다. worker 수, queue 크기, token 수,
+  특정 latency, cache key 수처럼 세부 runtime parameter는 필요할 때 architecture, ADR, 성능 문서에 기록한다.
+
 - 코드와 문서가 충돌할 경우 실제 코드 상태에 맞게 문서를 갱신한다.
 
 다음과 같은 변경은 ADR 작성을 고려한다.
@@ -201,6 +223,7 @@ Peer Benchmark를 도입할 때는 `(sampled player PUUID, matchId)` 한 건을 
 - LLM Provider 추상화 방식 결정
 - 데이터 저장 정책 변경
 - 배포 구조의 중요한 변경
+- Automation, Agent Tool 또는 RAG의 주요 경계 변경
 
 단순 리팩터링, 클래스명 변경, 작은 구현 세부사항은 일반적으로 ADR을 만들지 않는다.
 

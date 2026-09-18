@@ -2,6 +2,10 @@
 
 이 디렉터리는 프로젝트의 현재 구조와 중요한 기술적 의사결정을 기록합니다.
 
+현재 구현과 설정의 source of truth는 code, `README.md`, `docs/architecture.md`, `docs/adr/`이다. Project Memory나
+AI assistant context는 저장소의 실제 상태를 대체하지 않는다. `architecture.md`는 현재 구조와 검증된 미래 경계를,
+ADR은 당시의 결정과 trade-off를 기록한다. 이미 Accepted인 ADR을 현재 roadmap에 맞춘다는 이유만으로 다시 쓰지 않는다.
+
 ## 문서 목록
 
 ### 아키텍처
@@ -21,7 +25,9 @@ Riot API endpoint별 routing host와 용도를 빠르게 확인하는 참고 문
 ### AI 및 Benchmark 입력
 
 - [`ai/player-analysis-feature-v0.1.md`](ai/player-analysis-feature-v0.1.md): 개인 요약 feature의 범위
-- [`ai/player-comparison-context-v0.1.md`](ai/player-comparison-context-v0.1.md): 향후 peer comparison의 사용자 측 입력
+- [`ai/player-comparison-context-v0.1.md`](ai/player-comparison-context-v0.1.md): 초기 peer comparison 사용자 입력 contract
+- [`ai/player-analysis-v0.2.md`](ai/player-analysis-v0.2.md): 현재 Structured Output 분석의 input/output과 gate
+- [`ai/async-player-analysis-jobs-v0.1.md`](ai/async-player-analysis-jobs-v0.1.md): async job lifecycle, polling, dedupe와 recovery 제한
 
 ### Peer Benchmark v0.2
 
@@ -54,6 +60,9 @@ ADR은 "현재 구조가 무엇인가"보다 다음 질문에 답하는 기록�
 
 현재 구조 자체를 빠르게 파악할 때는 `architecture.md`,
 그 구조가 만들어진 이유를 추적할 때는 ADR을 사용합니다.
+
+Automation과 Tool-using Agent의 세부 문서는 아직 만들지 않는다. 해당 기능의 실제 구현을 시작할 때에만 각각
+`docs/automation/`, `docs/agent/`에 contract와 운영 제약을 기록한다.
 
 ## 현재 결정
 
