@@ -788,7 +788,7 @@ source of truth로 사용하고, `automation_execution`의 `(automation_id, dete
 메모리로 전달한다. 현재 Riot adapter는 region routing을 application configuration으로 결정하므로 player별 routing은 저장하지
 않는다.
 
-기본 disabled scheduler는 due enabled automation을 5분마다 최대 10명씩 순차 조회한다. Match-V5 recent ID를
+기본 disabled scheduler는 이전 tick이 끝난 뒤 30분을 기다리는 `fixedDelay` 방식으로 due enabled automation을 최대 10명씩 순차 조회한다. 따라서 매시 00분/30분 실행이나 새 경기가 30분 안에 반드시 생긴다는 보장은 없다. due 판정과 scheduler는 같은 `analysis.automation.poll-interval` 설정을 사용한다. Match-V5 recent ID를
 `start=0`, `count=20`, `queue=420`으로 읽어 head가 cursor와 달라질 때만 기존 `AnalysisJobService`로 rolling job 하나를
 만든다. job은 공통 `PlayerAnalysisService`의 Ranked Solo comparison 입력 정책을 그대로 사용하므로, 이 `start`와 `count`도
 최근 Ranked Solo 목록의 pagination이다. 초기 등록은 현재 head를 cursor baseline으로 저장하므로 과거 경기를 생성하지 않고, 여러 신규 match는 하나의

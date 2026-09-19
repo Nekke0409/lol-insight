@@ -49,7 +49,7 @@ class NewRankedMatchAnalysisPollingServiceTest {
             riotMatchClient,
             playerService,
             analysisJobService,
-            AnalysisAutomationProperties(pollInterval = Duration.ofMinutes(5), batchSize = 10),
+            AnalysisAutomationProperties(batchSize = 10),
             Clock.fixed(now, ZoneOffset.UTC),
             AutomationObservationRecorder(SimpleMeterRegistry()),
             riotApiCooldown,
@@ -172,7 +172,7 @@ class NewRankedMatchAnalysisPollingServiceTest {
     @Test
     fun `stops the current tick after a Riot 429 without polling later automations`() {
         val laterAutomation = AUTOMATION.copy(id = UUID.fromString("ebba5c25-c974-4465-86b5-7e4b6449dd82"), puuid = "later-puuid")
-        `when`(trackedPlayerAutomationService.findDue(now.minus(Duration.ofMinutes(5)), 10))
+        `when`(trackedPlayerAutomationService.findDue(now.minus(Duration.ofMinutes(30)), 10))
             .thenReturn(listOf(AUTOMATION, laterAutomation))
         `when`(trackedPlayerAutomationService.findEnabled(AUTOMATION_ID)).thenReturn(AUTOMATION)
         `when`(riotMatchClient.findMatchIdsByPuuid(PUUID, 0, 20, RankedSoloQueue.ID))
@@ -204,7 +204,7 @@ class NewRankedMatchAnalysisPollingServiceTest {
     @Test
     fun `stops the current tick when the common HTTP boundary reports local cooldown`() {
         val laterAutomation = AUTOMATION.copy(id = UUID.fromString("ebba5c25-c974-4465-86b5-7e4b6449dd82"), puuid = "later-puuid")
-        `when`(trackedPlayerAutomationService.findDue(now.minus(Duration.ofMinutes(5)), 10))
+        `when`(trackedPlayerAutomationService.findDue(now.minus(Duration.ofMinutes(30)), 10))
             .thenReturn(listOf(AUTOMATION, laterAutomation))
         `when`(trackedPlayerAutomationService.findEnabled(AUTOMATION_ID)).thenReturn(AUTOMATION)
         `when`(riotMatchClient.findMatchIdsByPuuid(PUUID, 0, 20, RankedSoloQueue.ID)).thenThrow(RiotApiCooldownException(10))
@@ -222,6 +222,28 @@ class NewRankedMatchAnalysisPollingServiceTest {
         assertEquals(AutomationPollOutcome.DISABLED, service.poll(AUTOMATION_ID))
 
         verifyNoInteractions(riotMatchClient, automationExecutionService, playerService, analysisJobService)
+    }
+
+    @Test
+    fun `uses the thirty minute default when selecting due automations`() {
+        val defaultService =
+            NewRankedMatchAnalysisPollingService(
+                trackedPlayerAutomationService,
+                automationExecutionService,
+                riotMatchClient,
+                playerService,
+                analysisJobService,
+                AnalysisAutomationProperties(),
+                Clock.fixed(now, ZoneOffset.UTC),
+                AutomationObservationRecorder(SimpleMeterRegistry()),
+                riotApiCooldown,
+            )
+        val dueBefore = now.minus(Duration.ofMinutes(30))
+        `when`(trackedPlayerAutomationService.findDue(dueBefore, 10)).thenReturn(emptyList())
+
+        defaultService.pollDue()
+
+        verify(trackedPlayerAutomationService).findDue(dueBefore, 10)
     }
 
     private fun givenAutomation() {

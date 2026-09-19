@@ -10,7 +10,7 @@ import java.time.Duration
 @ConfigurationProperties("analysis.automation")
 data class AnalysisAutomationProperties(
     val enabled: Boolean = false,
-    val pollInterval: Duration = Duration.ofMinutes(5),
+    val pollInterval: Duration = Duration.ofMinutes(30),
     @field:Min(1)
     @field:Max(20)
     val batchSize: Int = 10,

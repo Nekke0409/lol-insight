@@ -7,6 +7,7 @@ import io.github.nekke0409.lolinsight.automation.application.AutomationExecution
 import io.github.nekke0409.lolinsight.automation.application.AutomationExecutionService
 import io.github.nekke0409.lolinsight.automation.application.TrackedPlayerAutomationService
 import io.github.nekke0409.lolinsight.automation.domain.AutomationExecutionStatus
+import io.github.nekke0409.lolinsight.automation.scheduling.AnalysisAutomationProperties
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest
@@ -19,6 +20,7 @@ import org.springframework.transaction.annotation.Transactional
 import org.testcontainers.junit.jupiter.Container
 import org.testcontainers.junit.jupiter.Testcontainers
 import org.testcontainers.postgresql.PostgreSQLContainer
+import java.time.Duration
 import java.time.Instant
 import java.util.UUID
 import java.util.concurrent.CyclicBarrier
@@ -111,6 +113,42 @@ class AutomationPersistenceIntegrationTest {
             executor.shutdownNow()
         }
     }
+
+    @Test
+    fun `due query excludes a check newer than thirty minutes and includes the exact boundary`() {
+        val now = Instant.parse("2026-09-20T12:00:00Z")
+        val pollInterval = AnalysisAutomationProperties().pollInterval
+        val dueBefore = now.minus(pollInterval)
+        val justChecked = dueBefore.plusSeconds(1)
+        val olderChecked = dueBefore.minusSeconds(1)
+        val exactBoundary = automationEntity("exact-boundary", dueBefore)
+        val older = automationEntity("older", olderChecked)
+
+        trackedPlayerAutomationJpaRepository.saveAllAndFlush(
+            listOf(
+                automationEntity("too-recent", justChecked),
+                exactBoundary,
+                older,
+            ),
+        )
+
+        val due = trackedPlayerAutomationService.findDue(dueBefore, 10)
+
+        assertEquals(Duration.ofMinutes(30), pollInterval)
+        assertEquals(setOf(exactBoundary.id, older.id), due.map { it.id }.toSet())
+    }
+
+    private fun automationEntity(
+        puuid: String,
+        lastCheckedAt: Instant,
+    ): TrackedPlayerAutomationEntity =
+        TrackedPlayerAutomationEntity(
+            puuid = puuid,
+            lastSeenMatchId = "KR_100",
+            lastCheckedAt = lastCheckedAt,
+            createdAt = lastCheckedAt,
+            updatedAt = lastCheckedAt,
+        )
 
     companion object {
         @Container
