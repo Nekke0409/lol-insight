@@ -118,6 +118,30 @@ class NewRankedMatchAnalysisPollingServiceTest {
     }
 
     @Test
+    fun `resumes cursor advancement for a job already created before a previous cursor update failed`() {
+        givenAutomation()
+        `when`(riotMatchClient.findMatchIdsByPuuid(PUUID, 0, 20, RankedSoloQueue.ID)).thenReturn(listOf("KR_101", "KR_100"))
+        `when`(automationExecutionService.claim(AUTOMATION_ID, "KR_101", now))
+            .thenReturn(
+                AutomationExecutionClaim.Existing(
+                    EXECUTION.copy(
+                        detectedMatchId = "KR_101",
+                        analysisJobId = JOB.jobId,
+                        status = AutomationExecutionStatus.JOB_CREATED,
+                    ),
+                ),
+            )
+        `when`(trackedPlayerAutomationService.advanceCursorIfUnchanged(AUTOMATION, "KR_101", now)).thenReturn(true)
+        `when`(automationExecutionService.markTriggered(EXECUTION_ID, now)).thenReturn(true)
+
+        assertEquals(AutomationPollOutcome.SKIPPED_DUPLICATE, service.poll(AUTOMATION_ID))
+
+        verify(trackedPlayerAutomationService).advanceCursorIfUnchanged(AUTOMATION, "KR_101", now)
+        verify(automationExecutionService).markTriggered(EXECUTION_ID, now)
+        verifyNoInteractions(playerService, analysisJobService)
+    }
+
+    @Test
     fun `does not advance the cursor when job creation is rejected for capacity`() {
         givenAutomation()
         `when`(riotMatchClient.findMatchIdsByPuuid(PUUID, 0, 20, RankedSoloQueue.ID)).thenReturn(listOf("KR_101", "KR_100"))

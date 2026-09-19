@@ -14,8 +14,8 @@ LOL Insight는 Riot Games 데이터를 Backend에서 결정적으로 정규화·
 4. 운영 안정성, 비용 통제, 관측성 강화
 5. AI Automation
 6. LLM 기반 Tool-using AI Agent
-7. 실제 필요가 확인된 경우에만 RAG / Vector Search
-8. 배포와 확장 구조의 진화
+7. AI Automation과 Agent 경험을 마친 뒤 비공개 배포 재개
+8. 실제 필요가 확인된 경우에만 RAG / Vector Search
 
 일반적인 게시글·댓글 중심 community CRUD는 현재 핵심 로드맵에 포함하지 않습니다. 사용자 계정과 인증은 automation 설정, 분석 이력, 개인화, job ownership, Agent 개인화에 실제로 필요해지는 시점에 도입합니다.
 
@@ -117,7 +117,7 @@ Spring Security, AWS, 인증 사용자 기준 quota, 다중 LLM Provider, Tool-u
 - [Peer Benchmark v0.2](docs/benchmark/peer-benchmark-v0.2.md): scope와 availability 정책
 - [ADR-014](docs/adr/014-use-game-start-validity-window-for-peer-benchmark.md): Peer Benchmark 유효 표본 기간 결정
 - [ADR-015](docs/adr/015-use-coverage-driven-benchmark-replenishment.md): bounded benchmark coverage replenishment 결정
-- [단일 인스턴스 비공개 배포 v0.1](docs/deployment/single-instance-private-v0.1.md): Docker Compose, SSM 접근, 운영·복구 절차
+- [단일 인스턴스 비공개 배포 v0.1](docs/deployment/single-instance-private-v0.1.md): Docker Compose, SSM 접근, 운영·복구 절차와 현재 보류·재개 조건
 
 현재 구현과 설정의 source of truth는 code, `README.md`, `docs/architecture.md`, `docs/adr/`입니다. Project Memory나 AI assistant context는 저장소의 실제 상태를 대체하지 않습니다.
 

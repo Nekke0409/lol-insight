@@ -9,6 +9,50 @@
 현재 async `AnalysisJob` command와 in-flight dedupe, Riot cooldown은 JVM-local이다. container를 정상 종료해도 실행 중
 job의 재시작 복구, stale job 정리, 사용자 ownership, distributed scheduler/lock은 제공하지 않는다.
 
+## 현재 진행 상태와 재개 조건
+
+2026-09-19 기준으로 AWS 비공개 배포와 Free Tier 확인은 **보류**한다. 배포 설계를 취소한 것이 아니라, 먼저 기존 AI
+Automation의 로컬 실행·결과 확인 경험을 완성하고 Tool 기반 AI Agent를 학습·구현한 뒤에 이 절차를 재개한다. 이 절은 이전
+검증과 현재 미결정 사항을 보존하기 위한 기록이며, 이번 작업에서 AWS CLI/Session Manager plugin 설치, 로그인, 계정·권한·region
+확인, resource 생성·변경·삭제, image push, secret 등록, 비용 산정은 수행하지 않았다.
+
+### 이전 작업에서 확인·준비한 범위
+
+다음은 현재 source와 이전 로컬 검증 기록으로 확인되는 준비 범위다. 이번 보류 작업에서 다시 실행한 결과가 아니다.
+
+- Java 21 multi-stage Docker image, non-root runtime, `exec` Java entrypoint
+- 개발 Compose와 분리된 standalone `compose.deploy.yaml`, app loopback bind, PostgreSQL/Redis host port 미게시,
+  배포 전용 PostgreSQL named volume
+- `deploy` profile의 Flyway/JPA validation·health·graceful stop/start 설정과 automation/replenishment opt-in 기본 비활성화
+- `config --quiet` 사용과 secret 전체 출력 방지, 운영 DB를 덮어쓰지 않는 격리 restore 시험 절차, SSM port forwarding 안내
+- linux/amd64 image preflight build
+
+이전 검증에 사용한 임시 image·container·volume은 정리 대상이었으며, 그 상태를 현재 배포 가능 여부의 근거로 사용하지 않는다.
+반면 `Dockerfile`, `compose.deploy.yaml`, profile 및 env example, 이 runbook 같은 배포 source는 저장소에 보존되어 있다.
+현재 로컬에 image가 없다는 이유로 이번 작업에서 다시 build하지 않는다.
+
+### 아직 검증하지 않은 범위와 비용 제약
+
+실제 EC2 배포, AWS 환경에서의 SSM 접근, host 재부팅 뒤 복귀, AWS 환경의 backup/restore 실습은 아직 하지 않았다. 직전
+확인 당시 local AWS CLI와 Session Manager plugin이 없었고 account·region·권한도 확인하지 못했다. 이는 영구적인 현재
+상태를 뜻하지 않으므로 재개 시 다시 확인한다. 이 작업 흐름에서 AWS resource 생성, image push, secret 등록을 하지 않았으며,
+계정 전체에 기존 resource가 없다고 추정하지 않는다.
+
+사용자는 AWS 운영비를 별도로 지출할 계획이 없다. 실제 account에 적용되는 무료 혜택과 credit 범위에서만 배포 실습을 검토한다.
+계정 생성 시점, `FREE`/`PAID` plan, 남은 credit·만료일, 무료 사용량과 기존 resource 사용량은 아직 확인되지 않았다. 따라서
+이 구성이 무료이거나 현금 지출이 0원이라고 보장하는 확정 배포안은 없다. 과거의 `t3.medium`, 월 `$50` budget, ECR/S3 제안은
+승인된 실행안이 아니다. 비용 알림은 실제 과금 차단과 다르며, 정책·가격은 재개 시 최신 AWS 공식 문서와 실제 account 상태로
+다시 판단한다.
+
+### 재개 체크리스트
+
+1. 당시 최신 application code와 배포 source의 차이를 확인한다.
+2. account의 무료 조건, 잔여 credit, 만료일, 현재 사용량과 기존 resource를 read-only로 확인한다.
+3. 전체 resource의 비용과 정리 계획을 다시 평가한다.
+4. 필요한 로컬 배포 회귀 검증을 수행한다. Automation/Agent 변경 뒤에는 이전 image와 과거 검증 결과를 최신 배포 승인 근거로
+   사용하지 않는다.
+5. 생성 범위와 잠재 비용에 대해 사용자 승인을 받은 뒤 실제 비공개 배포와 운영 검증을 진행한다.
+
 ## 사전 결정과 SSM 조건
 
 인스턴스 type, region/AZ, EBS 크기·암호화·backup 보존, image 전달 방식(registry 또는 `docker load`), OS/patch 정책,

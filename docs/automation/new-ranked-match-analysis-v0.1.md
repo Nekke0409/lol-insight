@@ -63,6 +63,76 @@ low-cardinality metrics는 `analysis.automation.polls{outcome}`, `analysis.autom
 `analysis.automation.triggers{outcome}`이다. poll outcome에는 `success`, `failure`, `rate_limited`,
 `cooldown_skipped`가 있다. PUUID, Riot ID, Match ID, automation ID는 metric tag나 log에 넣지 않는다.
 
+## 로컬 재현과 결과 확인
+
+### 외부 호출 없이 흐름 재현
+
+실제 시간이나 경기 종료를 기다리지 않는 기본 검증은 아래 test로 수행한다. `M100`으로 등록해 baseline만 저장하고, fixture의
+목록을 `M101, M100`으로 바꾼 뒤 수동 `poll()`을 한 번 호출한다. Testcontainers PostgreSQL과 실제
+`TrackedPlayerAutomationService`, execution persistence, `AnalysisJob` lifecycle, worker, JSONB result 조회를 사용한다.
+동기 test executor이므로 worker 완료를 기다리지 않는다. 같은 목록으로 한 번 더 poll해 job과 execution이 하나씩만 남는지도
+확인한다.
+
+```text
+.\gradlew.bat test --tests "io.github.nekke0409.lolinsight.automation.application.NewRankedMatchAnalysisWorkflowIntegrationTest"
+```
+
+이 test에서 Riot Match/Account 조회, comparison feature, LLM generator만 대역이다. 따라서 실제 Riot/OpenAI network 호출이나
+실제 raw match 통계 계산을 검증하지는 않는다. 반면 `PlayerAnalysisService`의 availability/cache 동작, benchmark aggregate와
+statistics feature는 기존 단위·통합 test가 각각 검증한다. `NewRankedMatchAnalysisPollingServiceTest`는 baseline, coalescing,
+429/cooldown, capacity, 중복 및 `JOB_CREATED` cursor 재개 규칙을 고정하고, `NewRankedMatchAnalysisSchedulerTest`는
+`@Scheduled` adapter가 application polling service에 위임함을 별도로 확인한다. 수동 `poll()` 검증을 실제 scheduler가 시간에
+따라 실행됐다는 주장으로 해석하지 않는다.
+
+### 실제 provider를 사용하는 선택적 local smoke
+
+실제 smoke는 기본 작업에 포함되지 않으며 별도 승인 후에만 실행한다. local profile에서 secret을 안전한 환경변수로 주입한 상태에서
+아래 opt-in을 설정하면 bootstrap `ApplicationRunner`가 startup 시 대상 Riot ID를 등록한다. 그 시점의 최신 Ranked Solo ID가
+baseline이므로 등록 전에 있던 경기는 job을 만들지 않는다.
+
+```text
+$env:ANALYSIS_AUTOMATION_ENABLED = "true"
+$env:ANALYSIS_AUTOMATION_BOOTSTRAP_ENABLED = "true"
+$env:ANALYSIS_AUTOMATION_BOOTSTRAP_PLAYERS = "gameName#tagLine"
+.\gradlew.bat bootRun --args="--spring.profiles.active=local"
+```
+
+`RIOT_API_KEY`와 `OPENAI_API_KEY`는 기존 환경변수 경계로만 전달하며 실제 값, PUUID, Riot ID, Match ID, raw payload를
+log·metric tag·커밋되는 예제에 넣지 않는다. 대상은 한 명으로 한정하고, bootstrap 직후와 유한한 수의 poll만 관찰한다. 이 버전에
+관찰 세션 전체의 job/provider 호출 상한을 강제하는 설정은 없다. 다만 `(automation_id, detected_match_id)`마다 job은 최대 하나이고,
+provider client의 자동 retry는 없으므로, 하나의 감지 execution은 cache hit이면 provider 호출 0회, miss이면 최대 1회 생성 시도를
+한다. 첫 `TRIGGERED` execution을 확인하면 즉시 opt-in을 해제한다. 이후 실제 신규 경기가 생기면 별도 execution이 생길 수 있으므로
+장시간 켜 둔 smoke는 하지 않는다.
+
+중단하려면 application을 멈춘 뒤 `ANALYSIS_AUTOMATION_ENABLED=false`,
+`ANALYSIS_AUTOMATION_BOOTSTRAP_ENABLED=false`로 되돌리고 bootstrap player 값을 비운 뒤 재시작한다. 이 조치는 scheduler와
+bootstrap만 끄며 이미 저장된 tracking row를 삭제하지 않는다. 다시 켜면 기존 cursor에서 계속 관찰한다. deploy profile과
+`compose.deploy.yaml`은 이 실습을 위해 변경하지 않으며 automation을 계속 강제로 비활성화한다.
+
+### execution에서 Job과 결과로 이어서 읽기
+
+성공 흐름에서 execution의 `TRIGGERED`는 Job이 enqueue됐고 cursor가 전진했다는 뜻일 뿐, LLM 분석 성공을 뜻하지 않는다.
+아래 local PostgreSQL read-only query로 execution과 연결된 Job 상태·결과 저장 여부를 함께 확인한다. 이 query는 실제
+Riot ID, PUUID, detected Match ID, raw result를 출력하지 않는다.
+
+```text
+docker compose exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -P pager=off -c "
+SELECT e.id AS execution_id,
+       e.status AS execution_status,
+       e.analysis_job_id,
+       j.status AS job_status,
+       j.failure_code,
+       j.result IS NOT NULL AS result_persisted
+FROM automation_execution e
+LEFT JOIN analysis_job j ON j.id = e.analysis_job_id
+ORDER BY e.detected_at DESC;"'
+```
+
+`analysis_job_id`가 있으면 기존 `GET /api/v1/analysis-jobs/{jobId}` 조회 경로에서 `PENDING`, `RUNNING`, terminal
+`SUCCEEDED`의 `result`, 또는 terminal `FAILED`의 안전한 `failureCode`를 확인한다. 새 경기가 없거나 이미 cursor와 같은
+경기를 다시 감지하면 새 execution/job은 생성되지 않는다. `JOB_CREATED` execution은 이전 cursor update 실패 뒤 다음 poll에서
+기존 Job을 재사용해 cursor 전진과 `TRIGGERED` 전이를 다시 시도한다.
+
 ## v0.1의 범위 밖
 
 notification, account ownership, public subscription API, distributed scheduler/lock, persistent queue, stale job recovery,

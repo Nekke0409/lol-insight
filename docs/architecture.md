@@ -1035,8 +1035,9 @@ stale-job recovery는 여전히 single-instance v0.1 범위 밖이다. 운영 �
 3. AI analysis 품질과 cache hit-rate를 포함한 운영 안정성 강화
 4. explicit Backend rule을 기반으로 한 AI Automation
 5. Application Service boundary를 사용하는 Tool-using AI Agent
-6. 비정형 지식 검색이 실제 필요할 때만 RAG / Vector Search
-7. 인증, 배포, multi-instance 운영과 scaling 요구가 확인된 뒤의 구조 진화
+6. AI Automation과 Agent 경험을 마친 뒤 비공개 배포 재개
+7. 비정형 지식 검색이 실제 필요할 때만 RAG / Vector Search
+8. 인증, multi-instance 운영과 scaling 요구가 확인된 뒤의 구조 진화
 
 사용자 계정·인증은 community CRUD를 위한 선행 기능으로 두지 않는다. automation 설정, 분석 이력, 개인화,
 job ownership, Agent 개인화에 필요한 요구가 구체화되면 별도 결정한다.
