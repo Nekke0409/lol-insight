@@ -215,6 +215,18 @@ ORDER BY e.detected_at DESC;"'
 경기를 다시 감지하면 새 execution/job은 생성되지 않는다. `JOB_CREATED` execution은 이전 cursor update 실패 뒤 다음 poll에서
 기존 Job을 재사용해 cursor 전진과 `TRIGGERED` 전이를 다시 시도한다.
 
+### 로컬 poll-once 검증 기록 (2026-09-20)
+
+비식별 대상 하나에 대해 `AutomationPollOnceManualSmokeTest`를 한 번 실제 실행했다. 새 Ranked Solo 경기는
+`TRIGGERED`로 감지되어 execution 하나와 연결된 `AnalysisJob` 하나가 생성됐고 cursor 및 `lastCheckedAt`이 갱신됐다.
+당시 유효 benchmark에 AVAILABLE comparison이 없어 Job은 `FAILED(INSUFFICIENT_COMPARISON_DATA)`로 종료됐으며 result는
+저장되지 않았다. 이는 polling 감지 실패가 아니라 표본 부족의 예상된 업무 결과다.
+
+JUnit은 1회 실행, skip 0, 실패 0이었다. provider 호출 수를 별도 실측한 것은 아니지만,
+`PlayerAnalysisService`가 comparison availability를 cache·generator보다 먼저 검사하므로 이 failure path에서는 provider
+generation에 진입하지 않는다. scheduler, bootstrap, replenishment와 후속 poll은 실행하지 않았고, opt-in 환경 변수는
+실행 프로세스 종료와 함께 해제됐다.
+
 ## v0.1의 범위 밖
 
 notification, account ownership, public subscription API, distributed scheduler/lock, persistent queue, stale job recovery,
