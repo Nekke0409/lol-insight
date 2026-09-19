@@ -698,15 +698,18 @@ player 10명, player당 Match 5개가 한 tick의 최대 예산이다. collector
 while loop는 없다.
 
 `benchmark_replenishment_cursor`는 `region / queue / tier / division`별 next page를 PostgreSQL에 저장한다. cursor read/create와
-advance는 각각 짧은 transaction이며 Riot HTTP 호출은 transaction 밖이다. discovery가 정상 완료되면 page를 전진하고 빈 page는
+advance는 각각 짧은 transaction이며 Riot HTTP 호출은 transaction 밖이다. discovery가 정상 완료되면 실제 처리한 page 수만큼
+page를 전진하고 빈 page는
 1로 wrap한다. discovery의 429/local cooldown은 last-attempt metadata만 갱신하고 같은 page를 보존한다. discovery 뒤 collection의 429는 page cursor를 전진한
 상태로 해당 tick의 이후 cohort를 중단한다. `RiotApiCooldown`이 tick 시작에 active면 수집 없이 종료한다. 자동 retry와 sleep은
 없다.
 
 scheduler는 `BENCHMARK_REPLENISHMENT_ENABLED=false`가 기본이고 `BENCHMARK_REPLENISHMENT_INTERVAL`(기본 `24h`)로 opt-in
-한다. `RUN_BENCHMARK_REPLENISHMENT_ONCE=true`는 startup에서 한 tick만 호출하는 명시적인 운영 검증 경로다. scheduler adapter는
-`runOneTick()`만 호출한다. AtomicBoolean guard는 같은 JVM의 중복 tick만 막으며 distributed claim/lock은 없다. low-cardinality
-`benchmark.replenishment.*` metrics는 outcome만 tag로 기록하고 cohort, PUUID, Riot ID, Match ID를 tag나 log에 넣지 않는다.
+한다. `RUN_BENCHMARK_REPLENISHMENT_ONCE=true`는 scheduler `enabled`와 독립적인 startup one-tick 검증 opt-in이다. 이 runner는
+민감정보를 제외한 JSON 요약을 application log에 한 줄 출력한다. scheduler adapter는 `runOneTick()`만 호출한다. AtomicBoolean guard는
+같은 JVM의 중복 tick만 막으며 distributed claim/lock은 없다. low-cardinality `benchmark.replenishment.*` metrics는 outcome만 tag로
+기록하고 cohort, PUUID, Riot ID, Match ID를 tag로 사용하지 않는다. run-once 진단에는 configured cohort, query window, POSITION별
+coverage와 cursor/collection 결과만 포함하며 PUUID, Riot ID, Match ID, API key, raw response는 포함하지 않는다.
 결정 근거는 [ADR-015](adr/015-use-coverage-driven-benchmark-replenishment.md)를 따른다.
 
 ## 9. AI 분석 아키텍처

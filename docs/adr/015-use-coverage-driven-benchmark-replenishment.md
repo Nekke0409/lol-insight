@@ -25,10 +25,11 @@ champion-position 조합을 채우는 목표는 두지 않는다.
 player 10명, player당 Match 5개다. 부족분을 채울 때까지 반복하지 않으며 다음 tick에서 coverage를 다시 평가한다.
 기존 `BenchmarkSeedService.seed(...)`를 사용하고 Riot I/O와 DB cursor transaction을 함께 열지 않는다.
 
-`benchmark_replenishment_cursor`는 cohort별 discovery page를 저장한다. 정상 discovery 뒤에는 page를 전진하고 빈
+`benchmark_replenishment_cursor`는 cohort별 discovery page를 저장한다. 정상 discovery 뒤에는 실제 처리한 page 수만큼 전진하고 빈
 page는 1로 wrap한다. discovery 단계의 429/local cooldown은 last-attempt metadata만 남기고 page를 전진시키지 않는다. collector 단계의 429는
 그 tick의 후속 collection을 멈추되 discovery가 끝난 page는 반복하지 않는다. scheduler는 기본 disabled이고 process
-내 guard만 사용한다. `RUN_BENCHMARK_REPLENISHMENT_ONCE`는 opt-in 검증 runner다.
+내 guard만 사용한다. `RUN_BENCHMARK_REPLENISHMENT_ONCE`는 scheduler와 별개의 opt-in 검증 runner이며, 실행 결과의
+민감정보 없는 구조화된 요약을 application log에 남긴다.
 
 ## 결과와 Trade-off
 

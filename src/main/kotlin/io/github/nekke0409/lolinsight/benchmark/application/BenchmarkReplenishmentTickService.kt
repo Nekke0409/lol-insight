@@ -154,7 +154,7 @@ class BenchmarkReplenishmentTickService(
         if (seedResult.emptyPageEncountered) {
             return FIRST_PAGE
         }
-        val increment = seedResult.requestedPageCount
+        val increment = seedResult.pagesProcessed
         return if (currentPage > Int.MAX_VALUE - increment) FIRST_PAGE else currentPage + increment
     }
 
@@ -168,7 +168,10 @@ data class BenchmarkReplenishmentTickResult(
     val before: List<BenchmarkReplenishmentPlan>,
     val after: List<BenchmarkReplenishmentPlan>,
     val attempts: List<BenchmarkReplenishmentAttempt>,
-)
+) {
+    val queryWindow: BenchmarkQueryWindow?
+        get() = before.firstOrNull()?.window
+}
 
 enum class BenchmarkReplenishmentTickOutcome(
     val metricValue: String,

@@ -35,8 +35,15 @@ class BenchmarkReplenishmentScheduler(
 @ConditionalOnProperty(prefix = "benchmark.replenishment", name = ["run-once"], havingValue = "true")
 class BenchmarkReplenishmentRunOnceConfiguration {
     @Bean
-    fun benchmarkReplenishmentRunOnceRunner(benchmarkReplenishmentTickService: BenchmarkReplenishmentTickService): ApplicationRunner =
+    fun benchmarkReplenishmentRunOnceDiagnosticLogger(): BenchmarkReplenishmentRunOnceDiagnosticLogger =
+        BenchmarkReplenishmentRunOnceDiagnosticLogger()
+
+    @Bean
+    fun benchmarkReplenishmentRunOnceRunner(
+        benchmarkReplenishmentTickService: BenchmarkReplenishmentTickService,
+        diagnosticLogger: BenchmarkReplenishmentRunOnceDiagnosticLogger,
+    ): ApplicationRunner =
         ApplicationRunner {
-            benchmarkReplenishmentTickService.runOneTick()
+            diagnosticLogger.log(benchmarkReplenishmentTickService.runOneTick())
         }
 }

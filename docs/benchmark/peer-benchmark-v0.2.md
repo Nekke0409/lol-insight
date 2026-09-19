@@ -87,15 +87,17 @@ tick은 `BENCHMARK_REPLENISHMENT_MAX_COHORTS_PER_TICK=1`, page 1개, player 10�
 선택 우선순위는 `NO_DATA` position 수, unavailable POSITION 수, sample/unique-player deficit, tier/division의
 결정적인 tie-break 순서다.
 
-각 cohort의 `benchmark_replenishment_cursor`는 다음 discovery page를 저장한다. 정상적으로 discovery가 끝난 page는
+각 cohort의 `benchmark_replenishment_cursor`는 다음 discovery page를 저장한다. 정상적으로 discovery가 끝난 실제 page 수만큼
 다음 page로 전진하고, 빈 page는 1로 wrap한다. discovery 자체가 local cooldown 또는 Riot 429로 중단되면 마지막 시도 시각만
 갱신하고 같은 page를 보존한다. discovery 뒤의 Match collection 429는 새 page cursor를 유지하되, 해당 tick의 이후 cohort 수집을 중단한다.
 
 스케줄러는 `BENCHMARK_REPLENISHMENT_ENABLED=false`가 기본이며 `BENCHMARK_REPLENISHMENT_INTERVAL`(기본 `24h`)로
-opt-in 한다. `RUN_BENCHMARK_REPLENISHMENT_ONCE=true`는 명시적인 startup one-tick 검증용이다. public replenishment
-endpoint, request-time seed, automatic retry, sleep, distributed lock은 없다. process 내부 guard만 동일 JVM의 중복 tick을
-막으므로 multi-instance 운영에는 shared claim/lock 정책이 별도로 필요하다. metric은 outcome만 tag로 사용하며 PUUID,
-Riot ID, Match ID, tier/division을 tag나 log에 넣지 않는다.
+opt-in 한다. `RUN_BENCHMARK_REPLENISHMENT_ONCE=true`는 scheduler `enabled`와 독립적인 startup one-tick 검증 opt-in이며,
+실행 결과를 민감정보 없는 JSON 요약 한 줄로 application log에 출력한다. public replenishment endpoint, request-time seed,
+automatic retry, sleep, distributed lock은 없다. process 내부 guard만 동일 JVM의 중복 tick을 막으므로 multi-instance 운영에는
+shared claim/lock 정책이 별도로 필요하다. metric은 outcome만 tag로 사용하며 cohort, PUUID, Riot ID, Match ID를 tag로 사용하지
+않는다. run-once 요약에는 configured cohort, query window, POSITION coverage, cursor와 collection count만 포함하고 PUUID,
+Riot ID, Match ID, API key, raw response는 포함하지 않는다.
 
 두 scope 모두 patch-aware하지 않고 유효기간 안에서도 여러 `gameVersion`이 섞일 수 있다. `rankCapturedAt`은 수집 시점에
 확인한 rank이며 경기 시작 시점 rank history가 아니다. heavy contributor가 match-level distribution에 영향을 줄 수 있으며,
