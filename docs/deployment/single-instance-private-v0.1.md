@@ -58,18 +58,30 @@ POSTGRES_USER=lol_insight_deploy
 container image에 포함되지 않는다. key 교체 때는 새 값을 이 파일에 기록하고 app을 recreate한다. PostgreSQL password를 바꾸려면
 DB role password도 별도 SQL로 변경한 후 파일 값을 맞춰야 하며, env file만 바꿔서는 초기화가 끝난 DB의 password가 바뀌지 않는다.
 
+`deploy.secrets.env`는 배포를 수행하는 OS 계정이 소유하고 그 계정만 읽을 수 있어야 한다. 다음 확인은 소유자·권한과 파일명만
+출력하며 secret 내용은 출력하지 않는다.
+
+```text
+stat -c '%U %G %a %n' deploy.secrets.env
+```
+
 Compose는 필수값이 빠지면 시작 전에 실패한다. `RIOT_API_KEY`의 `@NotBlank` 계약은 유지한다. 기동 smoke에는 외부 호출을
 만들지 않는 non-empty test key를 쓸 수 있지만, 실제 key와 test key 어느 쪽도 image·Git·test artifact에 넣지 않는다.
 
 ## 시작, health, SSM 접근
 
 모든 명령은 배포 디렉터리에서 같은 env-file 쌍을 명시한다. Compose project와 volume 이름은 고정된 배포 전용 이름이므로
-개발 `postgres-data`와 다르다.
+개발 `postgres-data`와 다르다. 실제 secret을 주입한 뒤에는 `docker compose ... config`처럼 resolved configuration 전체를
+출력하는 명령을 사용하지 않는다. `env`, `docker inspect`의 전체 `Env`, `deploy.secrets.env` 내용도 출력하지 않는다.
+대신 `config --quiet`으로 interpolation과 형식만 검증하고, 상태·image·opt-in flag는 아래처럼 필요한 비민감 필드만 선택해서
+확인한다.
 
 ```text
-docker compose --env-file deploy.env --env-file deploy.secrets.env -f compose.deploy.yaml config
+docker compose --env-file deploy.env --env-file deploy.secrets.env -f compose.deploy.yaml config --quiet
 docker compose --env-file deploy.env --env-file deploy.secrets.env -f compose.deploy.yaml up -d
 docker compose --env-file deploy.env --env-file deploy.secrets.env -f compose.deploy.yaml ps
+docker compose --env-file deploy.env --env-file deploy.secrets.env -f compose.deploy.yaml images
+docker compose --env-file deploy.env --env-file deploy.secrets.env -f compose.deploy.yaml exec -T app sh -c 'printf "automation=%s bootstrap=%s replenishment=%s run_once=%s\\n" "$ANALYSIS_AUTOMATION_ENABLED" "$ANALYSIS_AUTOMATION_BOOTSTRAP_ENABLED" "$BENCHMARK_REPLENISHMENT_ENABLED" "$RUN_BENCHMARK_REPLENISHMENT_ONCE"'
 curl --fail --silent http://127.0.0.1:18080/actuator/health
 docker compose --env-file deploy.env --env-file deploy.secrets.env -f compose.deploy.yaml logs --tail=200 app
 ```
@@ -77,10 +89,11 @@ docker compose --env-file deploy.env --env-file deploy.secrets.env -f compose.de
 app은 PostgreSQL health 이후 시작하고 startup에서 Flyway migration과 JPA mapping validation을 수행한다. `/actuator/health`만
 노출하며 detail은 숨긴다. `env`, `configprops`, heap dump와 shutdown actuator endpoint는 활성화하지 않는다.
 
-로컬 PC에서 app을 보려면 다음 port forwarding session을 유지한 뒤 `http://127.0.0.1:18080/actuator/health`에 접근한다.
+로컬 PC에서 app을 보려면 다음 port forwarding session을 유지한 뒤 `http://127.0.0.1:28080/actuator/health`에 접근한다.
+`28080`이 이미 사용 중이면 개발·다른 배포 포트와 겹치지 않는 다른 local port를 고르고, 그 값만 바꾼다.
 
 ```text
-aws ssm start-session --target i-REPLACE_ME --document-name AWS-StartPortForwardingSession --parameters '{"portNumber":["18080"],"localPortNumber":["18080"]}' --region REPLACE_ME
+aws ssm start-session --target i-REPLACE_ME --document-name AWS-StartPortForwardingSession --parameters '{"portNumber":["18080"],"localPortNumber":["28080"]}' --region REPLACE_ME
 ```
 
 ## 정상 종료, 재기동, 재배포
@@ -102,23 +115,29 @@ image rollback만으로 DB rollback을 시도하지 말고, backup/restore와 �
 
 ## DB backup과 restore
 
-backup은 app을 계속 실행한 상태에서도 가능하지만, restore 전에는 app을 멈춘다. backup file은 instance 밖의 암호화된 보존 위치와
-retention 정책을 별도로 정한다.
+backup은 app을 계속 실행한 상태에서도 가능하지만, backup file은 instance 밖의 암호화된 보존 위치와 retention 정책을 별도로
+정한다.
 
 ```text
 docker compose --env-file deploy.env --env-file deploy.secrets.env -f compose.deploy.yaml exec -T postgres sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc' > lol-insight-YYYYMMDD.dump
 ```
 
-다음 restore는 target DB의 객체를 변경·삭제할 수 있으므로, 올바른 backup과 대상 DB를 확인한 뒤에만 수행한다.
+복원 검증은 운영 DB나 `lol-insight-deploy-postgres-data` volume을 덮어쓰지 않는다. 아래처럼 새로 정한 임시 DB에 복원한다.
+`RESTORE_TEST_DB`에는 운영 DB와 다른, 소문자·숫자·underscore만 쓰는 이름을 넣는다. 생성 전 같은 이름의 DB가 없음을 확인하고,
+마지막 `dropdb`는 이 복원 시험 DB에만 실행한다. 최초 배포 DB가 비어 있다면 이 절차는 schema와 Flyway history의 복원을
+검증하는 것이며 업무 데이터 복원 검증과는 다르다.
 
 ```text
-docker compose --env-file deploy.env --env-file deploy.secrets.env -f compose.deploy.yaml stop app
-docker compose --env-file deploy.env --env-file deploy.secrets.env -f compose.deploy.yaml exec -T postgres sh -c 'pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --clean --if-exists --no-owner' < lol-insight-YYYYMMDD.dump
-docker compose --env-file deploy.env --env-file deploy.secrets.env -f compose.deploy.yaml start app
+RESTORE_TEST_DB=lol_insight_restore_check_YYYYMMDD
+docker compose --env-file deploy.env --env-file deploy.secrets.env -f compose.deploy.yaml exec -T -e "RESTORE_TEST_DB=$RESTORE_TEST_DB" postgres sh -c 'createdb -U "$POSTGRES_USER" "$RESTORE_TEST_DB"'
+docker compose --env-file deploy.env --env-file deploy.secrets.env -f compose.deploy.yaml exec -T -e "RESTORE_TEST_DB=$RESTORE_TEST_DB" postgres sh -c 'pg_restore --exit-on-error -U "$POSTGRES_USER" -d "$RESTORE_TEST_DB" --no-owner' < lol-insight-YYYYMMDD.dump
+docker compose --env-file deploy.env --env-file deploy.secrets.env -f compose.deploy.yaml exec -T -e "RESTORE_TEST_DB=$RESTORE_TEST_DB" postgres sh -c 'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$RESTORE_TEST_DB" -c "SELECT installed_rank, version, description, success FROM flyway_schema_history ORDER BY installed_rank;"'
+docker compose --env-file deploy.env --env-file deploy.secrets.env -f compose.deploy.yaml exec -T -e "RESTORE_TEST_DB=$RESTORE_TEST_DB" postgres sh -c 'dropdb -U "$POSTGRES_USER" "$RESTORE_TEST_DB"'
 ```
 
-restore 뒤에는 app health와 Flyway history/schema compatibility를 검증한다. 현재 app image보다 미래 schema를 가진 backup을 과거 image와
-조합하지 않는다.
+실제 장애 복구로 운영 DB를 복원해야 한다면 app을 먼저 멈추고, 올바른 backup과 대상 DB를 별도로 확인한 뒤에만
+`pg_restore --clean --if-exists`를 사용한다. 이는 정기 복원 시험 절차가 아니다. 어느 경우에도 현재 app image보다 미래 schema를
+가진 backup을 과거 image와 조합하지 않는다.
 
 ## 비용과 종료 정리
 
