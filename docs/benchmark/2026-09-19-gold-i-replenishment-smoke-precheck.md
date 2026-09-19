@@ -190,3 +190,39 @@ page 1개, player 10명, matches/player 5개. scheduler와 다른 smoke/automati
 run-once summary가 출력된 뒤 이 실행이 생성한 Spring/Gradle 프로세스 트리만 종료했다. 비대화형 실행 환경이라
 일반 종료 신호가 자식 JVM에 의해 거부되어 해당 프로세스 트리에 강제 종료를 사용했다. 이후 Spring/Gradle
 run-once 프로세스가 남아 있지 않음을 확인했다.
+
+## 작은 budget의 persisted-cursor 재개 검증 (2026-09-19)
+
+### 사전 확인
+
+- 실행 시각: 2026-09-19 19:01:49~19:02:54 (Asia/Seoul).
+- working tree는 이 문서 변경 전 clean 상태였고, 직전 전체 회귀 이후 관련 production/test source와 V1~V4 migration 변경은 없었다. 따라서 전체 test/build/ktlint와 migration만을 위한 별도 bootRun은 재실행하지 않았다.
+- Docker PostgreSQL과 Redis가 정상 동작했고, Spring datasource/Flyway override 환경 변수는 unset이었다. local profile의 `jdbc:postgresql://localhost:5432/lol_insight`, `public` schema와 Compose PostgreSQL의 대상이 일치함을 확인했다.
+- read-only 조회에서 Flyway V1~V4는 모두 성공했고, 대기 중인 migration은 없었다. 실행 전 corpus는 146 samples / 31 distinct players, `KR / 420 / GOLD / I`도 146 samples / 31 distinct players, cursor `next_page=2`였다.
+- Spring/collector/automation 실행 프로세스는 없었고, 확인된 Gradle process는 IDE가 사용하던 daemon뿐이었다. 이전 collection 429의 `Retry-After=1` 이후 충분한 시간이 지난 뒤 시작했다. 기존 DB backup, PostgreSQL/Redis와 volume은 유지했다.
+- `RIOT_API_KEY`는 값 노출 없이 존재만 확인해 유지했고, `OPENAI_API_KEY`는 아래 실행 프로세스에서만 빈 값으로 설정했다.
+
+### 1회 재개 실행과 결과
+
+실행 프로세스에만 local profile, 모든 smoke/automation 비활성화, scheduler 비활성화 및 run-once 활성화를 적용했다. budget은 `GOLD:I`, cohort 1개, discovery page 1개, player 5명, player당 match 2개였다. application.yaml이나 운영 기본값, cursor는 수정하지 않았다.
+
+- tick outcome: `COMPLETED`
+- queryWindow: `2026-08-20T10:01:56.748585900Z` 이상, `2026-09-19T10:01:56.748585900Z` 미만
+- persisted cursor를 사용한 `requestedPage=2`, `pagesProcessed=1`, `nextPage=3`이었다. 후속 read-only DB 조회에서도 cursor `next_page=3`, attempt 기록 존재를 확인했다.
+- `createdSamples=0`, `skippedDuplicates=10`, `skippedInvalidSamples=0`
+- discovery outcome과 collection outcome은 모두 `COMPLETED`였고, `rateLimitStopped=false`, `retryAfterSeconds=null`이었다. 이번 실행에는 429가 없었으므로 429 세부 유형은 해당 없음이다.
+
+| POSITION | before sampleCount / uniquePlayerCount | after sampleCount / uniquePlayerCount | before availability / needed samples·players | after availability / needed samples·players |
+| --- | --- | --- | --- | --- |
+| TOP | 14 / 8 | 14 / 8 | INSUFFICIENT_SAMPLE / 16·2 | INSUFFICIENT_SAMPLE / 16·2 |
+| JUNGLE | 18 / 8 | 18 / 8 | INSUFFICIENT_SAMPLE / 12·2 | INSUFFICIENT_SAMPLE / 12·2 |
+| MIDDLE | 11 / 9 | 11 / 9 | INSUFFICIENT_SAMPLE / 19·1 | INSUFFICIENT_SAMPLE / 19·1 |
+| BOTTOM | 19 / 7 | 19 / 7 | INSUFFICIENT_SAMPLE / 11·3 | INSUFFICIENT_SAMPLE / 11·3 |
+| UTILITY | 8 / 7 | 8 / 7 | INSUFFICIENT_SAMPLE / 22·3 | INSUFFICIENT_SAMPLE / 22·3 |
+
+- 후속 read-only 조회의 전체 corpus와 cohort는 모두 146 samples / 31 distinct players였다. 전체 unique player와 POSITION별 unique player 모두 증가하지 않았다. `createdSamples=0`이므로 유효 coverage 증가도 없었다.
+- HTTP 호출 수와 cache hit 수는 기존 실측 근거가 없어 미계측으로 남긴다. 이를 위한 코드는 추가하지 않았다.
+
+summary 출력 후 비대화형 실행 세션에 정상 종료 신호를 보낼 수 없었다. 따라서 이 실행 소유임을 command line으로 확인한 Spring process에만 강제 종료를 적용했고, 이후 해당 application/bootRun process가 남아 있지 않음을 확인했다. 임시 run-once/budget 환경 변수는 host 환경에 남지 않았고, host의 `OPENAI_API_KEY` 값도 변경하지 않았다.
+
+이번 결과는 persisted cursor 재개와 이 작은 budget에서의 한 번의 정상 collection 완료만 확인한다. page, 대상 player, cache 상태가 달라질 수 있으므로 budget 감소만으로 이전 429 원인이 해결됐다고 단정하지 않는다. 기본 scheduler budget을 검증하거나 변경한 것도 아니다.
