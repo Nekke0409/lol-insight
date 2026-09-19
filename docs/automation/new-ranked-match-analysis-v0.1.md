@@ -69,17 +69,18 @@ low-cardinality metrics는 `analysis.automation.polls{outcome}`, `analysis.autom
 
 실제 시간이나 경기 종료를 기다리지 않는 기본 검증은 아래 test로 수행한다. `M100`으로 등록해 baseline만 저장하고, fixture의
 목록을 `M101, M100`으로 바꾼 뒤 수동 `poll()`을 한 번 호출한다. Testcontainers PostgreSQL과 실제
-`TrackedPlayerAutomationService`, execution persistence, `AnalysisJob` lifecycle, worker, JSONB result 조회를 사용한다.
-동기 test executor이므로 worker 완료를 기다리지 않는다. 같은 목록으로 한 번 더 poll해 job과 execution이 하나씩만 남는지도
-확인한다.
+`TrackedPlayerAutomationService`, execution persistence, `AnalysisJob` lifecycle, 비동기 executor와 worker, JSONB result 조회를
+사용한다. worker가 실제 executor에서 시작하고 terminal result가 저장될 때까지 기다린다. 같은 목록으로 한 번 더 poll해 job과
+execution이 하나씩만 남는지도 확인한다.
 
 ```text
 .\gradlew.bat test --tests "io.github.nekke0409.lolinsight.automation.application.NewRankedMatchAnalysisWorkflowIntegrationTest"
 ```
 
-이 test에서 Riot Match/Account 조회, comparison feature, LLM generator만 대역이다. 따라서 실제 Riot/OpenAI network 호출이나
-실제 raw match 통계 계산을 검증하지는 않는다. 반면 `PlayerAnalysisService`의 availability/cache 동작, benchmark aggregate와
-statistics feature는 기존 단위·통합 test가 각각 검증한다. `NewRankedMatchAnalysisPollingServiceTest`는 baseline, coalescing,
+이 test는 실제 `PlayerComparisonFeatureService`와 PostgreSQL `BenchmarkSample` aggregate를 사용한다.
+`PlayerComparisonContextService`와 Riot Match/Account·LLM provider는 대역이다. 따라서 실제 Riot/OpenAI network 호출이나 원본
+match에서 사용자 통계를 계산하는 전체 경로는 검증하지 않는다. 반면 `PlayerAnalysisService`의 availability/cache 동작과 benchmark
+aggregate는 이 test 경계에서 확인한다. `NewRankedMatchAnalysisPollingServiceTest`는 baseline, coalescing,
 429/cooldown, capacity, 중복 및 `JOB_CREATED` cursor 재개 규칙을 고정하고, `NewRankedMatchAnalysisSchedulerTest`는
 `@Scheduled` adapter가 application polling service에 위임함을 별도로 확인한다. 수동 `poll()` 검증을 실제 scheduler가 시간에
 따라 실행됐다는 주장으로 해석하지 않는다.
