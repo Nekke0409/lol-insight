@@ -141,6 +141,18 @@ docker compose --env-file deploy.env --env-file deploy.secrets.env -f compose.de
 
 ## 비용과 종료 정리
 
+### Free Tier 사전 확인
+
+Free Tier 적용 여부, 사용 가능한 instance type, credit 적용 대상과 만료일은 account 생성 시점·plan·현재 사용량에 따라 달라진다.
+이 runbook은 이를 자동으로 무료 또는 현금 청구 없음으로 가정하지 않는다. AWS resource를 만들기 전 운영자는 Billing console 또는
+권한이 있는 read-only Free Tier API로 account plan(`FREE`/`PAID`)과 상태, Free plan 종료일, 남은 credit·만료일·적용 대상,
+현재 Free Tier 사용량과 기존 resource를 확인한다. 확인할 수 없거나 `PAID` plan에서 credit 잔액만 확인된 경우에는 현금 청구
+위험이 없는 배포로 해석하지 않고 배포를 보류한다.
+
+Free plan은 사용량 한도나 credit이 소진되면 종료될 수 있으며, 종료 뒤 account와 resource에 접근하지 못할 수 있다. 따라서
+backup을 account 밖으로 가져올 시점과 retained resource 정리 시점을 plan 종료일보다 앞서 정한다. Free Tier usage alert 또는
+notification-only budget은 사용량을 알릴 뿐 resource를 중지·삭제하거나 현금 청구를 차단하지 않는다.
+
 EC2 실행 시간, EBS volume/snapshot, public IPv4 또는 Elastic IP 사용 방식, NAT gateway, image registry 전송·보관,
 CloudWatch/SSM/S3 log와 backup 보관은 비용을 발생시킬 수 있다. 인스턴스 종료만으로 EBS·snapshot·Elastic IP·registry artifact가
 자동 삭제된다고 가정하지 말고, 필요 없는 resource와 retained backup을 인벤토리 기준으로 명시적으로 정리한다.
