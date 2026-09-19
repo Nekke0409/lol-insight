@@ -117,6 +117,7 @@ Spring Security, AWS, 인증 사용자 기준 quota, 다중 LLM Provider, Tool-u
 - [Peer Benchmark v0.2](docs/benchmark/peer-benchmark-v0.2.md): scope와 availability 정책
 - [ADR-014](docs/adr/014-use-game-start-validity-window-for-peer-benchmark.md): Peer Benchmark 유효 표본 기간 결정
 - [ADR-015](docs/adr/015-use-coverage-driven-benchmark-replenishment.md): bounded benchmark coverage replenishment 결정
+- [단일 인스턴스 비공개 배포 v0.1](docs/deployment/single-instance-private-v0.1.md): Docker Compose, SSM 접근, 운영·복구 절차
 
 현재 구현과 설정의 source of truth는 code, `README.md`, `docs/architecture.md`, `docs/adr/`입니다. Project Memory나 AI assistant context는 저장소의 실제 상태를 대체하지 않습니다.
 
@@ -137,3 +138,18 @@ docker compose up -d
 `local` profile은 PostgreSQL의 로컬 기본값(`localhost:5432`, database/user `lol_insight`)을 사용합니다. `POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`로 값을 덮어쓸 수 있으며 production에서는 모든 값을 환경변수로 제공해야 합니다.
 
 구체적인 OpenAI runtime·관측성 설정, Benchmark seed 절차, 성능 측정 방법은 해당 [아키텍처 문서](docs/architecture.md), [ADR](docs/adr/README.md), [성능 문서](docs/performance/)를 참고합니다.
+
+## 단일 인스턴스 비공개 배포 v0.1
+
+개발용 `docker-compose.yml`은 그대로 둔다. 비공개 검증 또는 한 대의 EC2에는 별도 `compose.deploy.yaml`만 사용한다. 이 구성은
+PostgreSQL·Redis 포트를 host에 게시하지 않고, 애플리케이션만 기본 `127.0.0.1:18080`으로 bind한다.
+
+`deploy.env.example`과 `deploy.secrets.env.example`을 각각 Git이 무시하는 `deploy.env`, `deploy.secrets.env`로 복사해 값을 채운다.
+배포용 이미지는 versioned tag로 먼저 만들고, Compose는 build를 수행하지 않는다.
+
+```text
+docker build --tag lol-insight:0.1.0 .
+docker compose --env-file deploy.env --env-file deploy.secrets.env -f compose.deploy.yaml up -d
+```
+
+시작·SSM 접근·backup/restore·재배포 절차와 현재 한계는 [단일 인스턴스 비공개 배포 runbook](docs/deployment/single-instance-private-v0.1.md)을 따른다.

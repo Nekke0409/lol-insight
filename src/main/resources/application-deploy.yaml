@@ -1,0 +1,31 @@
+spring:
+  config:
+    activate:
+      on-profile: deploy
+  lifecycle:
+    timeout-per-shutdown-phase: 30s
+
+server:
+  shutdown: graceful
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never
+
+# Private deployment defaults. Compose also sets these explicitly so host opt-ins are not inherited.
+analysis:
+  automation:
+    enabled: false
+    bootstrap:
+      enabled: false
+      players: ""
+
+benchmark:
+  replenishment:
+    enabled: false
+    run-once: false

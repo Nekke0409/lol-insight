@@ -996,6 +996,37 @@ Riot API 오류를 서비스 관점의 오류로 변환한 뒤
 - sync analysis와 persisted async `AnalysisJob`, bounded executor, generation rate limit, same-process in-flight dedupe
 - persisted PUUID tracking/cursor와 idempotent Ranked Solo Match Automation trigger, 기존 `AnalysisJob` 재사용
 - Match Detail·completed analysis result Redis cache, PostgreSQL/JPA/Flyway, 핵심 단위·통합 테스트
+- `deploy` profile과 별도 Compose를 사용하는 single-instance private deployment: app loopback bind, PostgreSQL named volume,
+  Flyway startup migration, 최소 actuator health, non-root runtime image
+
+### Single-instance Private Deployment v0.1
+
+개발용 `docker-compose.yml`은 로컬 DB/Redis 포트를 게시하는 개발 전용 구성으로 유지한다. 독립 배포는 별도
+`compose.deploy.yaml`의 `lol-insight-deploy` project와 `lol-insight-deploy-postgres-data` named volume을 사용하므로,
+개발 DB·volume이나 benchmark corpus를 공유하지 않는다.
+
+배포 image는 JDK 21 Gradle Wrapper로 `bootJar`만 build stage에서 만들고, JRE 21 runtime에는 해당 jar와 healthcheck용
+`curl`만 복사한다. runtime user는 non-root `app`이며 entrypoint는 Java process를 직접 exec한다. Docker build는 test를
+실행하지 않으며 CI와 별도 local Gradle regression 검증이 이를 담당한다. image tag는 `latest`가 아니라 배포 단위를
+식별하는 versioned tag 또는 그 tag가 가리키는 immutable digest를 사용한다.
+
+Compose 안에서 app은 `postgres:5432`, `redis:6379` service DNS만 사용한다. PostgreSQL과 Redis는 host port를 게시하지
+않고, app만 `127.0.0.1:${APP_HOST_PORT}:8080`으로 bind한다. `deploy.env`의 일반 설정과 Git-ignored
+`deploy.secrets.env`의 password/API key를 명시적으로 전달하며, `ANALYSIS_AUTOMATION_ENABLED`, bootstrap,
+`BENCHMARK_REPLENISHMENT_ENABLED`, `RUN_BENCHMARK_REPLENISHMENT_ONCE`는 profile과 Compose 양쪽에서 false로 고정한다.
+따라서 host의 opt-in 환경변수가 deployment container에 암묵적으로 전달되지 않는다.
+
+`deploy` profile은 Flyway와 JPA `ddl-auto=validate`를 유지하고, `/actuator/health`만 web에 노출하며 health detail을
+숨긴다. `env`, `configprops`, `heapdump`, `shutdown` endpoint는 노출하지 않는다. app/postgres/redis에는 healthcheck,
+restart policy, stop grace period, Docker local log rotation을 둔다. app은 graceful shutdown을 요청하고 최대 30초의 Spring
+shutdown phase를 허용한다.
+
+이는 container stop이 HTTP server와 Spring lifecycle에 정상 종료 신호를 전달하도록 하는 범위다. 메모리 command를 쓰는
+`AnalysisJob`은 process crash 뒤 PENDING command를 잃거나 RUNNING row를 남길 수 있으며, graceful shutdown만으로
+recovery가 완성되지는 않는다. 인증/사용자 ownership, distributed scheduler/lock·dedupe·Riot cooldown, persistent queue와
+stale-job recovery는 여전히 single-instance v0.1 범위 밖이다. 운영 절차는
+[단일 인스턴스 비공개 배포 v0.1](deployment/single-instance-private-v0.1.md)과
+[ADR-016](adr/016-prepare-single-instance-private-deployment.md)을 따른다.
 
 ### 다음 확장 순서
 

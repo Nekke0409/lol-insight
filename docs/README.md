@@ -44,6 +44,11 @@ Riot API endpoint별 routing host와 용도를 빠르게 확인하는 참고 문
 실제 Riot API를 사용하는 local development 환경에서 최근 경기 endpoint의 순차 구현 latency를
 반복 측정하고 기록하는 절차입니다.
 
+### 배포
+
+- [`deployment/single-instance-private-v0.1.md`](deployment/single-instance-private-v0.1.md): 단일 EC2의 private
+  Docker Compose 배포, SSM port forwarding, backup/restore와 운영 한계
+
 ### 아키텍처 결정 기록
 
 [`adr/`](adr/)
@@ -81,3 +86,4 @@ Automation의 현재 contract는 [`automation/new-ranked-match-analysis-v0.1.md`
 - [`ADR-013: JVM-local Riot outbound cooldown 사용`](adr/013-use-jvm-local-riot-outbound-cooldown.md)
 - [`ADR-014: Peer Benchmark에 경기 시작 시각 기반 유효 표본 기간 사용`](adr/014-use-game-start-validity-window-for-peer-benchmark.md)
 - [`ADR-015: Coverage-driven bounded Benchmark Replenishment 사용`](adr/015-use-coverage-driven-benchmark-replenishment.md)
+- [`ADR-016: Single-instance Private Deployment v0.1 준비`](adr/016-prepare-single-instance-private-deployment.md)
