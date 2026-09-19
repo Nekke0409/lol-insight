@@ -92,3 +92,101 @@ COMMIT;
 ### 결론과 다음 최소 조치
 
 이전의 0건은 sample 부재가 아니라 소문자 `kr` 조건이 실제로 사용됐을 경우 설명된다. 다만 이전 SQL 원문이 남아 있지 않아 이를 확정 원인으로 기록하지 않는다. 다음에 one-tick smoke를 검토할 때만, `KR / 420 / GOLD / I`와 현재 corpus를 전제로 하고 V3/V4 미적용 문제를 별도로 해결할지 판단한다. 이번 진단에서는 새 corpus 수집이나 DB 상태 변경을 하지 않았다.
+
+## 운영 검증 실제 실행 기록 (2026-09-19)
+
+이 절은 위 사전 진단과 구분한 실제 운영 검증 관측 기록이다. production/test 코드, migration 파일,
+schema 설정 파일은 수정하지 않았다.
+
+### 실행 대상과 백업
+
+- 실행 시각: 2026-09-19 18:30~18:31 (Asia/Seoul)
+- 대상: local profile의 `jdbc:postgresql://localhost:5432/lol_insight`, `public` schema. Compose PostgreSQL의
+  공개 포트와 일치함을 확인했고, 실행 중인 Spring 애플리케이션은 없었다.
+- Spring/Flyway 전용 datasource/schema override 환경 변수는 모두 unset 상태였다.
+- 적용 전 read-only 집계: `benchmark_sample` 전체 141건, `KR / 420 / GOLD / I` 141건 / distinct PUUID 31명,
+  Flyway V1/V2 성공, V3/V4 미적용.
+- migration 전에 저장소 밖의 로컬 경로에 PostgreSQL native `pg_dump` custom-format archive를 생성했다.
+  archive는 비어 있지 않았고 `pg_restore --list`가 성공했다. archive 경로나 내용은 이 문서에 기록하지 않는다.
+
+### A 단계: 외부 호출 없이 migration 적용
+
+실행 프로세스에 아래 opt-in/automation 값은 모두 `false`로 주입했고 Riot/OpenAI 키는 빈 값으로 두었다.
+
+- `RUN_OPENAI_SMOKE_TEST`, `RUN_BENCHMARK_SEED`, `RUN_PLAYER_COMPARISON_SMOKE_TEST`
+- `ANALYSIS_AUTOMATION_ENABLED`, `ANALYSIS_AUTOMATION_BOOTSTRAP_ENABLED`
+- `BENCHMARK_REPLENISHMENT_ENABLED`, `RUN_BENCHMARK_REPLENISHMENT_ONCE`
+
+기존 `bootRun` startup Flyway 경로는 `public` schema에 V3 (`create ranked match automation`)와
+V4 (`create benchmark replenishment cursor`)를 성공적으로 적용했다. JPA `EntityManagerFactory` 초기화도
+완료되어 `ddl-auto=validate` mapping 검증 구간을 통과했다.
+
+하지만 애플리케이션의 최종 기동은 실패했다. 현재 `RiotApiProperties.key`는 `@NotBlank`이고,
+요청한 빈 `RIOT_API_KEY`는 property bind validation에서 거부된다. 이 실패는 Riot client가 만들어지기 전의
+configuration binding 단계에서 발생했으며, Riot/OpenAI HTTP 호출, benchmark collection, automation은
+실행되지 않았다. 이 단계가 시작한 Spring 프로세스는 종료되었고, 자동 repair/rollback/restore나 코드 변경은
+수행하지 않았다.
+
+후속 read-only 확인 결과는 다음과 같다.
+
+- Flyway V1~V4 모두 성공 상태다.
+- `tracked_player_automation`, `automation_execution`, `benchmark_replenishment_cursor` 테이블이 존재한다.
+- `benchmark_sample` 전체 141건, `KR / 420 / GOLD / I` 141건 / distinct PUUID 31명으로 적용 전과 같다.
+- `benchmark_replenishment_cursor` row는 0건이다.
+
+### B 단계: GOLD I bounded one-tick smoke
+
+A 단계의 최종 startup/validation이 성공하지 않았으므로 B 단계는 실행하지 않았다. 따라서 아래 값은 관측되지
+않았으며 모두 `N/A (미실행)`이다.
+
+- queryWindow 및 POSITION별 before/after `sampleCount`, `uniquePlayerCount`, `availability`,
+  `samplesNeeded`, `uniquePlayersNeeded`
+- `requestedPage`, `pagesProcessed`, `nextPage`, cursor DB 상태 변화
+- `createdSamples`, `skippedDuplicates`, `skippedInvalidSamples`
+- discovery/collection outcome, `rateLimitStopped`, `retryAfterSeconds`
+
+`RUN_BENCHMARK_REPLENISHMENT_ONCE=true` 프로세스는 시작하지 않았으므로 run-once opt-in 값의 잔존 상태도 없다.
+
+## Riot key 설정 후 재실행 기록 (2026-09-19)
+
+### 재실행 사전 확인과 A 단계
+
+- `RIOT_API_KEY`가 실행 환경에 존재함을 값 노출 없이 확인했다. `OPENAI_API_KEY`는 실행 프로세스에서 빈 값으로
+  덮어썼다.
+- one-tick 전에 현재 V4 적용 DB를 다시 PostgreSQL native custom-format archive로 저장했다. archive는 비어 있지
+  않았고 `pg_restore --list`가 성공했다. archive 경로나 내용은 기록하지 않는다.
+- 재실행 전 read-only 집계는 `benchmark_sample` 141건, `KR / 420 / GOLD / I` 141건 / distinct PUUID 31명,
+  cursor 0건이었다.
+- A 단계는 local profile로 정상 기동했고 health endpoint가 `200`을 반환했다. Flyway는 V1~V4 네 migration을
+  성공적으로 validate하고 `public` schema가 V4 최신 상태라 migration이 필요 없다고 확인했다. JPA
+  `ddl-auto=validate` 구간도 통과했다.
+
+### B 단계: GOLD I bounded one-tick
+
+다음 값만 실행 프로세스에 적용했다: `RUN_BENCHMARK_REPLENISHMENT_ONCE=true`, `GOLD:I`, cohort 1개,
+page 1개, player 10명, matches/player 5개. scheduler와 다른 smoke/automation opt-in은 모두 `false`였다.
+이후 추가 tick, manual seed, cursor 수동 수정, 429/cooldown 재시도는 수행하지 않았다.
+
+- tick outcome: `RATE_LIMIT_STOPPED`
+- queryWindow: `2026-08-20T09:38:27.600688100Z` 이상,
+  `2026-09-19T09:38:27.600688100Z` 미만
+
+| Position | before sampleCount / uniquePlayerCount | after sampleCount / uniquePlayerCount | before availability / needed samples·players | after availability / needed samples·players |
+| --- | --- | --- | --- | --- |
+| TOP | 14 / 8 | 14 / 8 | INSUFFICIENT_SAMPLE / 16·2 | INSUFFICIENT_SAMPLE / 16·2 |
+| JUNGLE | 18 / 8 | 18 / 8 | INSUFFICIENT_SAMPLE / 12·2 | INSUFFICIENT_SAMPLE / 12·2 |
+| MIDDLE | 11 / 9 | 11 / 9 | INSUFFICIENT_SAMPLE / 19·1 | INSUFFICIENT_SAMPLE / 19·1 |
+| BOTTOM | 15 / 7 | 19 / 7 | INSUFFICIENT_SAMPLE / 15·3 | INSUFFICIENT_SAMPLE / 11·3 |
+| UTILITY | 7 / 6 | 8 / 7 | INSUFFICIENT_SAMPLE / 23·4 | INSUFFICIENT_SAMPLE / 22·3 |
+
+- `requestedPage=1`, `pagesProcessed=1`, `nextPage=2`. 후속 read-only DB 조회에서도 `KR / 420 / GOLD / I`
+  cursor의 `next_page`는 2였다.
+- `createdSamples=5`, `skippedDuplicates=15`, `skippedInvalidSamples=0`.
+- discovery outcome은 `COMPLETED`, collection outcome은 `RATE_LIMITED`, `rateLimitStopped=true`,
+  `retryAfterSeconds=1`이다.
+- 후속 read-only 집계는 `benchmark_sample` 전체 및 cohort 모두 146건, distinct PUUID 31명이다. queryWindow
+  내 POSITION 집계는 summary의 after 값과 일치한다.
+
+run-once summary가 출력된 뒤 이 실행이 생성한 Spring/Gradle 프로세스 트리만 종료했다. 비대화형 실행 환경이라
+일반 종료 신호가 자식 JVM에 의해 거부되어 해당 프로세스 트리에 강제 종료를 사용했다. 이후 Spring/Gradle
+run-once 프로세스가 남아 있지 않음을 확인했다.
