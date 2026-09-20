@@ -1,5 +1,9 @@
 # Tool-using AI Agent v0.1
 
+## Smoke 관측
+
+`AGENT_SMOKE_OBSERVATION_ENABLED=true`는 local opt-in 관측기다. 선택된 Tool과 `groupBy`, 통계 Tool의 표본 수와 역할별 games·winRate·KDA·CS/min, comparison Tool의 scope·position·현재 tier/division·userGames·status·benchmark 표본 수를 기록한다. `AVAILABLE` comparison은 KDA와 CS/min의 playerValue·benchmarkMean·differenceFromMean만 추가로 기록한다. 질문, Tool JSON, 최종 답변, 플레이어·champion 식별자, match ID, provider raw response, API key는 기록하지 않으며 기본값은 `false`다.
+
 ## 목적과 범위
 
 Agent v0.1은 URL에 지정된 한 명의 플레이어에 대해 자연어 질문을 받고, 모델이 허용된 Backend Tool을 선택해
