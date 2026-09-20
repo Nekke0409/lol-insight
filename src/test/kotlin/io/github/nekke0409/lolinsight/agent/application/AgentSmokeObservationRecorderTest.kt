@@ -1,9 +1,14 @@
 package io.github.nekke0409.lolinsight.agent.application
 
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.extension.ExtendWith
+import org.springframework.boot.test.system.CapturedOutput
+import org.springframework.boot.test.system.OutputCaptureExtension
+import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 
+@ExtendWith(OutputCaptureExtension::class)
 class AgentSmokeObservationRecorderTest {
     @Test
     fun `keeps only permitted stats tool fields and normalizes an arbitrary tool name`() {
@@ -103,6 +108,129 @@ class AgentSmokeObservationRecorderTest {
         assertFalse(observation.toString().contains("champion"))
         assertFalse(observation.toString().contains("86"))
     }
+
+    @Test
+    fun `writes permitted AVAILABLE peer comparison details to the actual log`(output: CapturedOutput) {
+        SafeLoggingAgentSmokeObservationRecorder().record(
+            peerComparisonResult(
+                comparison =
+                    AgentPeerComparisonResult(
+                        scope = "POSITION",
+                        position = "TOP",
+                        champion = AgentChampionReference(900001),
+                        userGames = 8,
+                        status = "AVAILABLE",
+                        benchmark = AgentBenchmarkScopeResult("GOLD", "I", "TOP", 30, 12),
+                        metrics = metrics(),
+                    ),
+            ),
+        )
+
+        val log = output.lastSmokeLogLine()
+
+        assertContains(log, "tool=get_peer_comparison")
+        assertContains(log, "success=true")
+        assertContains(log, "groupBy=POSITION")
+        assertContains(log, "comparisons=[AgentSmokeComparisonObservation(")
+        assertContains(log, "scope=POSITION")
+        assertContains(log, "position=TOP")
+        assertContains(log, "userGames=8")
+        assertContains(log, "status=AVAILABLE")
+        assertContains(log, "tier=GOLD")
+        assertContains(log, "division=I")
+        assertContains(log, "benchmarkSampleCount=30")
+        assertContains(log, "benchmarkUniquePlayerCount=12")
+        assertContains(log, "kda=AgentSmokeMetricComparisonObservation(playerValue=3.5, benchmarkMean=2.7, differenceFromMean=0.8)")
+        assertContains(log, "csPerMinute=AgentSmokeMetricComparisonObservation(playerValue=7.3, benchmarkMean=6.8, differenceFromMean=0.5)")
+        assertFalse(log.contains("champion="))
+        assertFalse(log.contains("900001"))
+    }
+
+    @Test
+    fun `writes unavailable comparison status and sample without manufacturing metrics`(output: CapturedOutput) {
+        SafeLoggingAgentSmokeObservationRecorder().record(
+            peerComparisonResult(
+                comparison =
+                    AgentPeerComparisonResult(
+                        scope = "POSITION",
+                        position = "TOP",
+                        champion = null,
+                        userGames = 3,
+                        status = "BENCHMARK_INSUFFICIENT_SAMPLE",
+                        benchmark = AgentBenchmarkScopeResult("EMERALD", "IV", "TOP", 3, 2),
+                        metrics = null,
+                    ),
+                tier = "EMERALD",
+                division = "IV",
+            ),
+        )
+
+        val log = output.lastSmokeLogLine()
+
+        assertContains(log, "tool=get_peer_comparison")
+        assertContains(log, "success=true")
+        assertContains(log, "status=BENCHMARK_INSUFFICIENT_SAMPLE")
+        assertContains(log, "benchmarkSampleCount=3")
+        assertContains(log, "benchmarkUniquePlayerCount=2")
+        assertContains(log, "kda=null")
+        assertContains(log, "csPerMinute=null")
+        assertFalse(log.contains("playerValue="))
+        assertFalse(log.contains("benchmarkMean="))
+        assertFalse(log.contains("differenceFromMean="))
+    }
+
+    @Test
+    fun `normalizes arbitrary tool names and excludes raw payload values from the actual log`(output: CapturedOutput) {
+        val playerIdentifier = "player-identifier-sentinel"
+        val question = "question-sentinel"
+        val finalAnswer = "final-answer-sentinel"
+        val rawProviderResponse = "raw-provider-response-sentinel"
+        val apiKey = "api-key-sentinel"
+
+        SafeLoggingAgentSmokeObservationRecorder().record(
+            AgentToolDispatchResult(
+                toolName = "untrusted-tool\n$playerIdentifier",
+                success = false,
+                payload = AgentToolErrorResult("REJECTED", apiKey, "$question $finalAnswer $rawProviderResponse"),
+                limitations = listOf(playerIdentifier, question, finalAnswer, rawProviderResponse, apiKey),
+            ),
+        )
+
+        val log = output.lastSmokeLogLine()
+
+        assertContains(log, "tool=UNSUPPORTED_TOOL")
+        assertFalse(log.contains("untrusted-tool"))
+        assertFalse(log.contains(playerIdentifier))
+        assertFalse(log.contains(question))
+        assertFalse(log.contains(finalAnswer))
+        assertFalse(log.contains(rawProviderResponse))
+        assertFalse(log.contains(apiKey))
+    }
+
+    private fun peerComparisonResult(
+        comparison: AgentPeerComparisonResult,
+        tier: String = "GOLD",
+        division: String = "I",
+    ): AgentToolDispatchResult =
+        AgentToolDispatchResult(
+            toolName = GET_PEER_COMPARISON,
+            success = true,
+            payload =
+                AgentPeerComparisonToolResult(
+                    status = "AVAILABLE",
+                    requestedScope = "POSITION",
+                    playerRank = AgentPlayerRankResult(tier, division),
+                    comparisons = listOf(comparison),
+                    metricUnits = AgentMetricUnits(),
+                    limitations = emptyList(),
+                ),
+            limitations = emptyList(),
+        )
+
+    private fun CapturedOutput.lastSmokeLogLine(): String =
+        all
+            .lineSequence()
+            .last { it.contains("agent_smoke_tool") }
 
     private fun metrics(): AgentComparisonMetricsResult =
         AgentComparisonMetricsResult(

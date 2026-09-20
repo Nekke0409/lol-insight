@@ -2,7 +2,7 @@
 
 ## Smoke 관측
 
-`AGENT_SMOKE_OBSERVATION_ENABLED=true`는 local opt-in 관측기다. 선택된 Tool과 `groupBy`, 통계 Tool의 표본 수와 역할별 games·winRate·KDA·CS/min, comparison Tool의 scope·position·현재 tier/division·userGames·status·benchmark 표본 수를 기록한다. `AVAILABLE` comparison은 KDA와 CS/min의 playerValue·benchmarkMean·differenceFromMean만 추가로 기록한다. 질문, Tool JSON, 최종 답변, 플레이어·champion 식별자, match ID, provider raw response, API key는 기록하지 않으며 기본값은 `false`다.
+`AGENT_SMOKE_OBSERVATION_ENABLED=true`는 local opt-in 관측기다. 선택된 Tool과 `groupBy`, 통계 Tool의 표본 수와 역할별 games·winRate·KDA·CS/min, comparison Tool의 scope·position·현재 tier/division·userGames·status·benchmark 표본 수를 기록한다. `AVAILABLE` comparison은 KDA와 CS/min의 playerValue·benchmarkMean·differenceFromMean만 추가로 기록한다. `OutputCaptureExtension` 기반 회귀 테스트는 실제 `record()` 로그에서 AVAILABLE 비교 상세값, 비교 불가 상태와 표본, 임의 Tool 이름 정규화 및 raw payload 비노출을 확인한다. 질문, Tool JSON, 최종 답변, 플레이어·champion 식별자, match ID, provider raw response, API key는 기록하지 않으며 기본값은 `false`다.
 
 ## 목적과 범위
 
@@ -145,12 +145,14 @@ Riot match loading, rank lookup, benchmark repository와 OpenAI만 대역으로 
 Tool 금지, invalid/duplicate Tool 인자, incomplete provider response와 HTTP 기본 비활성화도 별도로 검증한다.
 이 검증은 실제 모델의 질문 이해, Tool 선택 품질, 최종 한국어 답변 품질을 보증하지 않는다.
 
-다음 실제 smoke에서만 provider key, `AGENT_ENABLED=true`, 해당 플레이어의 최근 Ranked Solo match, rate-limit 여유와
-필요한 동일 tier/division benchmark 표본을 준비해 실제 모델의 Tool 선택과 final answer 품질을 확인한다. benchmark가
-없으면 stats Tool과 limitation 답변은 검증할 수 있지만 peer comparison 수치가 있는 성공 응답은 검증할 수 없다. 이
-작업에서는 실제 smoke를 실행하지 않았으며, benchmark 부족이어도 Agent 모델 요청 자체의 비용은 발생할 수 있다.
+실제 smoke는 provider key, `AGENT_ENABLED=true`, 해당 플레이어의 최근 Ranked Solo match, rate-limit 여유와 필요한
+동일 tier/division benchmark 표본을 준비한 local opt-in 범위에서만 수행한다. benchmark가 없으면 stats Tool과 limitation
+답변은 확인할 수 있지만 peer comparison 수치가 있는 `AVAILABLE` 응답은 확인할 수 없다.
 
-`AGENT_SMOKE_OBSERVATION_ENABLED=true`는 이와 같은 local smoke에서만 쓴다. 이 opt-in은 Tool 이름, 허용된
-`groupBy`, 통계 Tool의 요청/분석 경기 수와 역할별 games·winRate·KDA·CS/min만 로그에 기록한다. 질문, Tool JSON,
-최종 답변, Riot/플레이어 식별자, match ID, provider raw response와 API key는 기록하지 않는다. 기본값은 `false`이며
-일반 실행에는 관찰 로그를 추가하지 않는다.
+2026-09-21에는 통계 Tool 1회와 비교 Tool 1회를 연속 선택한 실제 smoke가 1회 수행됐다. 모델 요청 3회, Tool 실행 2회,
+HTTP 200과 `COMPLETED`, 통계 Tool 값과 최종 답변의 대조, 그리고 다른 tier 대체·percentile·원인 추정이 없는 비교 불가
+설명까지 확인했다. 실행 당시 detailed comparison logger는 format 인자 누락으로 comparison status·benchmark 표본·metric을
+출력하지 않았다. 따라서 같은 실행의 comparison Backend 값과 최종 답변을 직접 대조하거나 `AVAILABLE` 수치 정확성을 확인한
+것으로 취급하지 않는다. 이후 수정한 logger 출력은 외부 호출 없는 `OutputCaptureExtension` 회귀 테스트로 검증했으며, 이 사실은
+과거 실제 smoke에서 수정 후 상세 로그를 관측했다는 뜻이 아니다. 상세 실행 기록은
+[`2026-09-21 Agent POSITION 비교 smoke 검증 기록`](2026-09-21-agent-position-comparison-smoke.md)을 따른다.
