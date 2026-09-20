@@ -7,6 +7,12 @@ spring:
     username: ${POSTGRES_USER:lol_insight}
     password: ${POSTGRES_PASSWORD:lol-insight-local}
 
+springdoc:
+  api-docs:
+    enabled: true
+  swagger-ui:
+    enabled: true
+
 management:
   endpoints:
     web:

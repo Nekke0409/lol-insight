@@ -322,6 +322,12 @@ MatchController
 
 Controller에 Riot API 호출이나 복잡한 통계 계산을 직접 작성하지 않는다.
 
+### OpenAPI 문서
+
+공통 `OpenApiConfiguration`은 `LOL Insight API`의 v1 metadata만 제공하고, springdoc은 Controller의 mapping·검증·응답 타입과 web 계층의 보완 설명으로 `/api/v1/**` OpenAPI 명세를 생성한다. Actuator, `/error`, scheduler와 내부 운영 기능은 문서 범위에 포함하지 않는다.
+
+`springdoc.api-docs.enabled`와 `springdoc.swagger-ui.enabled`는 기본 및 `deploy` profile에서 모두 false이며 `local` profile에서만 true다. 명세 생성과 Swagger UI 조회는 Application Service를 실행하거나 Riot/OpenAI 요청을 보내지 않는다. Swagger annotation은 HTTP 의미와 자동 추론하기 어려운 정책 설명에만 두고 application/domain 계층으로 전파하지 않는다.
+
 ### Application / Service
 
 담당 책임:

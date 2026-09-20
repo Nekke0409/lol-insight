@@ -16,6 +16,14 @@ spring:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
 
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false
+    path: /swagger-ui.html
+  paths-to-match: /api/v1/**
+
 # 실제 Riot API 연동을 추가할 때 환경변수로 주입한다.
 # API 키는 이 파일이나 Git에 저장하지 않는다.
 riot:

@@ -103,7 +103,7 @@ LangChain, LangGraph, 별도 Vector DB 같은 framework는 실제 복잡도를 �
 
 ## 기술 스택
 
-현재 사용 중인 기술은 Kotlin, Spring Boot, JDK 21, Spring MVC `RestClient`, PostgreSQL, Spring Data JPA, Flyway, Redis, Caffeine, Bucket4j, Docker, OpenAI Java SDK입니다.
+현재 사용 중인 기술은 Kotlin, Spring Boot, JDK 21, Spring MVC `RestClient`, PostgreSQL, Spring Data JPA, Flyway, Redis, Caffeine, Bucket4j, Docker, OpenAI Java SDK, springdoc-openapi입니다.
 
 Spring Security, AWS, 인증 사용자 기준 quota, 다중 LLM Provider, RAG는 현재 구현 범위가 아닙니다.
 
@@ -138,6 +138,21 @@ docker compose up -d
 ```
 
 `local` profile은 PostgreSQL의 로컬 기본값(`localhost:5432`, database/user `lol_insight`)을 사용합니다. `POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`로 값을 덮어쓸 수 있으며 production에서는 모든 값을 환경변수로 제공해야 합니다.
+
+## Local API 문서
+
+`local` profile에서만 Swagger UI와 OpenAPI JSON이 활성화됩니다. 기본 profile과 `deploy` profile에서는 둘 다 비활성화되므로 배포 환경에 문서 endpoint가 의도치 않게 노출되지 않습니다.
+
+```powershell
+.\gradlew.bat bootRun --args="--spring.profiles.active=local"
+```
+
+- Swagger UI: [http://localhost:8080/swagger-ui.html](http://localhost:8080/swagger-ui.html)
+- OpenAPI JSON: [http://localhost:8080/v3/api-docs](http://localhost:8080/v3/api-docs)
+
+예를 들어 Swagger UI에서 `GET /api/v1/players/{gameName}/{tagLine}`의 `gameName`에 `ExamplePlayer`, `tagLine`에 `KR1`을 입력한다. `tagLine`에는 Riot ID 구분자인 `#`를 포함하지 않는다.
+
+문서를 열거나 명세를 조회하는 것만으로 Riot/OpenAI 요청은 실행되지 않는다. 다만 Swagger UI에서 플레이어·경기·분석·Agent API를 실제로 호출하면 외부 API 호출과 비용이 발생할 수 있고, 기존 rate limit과 Agent 활성화 정책이 그대로 적용된다. API key는 서버 환경변수로만 설정하며 Swagger UI에 입력하거나 노출하지 않는다.
 
 구체적인 OpenAI runtime·관측성 설정, Benchmark seed 절차, 성능 측정 방법은 해당 [아키텍처 문서](docs/architecture.md), [ADR](docs/adr/README.md), [성능 문서](docs/performance/)를 참고합니다.
 
