@@ -51,7 +51,11 @@ class AgentToolDispatcher(
     ): AgentToolDispatchResult {
         val groupBy =
             call.parseGroupByOrNull()
-                ?: return AgentToolDispatchResult.failed(call.name, "INVALID_TOOL_ARGUMENTS", INVALID_ARGUMENTS_MESSAGE)
+                ?: return AgentToolDispatchResult.failed(
+                    observedAgentToolName(call.name),
+                    "INVALID_TOOL_ARGUMENTS",
+                    INVALID_ARGUMENTS_MESSAGE,
+                )
 
         return when (call.name) {
             GET_RANKED_STATS -> rankedStats(groupBy, context)

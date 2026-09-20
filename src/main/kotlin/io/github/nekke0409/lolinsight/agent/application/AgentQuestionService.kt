@@ -2,6 +2,7 @@ package io.github.nekke0409.lolinsight.agent.application
 
 import io.github.nekke0409.lolinsight.analysis.ratelimit.AnalysisGenerationRateLimiter
 import io.github.nekke0409.lolinsight.analysis.ratelimit.AnalysisRateLimitKey
+import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.stereotype.Service
 import java.time.Duration
 
@@ -13,6 +14,7 @@ class AgentQuestionService(
     private val toolDispatcher: AgentToolExecutor,
     private val toolExecutionRunner: AgentToolExecutionRunner,
     private val observationRecorder: AgentQuestionObservationRecorder = NoOpAgentQuestionObservationRecorder,
+    @Autowired(required = false) private val smokeObservationRecorder: AgentSmokeObservationRecorder? = null,
 ) {
     fun answer(
         gameName: String,
@@ -149,6 +151,7 @@ class AgentQuestionService(
                             )
                         }
                     }
+                smokeObservationRecorder.recordSafely(dispatched)
                 if (deadline.isExpired()) {
                     usedTools += AgentUsedTool(dispatched.toolName, dispatched.success, toolExecutions)
                     limitations += dispatched.limitations
@@ -171,11 +174,15 @@ class AgentQuestionService(
             terminationReason =
                 when (exception) {
                     is AgentModelIncompleteResponseException -> {
+                        exception.usage?.let(usage::add)
                         incompleteReason = exception.incompleteReason
                         AgentTerminationReason.MODEL_RESPONSE_INCOMPLETE
                     }
 
-                    is AgentModelRefusalException -> AgentTerminationReason.MODEL_RESPONSE_REFUSED
+                    is AgentModelRefusalException -> {
+                        exception.usage?.let(usage::add)
+                        AgentTerminationReason.MODEL_RESPONSE_REFUSED
+                    }
                     is AgentModelAuthenticationException,
                     is AgentModelConfigurationException,
                     is AgentModelInvalidResponseException,
@@ -226,6 +233,14 @@ class AgentQuestionService(
             record(summary)
         } catch (_: Exception) {
             // Observability must not affect the Agent execution boundary.
+        }
+    }
+
+    private fun AgentSmokeObservationRecorder?.recordSafely(result: AgentToolDispatchResult) {
+        try {
+            this?.record(result)
+        } catch (_: Exception) {
+            // Smoke-only observation must not affect the Agent execution boundary.
         }
     }
 }

@@ -6,12 +6,16 @@ import com.openai.models.responses.Response
 import com.openai.models.responses.ResponseCreateParams
 import com.openai.models.responses.ResponseFunctionToolCall
 import com.openai.models.responses.ResponseOutputItem
+import com.openai.models.responses.ResponseOutputMessage
 import com.openai.models.responses.ResponseReasoningItem
 import com.openai.models.responses.ResponseStatus
+import com.openai.models.responses.ResponseUsage
 import com.openai.models.responses.ToolChoiceOptions
 import com.openai.services.blocking.ResponseService
 import io.github.nekke0409.lolinsight.agent.application.AgentModelIncompleteResponseException
+import io.github.nekke0409.lolinsight.agent.application.AgentModelRefusalException
 import io.github.nekke0409.lolinsight.agent.application.AgentModelToolOutput
+import io.github.nekke0409.lolinsight.agent.application.AgentModelUsage
 import io.github.nekke0409.lolinsight.agent.application.AgentQuestionProperties
 import io.github.nekke0409.lolinsight.analysis.infrastructure.openai.OpenAiProperties
 import org.junit.jupiter.api.Test
@@ -96,14 +100,16 @@ class OpenAiAgentModelGatewayTest {
     }
 
     @Test
-    fun `rejects incomplete Responses output before exposing a Tool call`() {
+    fun `preserves provider usage when an incomplete Responses output is rejected before exposing a Tool call`() {
         val client = mock(OpenAIClient::class.java)
         val responses = mock(ResponseService::class.java)
         val response = mock(Response::class.java)
+        val responseUsage = usage(101, 202, 303)
         `when`(client.responses()).thenReturn(responses)
         `when`(response.status()).thenReturn(Optional.of(ResponseStatus.INCOMPLETE))
         `when`(response.error()).thenReturn(Optional.empty())
         `when`(response.incompleteDetails()).thenReturn(Optional.empty())
+        `when`(response.usage()).thenReturn(Optional.of(responseUsage))
         `when`(responses.create(anyResponseCreateParams(), anyRequestOptions())).thenReturn(response)
 
         val gateway =
@@ -113,10 +119,86 @@ class OpenAiAgentModelGatewayTest {
                 clientOverride = client,
             )
 
-        assertFailsWith<AgentModelIncompleteResponseException> {
-            gateway.start("미드 통계", allowToolCalls = true, timeout = java.time.Duration.ofSeconds(5))
-        }
+        val exception =
+            assertFailsWith<AgentModelIncompleteResponseException> {
+                gateway.start("미드 통계", allowToolCalls = true, timeout = java.time.Duration.ofSeconds(5))
+            }
+
+        assertEquals(AgentModelUsage(101, 202, 303), exception.usage)
     }
+
+    @Test
+    fun `preserves provider usage when a completed Responses output contains a refusal`() {
+        val client = mock(OpenAIClient::class.java)
+        val responses = mock(ResponseService::class.java)
+        val response = mock(Response::class.java)
+        val output = mock(ResponseOutputItem::class.java)
+        val message = mock(ResponseOutputMessage::class.java)
+        val content = mock(ResponseOutputMessage.Content::class.java)
+        val responseUsage = usage(11, 22, 33)
+        `when`(client.responses()).thenReturn(responses)
+        `when`(response.status()).thenReturn(Optional.of(ResponseStatus.COMPLETED))
+        `when`(response.error()).thenReturn(Optional.empty())
+        `when`(response.output()).thenReturn(listOf(output))
+        `when`(response.usage()).thenReturn(Optional.of(responseUsage))
+        `when`(output.isMessage()).thenReturn(true)
+        `when`(output.asMessage()).thenReturn(message)
+        `when`(message.content()).thenReturn(listOf(content))
+        `when`(content.isRefusal()).thenReturn(true)
+        `when`(responses.create(anyResponseCreateParams(), anyRequestOptions())).thenReturn(response)
+
+        val gateway =
+            OpenAiAgentModelGateway(
+                openAiProperties = OpenAiProperties(apiKey = "test-key", model = "gpt-5-mini"),
+                agentProperties = AgentQuestionProperties(enabled = true),
+                clientOverride = client,
+            )
+
+        val exception =
+            assertFailsWith<AgentModelRefusalException> {
+                gateway.start("미드 통계", allowToolCalls = true, timeout = java.time.Duration.ofSeconds(5))
+            }
+
+        assertEquals(AgentModelUsage(11, 22, 33), exception.usage)
+    }
+
+    @Test
+    fun `does not synthesize usage when an incomplete Responses output has no usage`() {
+        val client = mock(OpenAIClient::class.java)
+        val responses = mock(ResponseService::class.java)
+        val response = mock(Response::class.java)
+        `when`(client.responses()).thenReturn(responses)
+        `when`(response.status()).thenReturn(Optional.of(ResponseStatus.INCOMPLETE))
+        `when`(response.error()).thenReturn(Optional.empty())
+        `when`(response.incompleteDetails()).thenReturn(Optional.empty())
+        `when`(response.usage()).thenReturn(Optional.empty())
+        `when`(responses.create(anyResponseCreateParams(), anyRequestOptions())).thenReturn(response)
+
+        val gateway =
+            OpenAiAgentModelGateway(
+                openAiProperties = OpenAiProperties(apiKey = "test-key", model = "gpt-5-mini"),
+                agentProperties = AgentQuestionProperties(enabled = true),
+                clientOverride = client,
+            )
+
+        val exception =
+            assertFailsWith<AgentModelIncompleteResponseException> {
+                gateway.start("미드 통계", allowToolCalls = true, timeout = java.time.Duration.ofSeconds(5))
+            }
+
+        assertEquals(null, exception.usage)
+    }
+
+    private fun usage(
+        inputTokens: Long,
+        outputTokens: Long,
+        totalTokens: Long,
+    ): ResponseUsage =
+        mock(ResponseUsage::class.java).also {
+            `when`(it.inputTokens()).thenReturn(inputTokens)
+            `when`(it.outputTokens()).thenReturn(outputTokens)
+            `when`(it.totalTokens()).thenReturn(totalTokens)
+        }
 
     private fun anyResponseCreateParams(): ResponseCreateParams {
         any(ResponseCreateParams::class.java)

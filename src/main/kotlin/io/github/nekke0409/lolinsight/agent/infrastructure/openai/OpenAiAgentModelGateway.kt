@@ -125,16 +125,17 @@ class OpenAiAgentModelGateway(
                         params.build(),
                         RequestOptions.builder().timeout(timeout).build(),
                     )
-            response.requireCompleted()
+            val usage = response.usage().getOrNull()?.toAgentModelUsage()
+            response.requireCompleted(usage)
             val responseItems = response.output()
             if (responseItems.hasRefusal()) {
-                throw AgentModelRefusalException()
+                throw AgentModelRefusalException(usage)
             }
             AgentModelTurn(
                 text = responseItems.toText(),
                 toolCalls = responseItems.filter(ResponseOutputItem::isFunctionCall).map { it.asFunctionCall().toToolCall() },
                 continuation = OpenAiAgentContinuation(input + responseItems.toInputItems()),
-                usage = response.usage().getOrNull()?.toAgentModelUsage(),
+                usage = usage,
             )
         } catch (_: OpenAiConfigurationException) {
             throw AgentModelConfigurationException()
@@ -176,13 +177,13 @@ class OpenAiAgentModelGateway(
             .trim()
             .takeIf(String::isNotBlank)
 
-    private fun Response.requireCompleted() {
+    private fun Response.requireCompleted(usage: AgentModelUsage?) {
         if (error().isPresent) {
             throw AgentModelProviderException(IllegalStateException("Provider returned a response error."))
         }
         when (status().getOrNull()) {
             ResponseStatus.COMPLETED -> Unit
-            ResponseStatus.INCOMPLETE -> throw AgentModelIncompleteResponseException(incompleteReason())
+            ResponseStatus.INCOMPLETE -> throw AgentModelIncompleteResponseException(incompleteReason(), usage)
             null -> throw AgentModelInvalidResponseException()
             else -> throw AgentModelProviderException(IllegalStateException("Provider did not complete the response."))
         }

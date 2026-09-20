@@ -6,8 +6,10 @@ import io.github.nekke0409.lolinsight.comparison.application.PlayerComparisonCon
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.verify
+import tools.jackson.databind.json.JsonMapper
 import java.time.Duration
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 class AgentQuestionServiceTest {
@@ -155,6 +157,68 @@ class AgentQuestionServiceTest {
         assertTrue(recorder.summary.usedTools.isEmpty())
     }
 
+    @Test
+    fun `records provider-supplied failure usage once for incomplete and refusal responses`() {
+        listOf(
+            AgentModelIncompleteResponseException(
+                AgentModelIncompleteReason.MAX_OUTPUT_TOKENS,
+                AgentModelUsage(10, 20, 30),
+            ) to AgentTerminationReason.MODEL_RESPONSE_INCOMPLETE to AgentModelUsage(10, 20, 30),
+            AgentModelRefusalException(AgentModelUsage(40, 50, 60)) to
+                AgentTerminationReason.MODEL_RESPONSE_REFUSED to
+                AgentModelUsage(40, 50, 60),
+        ).forEach { (failureAndTermination, expectedUsage) ->
+            val (failure, expectedTermination) = failureAndTermination
+            val recorder = RecordingObservationRecorder()
+            val service =
+                AgentQuestionService(
+                    AgentQuestionProperties(enabled = true),
+                    rateLimiter,
+                    FailingAgentModelGateway(failure),
+                    RecordingToolExecutor(),
+                    DirectToolExecutionRunner,
+                    recorder,
+                )
+
+            assertFailsWith<RuntimeException> {
+                service.answer("Hide on bush", "KR1", "최근 미드 통계", clientKey())
+            }
+
+            assertEquals(expectedTermination, recorder.summary.terminationReason)
+            assertEquals(listOf(expectedUsage), recorder.summary.usage)
+        }
+    }
+
+    @Test
+    fun `keeps an arbitrary invalid tool name out of the execution summary used by the logger`() {
+        val recorder = RecordingObservationRecorder()
+        val model =
+            ScriptedAgentModelGateway(
+                turn(call = toolCall("call-invalid", "untrusted-tool\\nsecond-line", "{not-json}")),
+                turn(text = "허용되지 않은 Tool은 실행하지 않았습니다."),
+            )
+        val dispatcher =
+            AgentToolDispatcher(
+                JsonMapper.builder().build(),
+                mock(PlayerComparisonContextService::class.java),
+                mock(io.github.nekke0409.lolinsight.comparison.application.PlayerComparisonFeatureService::class.java),
+            )
+        val service =
+            AgentQuestionService(
+                AgentQuestionProperties(enabled = true),
+                rateLimiter,
+                model,
+                dispatcher,
+                DirectToolExecutionRunner,
+                recorder,
+            )
+
+        service.answer("Hide on bush", "KR1", "최근 미드 통계", clientKey())
+
+        assertEquals(listOf(AgentUsedTool("UNSUPPORTED_TOOL", false, 1)), recorder.summary.usedTools)
+        assertTrue(recorder.summary.usedTools.none { it.name.contains("untrusted-tool") || it.name.contains('\n') })
+    }
+
     private fun service(
         model: AgentModelGateway,
         dispatcher: AgentToolExecutor = RecordingToolExecutor(),
@@ -243,5 +307,22 @@ class AgentQuestionServiceTest {
         }
 
         private fun next(): AgentModelTurn = turns.removeFirst()
+    }
+
+    private class FailingAgentModelGateway(
+        private val failure: RuntimeException,
+    ) : AgentModelGateway {
+        override fun start(
+            question: String,
+            allowToolCalls: Boolean,
+            timeout: Duration,
+        ): AgentModelTurn = throw failure
+
+        override fun continueWithToolOutputs(
+            continuation: AgentModelContinuation,
+            outputs: List<AgentModelToolOutput>,
+            allowToolCalls: Boolean,
+            timeout: Duration,
+        ): AgentModelTurn = throw failure
     }
 }

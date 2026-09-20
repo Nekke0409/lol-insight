@@ -45,6 +45,9 @@ agent:
   max-question-characters: ${AGENT_MAX_QUESTION_CHARACTERS:1000}
   max-tool-result-characters: ${AGENT_MAX_TOOL_RESULT_CHARACTERS:12000}
   max-output-tokens: ${AGENT_MAX_OUTPUT_TOKENS:600}
+  smoke-observation:
+    # 로컬 smoke에서만 허용된 Tool과 식별정보 없는 통계 요약을 기록한다.
+    enabled: ${AGENT_SMOKE_OBSERVATION_ENABLED:false}
 
 analysis:
   result-cache:

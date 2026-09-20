@@ -145,3 +145,8 @@ Tool 금지, invalid/duplicate Tool 인자, incomplete provider response와 HTTP
 필요한 동일 tier/division benchmark 표본을 준비해 실제 모델의 Tool 선택과 final answer 품질을 확인한다. benchmark가
 없으면 stats Tool과 limitation 답변은 검증할 수 있지만 peer comparison 수치가 있는 성공 응답은 검증할 수 없다. 이
 작업에서는 실제 smoke를 실행하지 않았으며, benchmark 부족이어도 Agent 모델 요청 자체의 비용은 발생할 수 있다.
+
+`AGENT_SMOKE_OBSERVATION_ENABLED=true`는 이와 같은 local smoke에서만 쓴다. 이 opt-in은 Tool 이름, 허용된
+`groupBy`, 통계 Tool의 요청/분석 경기 수와 역할별 games·winRate·KDA·CS/min만 로그에 기록한다. 질문, Tool JSON,
+최종 답변, Riot/플레이어 식별자, match ID, provider raw response와 API key는 기록하지 않는다. 기본값은 `false`이며
+일반 실행에는 관찰 로그를 추가하지 않는다.

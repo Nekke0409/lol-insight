@@ -111,7 +111,7 @@ class AgentToolDispatcherTest {
     }
 
     @Test
-    fun `rejects unknown fields invalid enums and unsupported tools`() {
+    fun `rejects unknown fields invalid enums and unsupported tools without preserving an arbitrary tool name`() {
         val executionContext = dispatcher.newContext("Hide on bush", "KR1")
 
         val invalidJson = dispatcher.dispatch(call("get_ranked_stats", "{not-json}"), executionContext)
@@ -122,12 +122,17 @@ class AgentToolDispatcherTest {
                 executionContext,
             )
         val unknownTool = dispatcher.dispatch(call("read_database", "{\"groupBy\":\"POSITION\"}"), executionContext)
+        val unknownToolWithInvalidJson =
+            dispatcher.dispatch(call("untrusted-tool\\nsecond-line", "{not-json}"), executionContext)
 
         assertFalse(invalidJson.success)
         assertFalse(invalidEnum.success)
         assertFalse(targetOverride.success)
         assertFalse(unknownTool.success)
+        assertFalse(unknownToolWithInvalidJson.success)
         assertEquals("UNSUPPORTED_TOOL", (unknownTool.payload as AgentToolErrorResult).code)
+        assertEquals("UNSUPPORTED_TOOL", unknownToolWithInvalidJson.toolName)
+        assertFalse(dispatcher.serialize(unknownToolWithInvalidJson).contains("untrusted-tool"))
     }
 
     @Test

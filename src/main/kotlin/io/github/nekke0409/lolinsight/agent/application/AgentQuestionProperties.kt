@@ -52,6 +52,7 @@ class AgentModelInvalidResponseException : RuntimeException("Agent model respons
 
 class AgentModelIncompleteResponseException(
     val incompleteReason: AgentModelIncompleteReason?,
+    val usage: AgentModelUsage? = null,
 ) : RuntimeException("Agent model response is incomplete")
 
 enum class AgentModelIncompleteReason {
@@ -62,7 +63,9 @@ enum class AgentModelIncompleteReason {
     UNKNOWN,
 }
 
-class AgentModelRefusalException : RuntimeException("Agent model refused the request")
+class AgentModelRefusalException(
+    val usage: AgentModelUsage? = null,
+) : RuntimeException("Agent model refused the request")
 
 class AgentModelConfigurationException : RuntimeException("Agent model configuration is missing")
 
