@@ -31,7 +31,7 @@ Riot의 공식 Ranked Ladder를 대체하는 MMR, ELO 또는 자체 Skill Rating
 | AI 분석 | `PlayerAnalysisInput` fingerprint 기반 Redis completed-result cache, OpenAI Responses API Structured Outputs, sync·async 제공 | 결과 품질 평가, 인증 사용자 quota, provider 전략 |
 | 운영 경계 | Redis Match Detail·analysis result cache, PostgreSQL/Flyway, OpenAI usage·latency 계측, 분석 생성 rate limit, bounded async job과 in-flight dedupe | crash recovery, distributed 운영 정책, 배포·확장 구조 |
 | AI Automation | persisted Ranked Solo cursor·idempotent execution·bounded scheduler와 기존 analysis job 재사용, 429 이후 JVM-local Riot cooldown | distributed scheduler/claim, automation quota, notification |
-| Tool-using Agent | 기본 비활성화된 Agent v0.1, Responses API function calling, 최근 20개 Ranked Solo 통계/peer comparison Tool, bounded loop | 실제 model smoke와 질문 품질 검증 후 범위 확대 |
+| Tool-using Agent | 기본 비활성화된 Agent v0.1, Responses API function calling, 최근 20개 Ranked Solo 통계/peer comparison Tool, 전체 deadline·최종 Tool 금지·bounded loop | 실제 model smoke와 질문 품질 검증 후 범위 확대 |
 | RAG / Vector Search | 구현하지 않음 | 비정형 지식 검색이 실제 필요할 때 PostgreSQL + pgvector부터 검토 |
 
 completed-result cache는 `PlayerAnalysisInput`의 결정적인 JSON을 SHA-256 fingerprint로 만든 Redis key
@@ -95,7 +95,7 @@ LLM에 원본 Riot Match JSON을 전달해 핵심 통계를 다시 계산시키�
 
 Automation은 "최근 경기 성과가 유의하게 하락했다"와 같은 조건을 Backend의 기간 비교·통계 rule로 먼저 판단합니다. 조건이 충족되면 기존 AI analysis job을 재사용하고, LLM은 결과를 설명할 뿐 trigger를 임의로 결정하지 않습니다.
 
-Tool-using Agent는 사용자의 질문에 따라 LLM이 명시적인 Backend Tool을 선택하고, Tool이 기존 Application Service를 호출한 구조화된 결과를 반환하는 형태로 시작합니다. Agent가 Riot HTTP client, PostgreSQL repository, Redis, OpenAI SDK 같은 infrastructure를 직접 다루지 않습니다.
+Tool-using Agent는 사용자의 질문에 따라 LLM이 명시적인 Backend Tool을 선택하고, Tool이 기존 Application Service를 호출한 구조화된 결과를 반환하는 형태로 시작합니다. Agent가 Riot HTTP client, PostgreSQL repository, Redis, OpenAI SDK 같은 infrastructure를 직접 다루지 않습니다. `CHAMPION_POSITION` 결과는 분석용 `championId`로 서로 다른 챔피언을 구분하지만 PUUID·Riot ID·match ID는 전달하지 않습니다. Agent는 실제 모델 요청과 Tool 실행에 전체 deadline을 적용하며, 마지막 모델 요청에는 추가 Tool을 허용하지 않습니다.
 
 구조화된 플레이어·경기 데이터는 Backend Tool로 조회합니다. RAG는 patch note, 챔피언·아이템 문서 같은 비정형 지식이 필요할 때의 선택지이며 Agent의 선행 조건이 아닙니다. 초기 도입이 필요하면 기존 PostgreSQL과의 운영 일관성을 위해 pgvector를 우선 검토하되, 지금 이를 필수 dependency로 선언하지 않습니다.
 

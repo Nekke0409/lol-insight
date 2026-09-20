@@ -3,9 +3,11 @@ package io.github.nekke0409.lolinsight.global.web
 import io.github.nekke0409.lolinsight.agent.application.AgentFeatureDisabledException
 import io.github.nekke0409.lolinsight.agent.application.AgentModelAuthenticationException
 import io.github.nekke0409.lolinsight.agent.application.AgentModelConfigurationException
+import io.github.nekke0409.lolinsight.agent.application.AgentModelIncompleteResponseException
 import io.github.nekke0409.lolinsight.agent.application.AgentModelInvalidResponseException
 import io.github.nekke0409.lolinsight.agent.application.AgentModelProviderException
 import io.github.nekke0409.lolinsight.agent.application.AgentModelRateLimitException
+import io.github.nekke0409.lolinsight.agent.application.AgentModelRefusalException
 import io.github.nekke0409.lolinsight.agent.application.AgentModelTransportException
 import io.github.nekke0409.lolinsight.agent.application.AgentQuestionTooLongException
 import io.github.nekke0409.lolinsight.analysis.application.PlayerAnalysisAuthenticationException
@@ -56,6 +58,17 @@ class GlobalExceptionHandler {
     @ExceptionHandler(AgentModelProviderException::class, AgentModelInvalidResponseException::class)
     fun handleAgentModelProviderException(): ProblemDetail =
         ProblemDetail.forStatusAndDetail(HttpStatus.BAD_GATEWAY, "Unable to generate an AI agent response.")
+
+    @ExceptionHandler(AgentModelIncompleteResponseException::class)
+    fun handleAgentModelIncompleteResponseException(exception: AgentModelIncompleteResponseException): ProblemDetail =
+        ProblemDetail.forStatusAndDetail(HttpStatus.BAD_GATEWAY, "AI agent response was incomplete.").apply {
+            setProperty("code", "AGENT_MODEL_RESPONSE_INCOMPLETE")
+            exception.incompleteReason?.let { setProperty("reason", it.name) }
+        }
+
+    @ExceptionHandler(AgentModelRefusalException::class)
+    fun handleAgentModelRefusalException(): ProblemDetail =
+        ProblemDetail.forStatusAndDetail(HttpStatus.UNPROCESSABLE_CONTENT, "AI agent declined this request.")
 
     @ExceptionHandler(AgentModelTransportException::class)
     fun handleAgentModelTransportException(): ProblemDetail =

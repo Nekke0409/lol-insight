@@ -1,5 +1,7 @@
 package io.github.nekke0409.lolinsight.agent.application
 
+import com.fasterxml.jackson.annotation.JsonInclude
+import io.github.nekke0409.lolinsight.comparison.application.PlayerChampionPositionStatistics
 import io.github.nekke0409.lolinsight.comparison.application.PlayerCohortComparison
 import io.github.nekke0409.lolinsight.comparison.application.PlayerCohortComparisonStatus
 import io.github.nekke0409.lolinsight.comparison.application.PlayerComparisonContext
@@ -54,7 +56,7 @@ class AgentToolDispatcher(
         return when (call.name) {
             GET_RANKED_STATS -> rankedStats(groupBy, context)
             GET_PEER_COMPARISON -> peerComparison(groupBy, context)
-            else -> AgentToolDispatchResult.failed(call.name, "UNSUPPORTED_TOOL", UNSUPPORTED_TOOL_MESSAGE)
+            else -> AgentToolDispatchResult.failed(observedAgentToolName(call.name), "UNSUPPORTED_TOOL", UNSUPPORTED_TOOL_MESSAGE)
         }
     }
 
@@ -84,6 +86,7 @@ class AgentToolDispatcher(
                 scope = groupBy.name,
                 sample = AgentSampleResult(context.sample.requestedCount, context.sample.analyzedCount),
                 statistics = statistics.map { AgentScopedStatisticsResult.from(groupBy, it) },
+                metricUnits = AgentMetricUnits(),
                 limitations = limitations,
             )
         return AgentToolDispatchResult.succeeded(GET_RANKED_STATS, payload, limitations)
@@ -103,6 +106,7 @@ class AgentToolDispatcher(
                 requestedScope = groupBy.name,
                 playerRank = feature.rankContext?.let(AgentPlayerRankResult::from),
                 comparisons = comparisons.map(AgentPeerComparisonResult::from),
+                metricUnits = AgentMetricUnits(),
                 limitations = limitations,
             )
         return AgentToolDispatchResult.succeeded(GET_PEER_COMPARISON, payload, limitations)
@@ -128,12 +132,22 @@ class AgentToolDispatcher(
         }
 
     private companion object {
-        const val GET_RANKED_STATS = "get_ranked_stats"
-        const val GET_PEER_COMPARISON = "get_peer_comparison"
         const val INVALID_ARGUMENTS_MESSAGE = "허용된 groupBy enum 하나만 포함한 JSON object가 필요합니다."
         const val UNSUPPORTED_TOOL_MESSAGE = "이 Agent에는 요청한 Tool이 없습니다."
     }
 }
+
+internal const val GET_RANKED_STATS = "get_ranked_stats"
+internal const val GET_PEER_COMPARISON = "get_peer_comparison"
+
+internal fun observedAgentToolName(name: String): String =
+    when (name) {
+        GET_RANKED_STATS,
+        GET_PEER_COMPARISON,
+        -> name
+
+        else -> "UNSUPPORTED_TOOL"
+    }
 
 enum class AgentStatsGroupBy {
     POSITION,
@@ -194,6 +208,7 @@ data class AgentRankedStatsToolResult(
     val scope: String,
     val sample: AgentSampleResult,
     val statistics: List<AgentScopedStatisticsResult>,
+    val metricUnits: AgentMetricUnits,
     val limitations: List<String>,
 )
 
@@ -205,6 +220,8 @@ data class AgentSampleResult(
 data class AgentScopedStatisticsResult(
     val scope: String,
     val position: String,
+    @get:JsonInclude(JsonInclude.Include.NON_NULL)
+    val champion: AgentChampionReference?,
     val games: Int,
     val wins: Int,
     val losses: Int,
@@ -225,6 +242,9 @@ data class AgentScopedStatisticsResult(
             AgentScopedStatisticsResult(
                 scope = groupBy.name,
                 position = statistics.position,
+                champion =
+                    (statistics as? PlayerChampionPositionStatistics)
+                        ?.let { AgentChampionReference(it.championId) },
                 games = statistics.games,
                 wins = statistics.wins,
                 losses = statistics.games - statistics.wins,
@@ -240,11 +260,27 @@ data class AgentScopedStatisticsResult(
     }
 }
 
+data class AgentChampionReference(
+    val championId: Int,
+)
+
+data class AgentMetricUnits(
+    val winRate: String = "ratio_0_to_1",
+    val kda: String = "ratio",
+    val csPerMinute: String = "cs_per_minute",
+    val goldPerMinute: String = "gold_per_minute",
+    val damagePerMinute: String = "damage_per_minute",
+    val visionPerMinute: String = "vision_per_minute",
+    val killParticipation: String = "ratio_0_to_1",
+    val damageShare: String = "ratio_0_to_1",
+)
+
 data class AgentPeerComparisonToolResult(
     val status: String,
     val requestedScope: String,
     val playerRank: AgentPlayerRankResult?,
     val comparisons: List<AgentPeerComparisonResult>,
+    val metricUnits: AgentMetricUnits,
     val limitations: List<String>,
 )
 
@@ -260,6 +296,8 @@ data class AgentPlayerRankResult(
 data class AgentPeerComparisonResult(
     val scope: String,
     val position: String,
+    @get:JsonInclude(JsonInclude.Include.NON_NULL)
+    val champion: AgentChampionReference?,
     val userGames: Int,
     val status: String,
     val benchmark: AgentBenchmarkScopeResult?,
@@ -270,6 +308,7 @@ data class AgentPeerComparisonResult(
             AgentPeerComparisonResult(
                 scope = comparison.scope.name,
                 position = comparison.position,
+                champion = comparison.championId?.let(::AgentChampionReference),
                 userGames = comparison.userGames,
                 status = comparison.status.name,
                 benchmark =

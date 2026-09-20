@@ -44,6 +44,8 @@ class AgentToolDispatcherTest {
         assertEquals(7, payload.sample.analyzedMatchCount)
         assertEquals("POSITION", payload.statistics.single().scope)
         assertEquals("MID", payload.statistics.single().position)
+        assertEquals(null, payload.statistics.single().champion)
+        assertFalse(serialized.contains("\"champion\""))
         assertFalse(serialized.contains("target-puuid"))
         assertFalse(serialized.contains("Hide on bush"))
         verify(contextService).buildContext("Hide on bush", "KR1", 0, 20)
@@ -95,7 +97,16 @@ class AgentToolDispatcherTest {
         assertEquals("EMERALD", payload.playerRank?.tier)
         assertEquals("BENCHMARK_INSUFFICIENT_SAMPLE", payload.comparisons.single().status)
         assertEquals(null, payload.comparisons.single().metrics)
-        assertFalse(serialized.contains("103"))
+        assertEquals(
+            103,
+            payload.comparisons
+                .single()
+                .champion
+                ?.championId,
+        )
+        assertTrue(serialized.contains("\"championId\":103"))
+        assertFalse(serialized.contains("target-puuid"))
+        assertFalse(serialized.contains("Hide on bush"))
         assertTrue(payload.limitations.single().contains("충분하지"))
     }
 

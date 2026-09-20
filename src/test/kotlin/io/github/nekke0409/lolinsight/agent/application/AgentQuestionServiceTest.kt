@@ -99,6 +99,27 @@ class AgentQuestionServiceTest {
     }
 
     @Test
+    fun `disables Tool calls on the final allowed model request`() {
+        val model =
+            ScriptedAgentModelGateway(
+                turn(call = toolCall("call-1", "get_ranked_stats", "{\"groupBy\":\"POSITION\"}")),
+                turn(call = toolCall("call-2", "get_peer_comparison", "{\"groupBy\":\"POSITION\"}")),
+            )
+        val dispatcher = RecordingToolExecutor()
+
+        val response =
+            service(
+                model,
+                dispatcher,
+                AgentQuestionProperties(enabled = true, maxModelRequests = 2, maxToolExecutions = 2),
+            ).answer("Hide on bush", "KR1", "통계와 비교", clientKey())
+
+        assertEquals(AgentTerminationReason.TOOL_CALL_NOT_ALLOWED, response.terminationReason)
+        assertEquals(listOf(true, false), model.allowToolCalls)
+        assertEquals(1, dispatcher.calls.size)
+    }
+
+    @Test
     fun `keeps agent disabled before consuming a request quota or calling the model`() {
         val model = ScriptedAgentModelGateway(turn(text = "should not happen"))
         val responseService = service(model, RecordingToolExecutor(), AgentQuestionProperties(enabled = false))
@@ -111,18 +132,42 @@ class AgentQuestionServiceTest {
         assertEquals(0, model.startCalls)
     }
 
+    @Test
+    fun `records bounded execution metadata and only provider supplied token usage`() {
+        val model = ScriptedAgentModelGateway(turn(text = "최근 통계입니다.", usage = AgentModelUsage(10, 20, 30)))
+        val recorder = RecordingObservationRecorder()
+        val service =
+            AgentQuestionService(
+                AgentQuestionProperties(enabled = true),
+                rateLimiter,
+                model,
+                RecordingToolExecutor(),
+                DirectToolExecutionRunner,
+                recorder,
+            )
+
+        service.answer("Hide on bush", "KR1", "최근 미드 통계", clientKey())
+
+        assertEquals(1, recorder.summary.modelRequestAttempts)
+        assertEquals(0, recorder.summary.toolExecutionAttempts)
+        assertEquals(AgentTerminationReason.COMPLETED, recorder.summary.terminationReason)
+        assertEquals(listOf(AgentModelUsage(10, 20, 30)), recorder.summary.usage)
+        assertTrue(recorder.summary.usedTools.isEmpty())
+    }
+
     private fun service(
         model: AgentModelGateway,
         dispatcher: AgentToolExecutor = RecordingToolExecutor(),
         properties: AgentQuestionProperties = AgentQuestionProperties(enabled = true),
-    ): AgentQuestionService = AgentQuestionService(properties, rateLimiter, model, dispatcher)
+    ): AgentQuestionService = AgentQuestionService(properties, rateLimiter, model, dispatcher, DirectToolExecutionRunner)
 
     private fun clientKey(): AnalysisRateLimitKey = AnalysisRateLimitKey("127.0.0.1")
 
     private fun turn(
         text: String? = null,
         call: AgentModelToolCall? = null,
-    ): AgentModelTurn = AgentModelTurn(text, listOfNotNull(call), TestContinuation)
+        usage: AgentModelUsage? = null,
+    ): AgentModelTurn = AgentModelTurn(text, listOfNotNull(call), TestContinuation, usage)
 
     private fun toolCall(
         callId: String,
@@ -131,6 +176,21 @@ class AgentQuestionServiceTest {
     ): AgentModelToolCall = AgentModelToolCall(callId, name, arguments)
 
     private object TestContinuation : AgentModelContinuation
+
+    private object DirectToolExecutionRunner : AgentToolExecutionRunner {
+        override fun <T> execute(
+            timeout: Duration,
+            action: () -> T,
+        ): T = action()
+    }
+
+    private class RecordingObservationRecorder : AgentQuestionObservationRecorder {
+        lateinit var summary: AgentQuestionExecutionSummary
+
+        override fun record(summary: AgentQuestionExecutionSummary) {
+            this.summary = summary
+        }
+    }
 
     private class RecordingToolExecutor : AgentToolExecutor {
         val calls = mutableListOf<AgentModelToolCall>()
@@ -159,21 +219,26 @@ class AgentQuestionServiceTest {
         private val turns = ArrayDeque(scriptedTurns.toList())
         var startCalls = 0
         var continueCalls = 0
+        val allowToolCalls = mutableListOf<Boolean>()
 
         override fun start(
             question: String,
+            allowToolCalls: Boolean,
             timeout: Duration,
         ): AgentModelTurn {
             startCalls++
+            this.allowToolCalls += allowToolCalls
             return next()
         }
 
         override fun continueWithToolOutputs(
             continuation: AgentModelContinuation,
             outputs: List<AgentModelToolOutput>,
+            allowToolCalls: Boolean,
             timeout: Duration,
         ): AgentModelTurn {
             continueCalls++
+            this.allowToolCalls += allowToolCalls
             return next()
         }
 

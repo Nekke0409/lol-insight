@@ -9,6 +9,7 @@ import io.github.nekke0409.lolinsight.agent.application.AgentQuestionProperties
 import io.github.nekke0409.lolinsight.agent.application.AgentQuestionService
 import io.github.nekke0409.lolinsight.agent.application.AgentToolDispatchResult
 import io.github.nekke0409.lolinsight.agent.application.AgentToolExecutionContext
+import io.github.nekke0409.lolinsight.agent.application.AgentToolExecutionRunner
 import io.github.nekke0409.lolinsight.agent.application.AgentToolExecutor
 import io.github.nekke0409.lolinsight.analysis.ratelimit.AnalysisGenerationRateLimiter
 import io.github.nekke0409.lolinsight.analysis.ratelimit.AnalysisRateLimitKeyResolver
@@ -34,6 +35,7 @@ class AgentQuestionControllerTest {
                 rateLimiter = rateLimiter,
                 modelGateway = model,
                 toolDispatcher = DisabledToolExecutor,
+                toolExecutionRunner = DisabledToolExecutionRunner,
             )
         val mockMvc =
             MockMvcBuilders
@@ -58,6 +60,7 @@ class AgentQuestionControllerTest {
 
         override fun start(
             question: String,
+            allowToolCalls: Boolean,
             timeout: Duration,
         ): AgentModelTurn {
             calls++
@@ -67,6 +70,7 @@ class AgentQuestionControllerTest {
         override fun continueWithToolOutputs(
             continuation: AgentModelContinuation,
             outputs: List<AgentModelToolOutput>,
+            allowToolCalls: Boolean,
             timeout: Duration,
         ): AgentModelTurn {
             calls++
@@ -89,5 +93,12 @@ class AgentQuestionControllerTest {
 
         override fun callSignature(call: io.github.nekke0409.lolinsight.agent.application.AgentModelToolCall): String =
             throw AgentFeatureDisabledException()
+    }
+
+    private object DisabledToolExecutionRunner : AgentToolExecutionRunner {
+        override fun <T> execute(
+            timeout: Duration,
+            action: () -> T,
+        ): T = throw AgentFeatureDisabledException()
     }
 }

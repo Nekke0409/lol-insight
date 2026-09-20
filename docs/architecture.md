@@ -851,11 +851,22 @@ Trigger
 `PlayerComparisonFeatureService`를 감싼 읽기 전용 Tool이다. 둘은 request-local `PlayerComparisonContext`를
 공유하므로 대상의 최근 Ranked Solo 최대 20경기 match loading과 통계 계산을 중복하지 않는다. Tool payload에는
 raw Riot DTO, Entity, PUUID, Riot ID, match ID, API key가 없고, exact benchmark availability와 scope를 보존한다.
+`CHAMPION_POSITION` 결과에는 분석 식별자인 `championId`를 넣어 같은 포지션의 서로 다른 챔피언을 구분하되,
+플레이어 식별정보와 추정한 champion 이름은 넣지 않는다. 비율은 0~1, CS/min 등은 명시적 단위 DTO로 전달한다.
 
 loop는 model response → 0 또는 1개 Tool call → structured result → 후속 model response 순서이며
 `parallel_tool_calls=false`, 최대 모델 요청 3회, Tool 실행 2회, retry 0, per-request timeout과 전체 deadline을
-강제한다. 같은 Tool/JSON 인자는 request 안에서 다시 실행하지 않고, 복수 Tool call 또는 예산 초과는 추가 실행
-없이 제한 상태로 끝낸다. Agent answer cache, memory, DB, job queue는 추가하지 않는다. 자세한 계약은
+강제한다. 마지막 허용 모델 요청과 Tool 예산 소진 뒤에는 `tool_choice=none`을 보내 추가 조회를 막는다. 같은
+Tool/JSON 인자는 request 안에서 다시 실행하지 않고, 복수 Tool call 또는 예산 초과는 추가 실행 없이 제한 상태로
+끝낸다.
+
+deadline은 provider 호출뿐 아니라 Tool dispatcher 대기에도 적용한다. queue 없는 single-thread interrupt 경계가
+남은 시간만 기다리고 만료 후 Agent의 대기와 후속 호출을 중단한다. 이는 이미 전송된 Riot HTTP 요청의 실제 취소를
+보장하지 않으며, 기존 Riot timeout과 별개다. Agent answer cache, memory, DB, job queue는 추가하지 않는다.
+Responses adapter는 `store(false)` continuation에 reasoning/function-call item과 `call_id` output을 순서대로 보존하고,
+`completed`가 아닌 provider response·refusal·빈 최종 답변을 완료로 처리하지 않는다. incomplete의 알려진 사유도 safe
+code로 보존한다. 안전한 실행 요약은 호출 수,
+허용 Tool의 결과, 종료 사유, 지연 시간, 제공된 token usage만 남기며 질문·payload·식별자·raw response는 남기지 않는다. 자세한 계약은
 [`agent/tool-using-agent-v0.1.md`](agent/tool-using-agent-v0.1.md), 결정 근거는 [ADR-017](adr/017-use-bounded-tool-using-agent.md)을 따른다.
 
 ### 향후 Tool-using Agent 확장 경계

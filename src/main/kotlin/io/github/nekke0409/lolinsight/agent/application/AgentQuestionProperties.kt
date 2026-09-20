@@ -50,6 +50,20 @@ class AgentQuestionTooLongException : RuntimeException("Agent question exceeds t
 
 class AgentModelInvalidResponseException : RuntimeException("Agent model response is invalid")
 
+class AgentModelIncompleteResponseException(
+    val incompleteReason: AgentModelIncompleteReason?,
+) : RuntimeException("Agent model response is incomplete")
+
+enum class AgentModelIncompleteReason {
+    MAX_OUTPUT_TOKENS,
+    MAX_MESSAGES,
+    CONTENT_FILTER,
+    STEERED,
+    UNKNOWN,
+}
+
+class AgentModelRefusalException : RuntimeException("Agent model refused the request")
+
 class AgentModelConfigurationException : RuntimeException("Agent model configuration is missing")
 
 class AgentModelAuthenticationException(

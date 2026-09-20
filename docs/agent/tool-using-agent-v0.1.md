@@ -53,9 +53,30 @@ analysis generation rate limit을 한 요청당 한 번만 사용한다. loop �
 동일한 Ranked Solo match history를 다시 로드하거나 통계 계산을 복사하지 않는다. `PlayerComparisonFeatureService`는
 이 context를 받는 진입점을 제공하며 benchmark query만 수행한다.
 
-Tool payload는 raw Riot JSON, Entity, PUUID, Riot ID, match ID, API key를 포함하지 않는다. `winRate`는 기존
-Backend 계산값(0~1)을 그대로 전달하고 0~100 변환을 하지 않는다. 챔피언 관련 결과는 champion 이름이나 ID를
-노출하지 않고 `CHAMPION_POSITION` scope로만 구분하며, 없는 champion 이름을 추정하지 않는다.
+Tool payload는 raw Riot JSON, Entity, PUUID, Riot ID, match ID, API key를 포함하지 않는다. `winRate`,
+`killParticipation`, `damageShare`는 기존 Backend 계산값(0~1)을 그대로 전달하고 0~100 변환을 하지 않는다.
+`csPerMinute`은 분당 CS이며, 나머지 분당 지표도 `metricUnits`가 명시한다.
+
+`CHAMPION_POSITION`의 각 결과에는 분석에 필요한 `champion.championId`를 넣는다. 이는 플레이어 식별자가 아니며,
+같은 역할에서 서로 다른 챔피언 결과를 구분하는 key다. 현재 계산 경로에 정확한 champion 이름은 없으므로 이름을
+추정하거나 별도 Data Dragon/API 조회를 추가하지 않는다. `POSITION` 결과에는 불필요한 champion 정보가 없다.
+
+예를 들어 통계 Tool의 결과는 다음처럼 조회 범위, 실제 분석 표본, 단위와 champion 식별을 함께 전달한다.
+
+```json
+{
+  "scope": "CHAMPION_POSITION",
+  "sample": {"requestedMatchCount": 20, "analyzedMatchCount": 6},
+  "statistics": [
+    {"scope": "CHAMPION_POSITION", "position": "MIDDLE", "champion": {"championId": 103}, "games": 5, "winRate": 0.6, "averageCsPerMinute": 7.4}
+  ],
+  "metricUnits": {"winRate": "ratio_0_to_1", "csPerMinute": "cs_per_minute"}
+}
+```
+
+비교 Tool도 같은 champion 식별을 `comparisons[].champion`에 보존한다. `metrics`는 comparison `status`가
+`AVAILABLE`일 때만 존재한다. `BENCHMARK_INSUFFICIENT_SAMPLE` 같은 상태에는 같은 tier/division의 실제 표본 수만
+있을 수 있고 평균, 대체 tier, percentile 또는 임의 비교값은 없다.
 
 `get_peer_comparison`은 `AVAILABLE`, `UNRANKED`, `INSUFFICIENT_USER_SAMPLE`, `BENCHMARK_NO_DATA`,
 `BENCHMARK_INSUFFICIENT_SAMPLE`을 그대로 보존한다. 표본 부족 결과에 평균, 대체 tier, percentile 또는 임의
@@ -76,9 +97,19 @@ Agent loop는 model response → 단일 Tool call 검증/dispatcher → Tool res
 - provider retry: 없음 (`maxRetries(0)`)
 - response 저장: `store(false)`
 
-한 model turn에서 복수 Tool call이 오거나 제한을 넘기면 추가 Tool을 실행하지 않고 제한 상태로 종료한다. Tool 또는
-모델 오류가 발생해도 재시도로 예산을 소진하지 않는다. Riot cooldown과 Riot/provider 오류는 기존 error boundary를
-그대로 통과한다. timeout 이후 대기 중단과 이미 시작한 외부 HTTP 요청의 실제 취소는 구분한다.
+마지막 허용 모델 요청 또는 Tool 예산 소진 뒤의 모델 요청은 `tool_choice=none`으로 Tool 선택을 막는다. 그래도 Tool
+call이 오면 dispatcher를 실행하지 않고 제한 상태로 끝낸다. 따라서 `maxModelRequests=1` 또는 `2`처럼 더 작은
+설정에서도 마지막 요청이 데이터 조회를 새로 시작하지 않는다.
+
+전체 deadline은 provider뿐 아니라 Tool dispatcher에도 적용한다. Tool은 queue가 없는 단일 실행 경계에서 남은 시간만
+기다리며, 만료 시 Future 취소와 interrupt를 요청하고 Agent는 후속 Tool·모델 요청을 시작하지 않는다. 이 경계는
+Agent의 대기 중단과 thread 누적 방지를 위한 것이며, 이미 시작된 Riot HTTP 요청의 실제 취소를 보장하지는 않는다.
+Riot client 자체의 connect/read timeout과 이 Agent deadline은 별개다. 이것은 Agent Job queue나 비동기 작업 영속화를
+추가한 것이 아니다.
+
+한 model turn에서 복수 Tool call이 오거나 제한을 넘기면 추가 Tool을 실행하지 않고 제한 상태로 종료한다. 잘못된
+인자, 중복 호출, 실패한 Tool 시도도 Tool 예산에 포함하며 provider 자동 retry는 없다. Riot cooldown과 Riot/provider
+오류는 기존 error boundary를 그대로 통과한다.
 
 Agent 답변 cache, 대화 memory, Agent DB, job queue, 전역 Tool result cache는 v0.1에 추가하지 않는다. 기존
 analysis result cache 역시 Agent 답변에 재사용하지 않는다.
@@ -92,12 +123,25 @@ function schema와 raw provider error는 `agent/infrastructure/openai` 안에 �
 현재 SDK 계약은 [OpenAI Function Calling 문서](https://developers.openai.com/api/docs/guides/function-calling)를
 따른다. strict schema는 각 object에서 `additionalProperties: false`와 모든 property의 required 선언을 요구한다.
 
+`store(false)`의 stateless continuation은 최초 user input, 이전 response의 reasoning/function-call/message item과
+`call_id`가 일치하는 `function_call_output`을 순서대로 다시 보낸다. 응답 최상위 상태가 `completed`가 아니거나,
+provider error, refusal, 빈 최종 답변이면 Tool 인자를 실행하거나 완료 답변으로 표시하지 않는다. incomplete의
+`max_output_tokens`, `max_messages`, `content_filter`, `steered` 사유는 허용된 코드로 보존하며 자동 재호출하지도 않는다.
+
+요청 단위의 안전한 실행 요약은 모델 요청 수, Tool 시도 수, 허용 Tool 이름과 성공/실패, 종료 사유, 지연 시간,
+provider가 실제로 제공한 input/output/total token usage만 기록한다. usage가 없으면 0으로 추정하지 않고 생략한다.
+질문 본문, Tool payload 전체, Riot/플레이어 식별자, API key, raw provider response와 최종 답변 본문은 기록하지 않는다.
+
 ## 검증 경계
 
 기본 test/build/CI는 실제 Riot 또는 OpenAI를 호출하지 않는다. scripted `AgentModelGateway`로 loop와 dispatcher
-연결을 검증하고, dispatcher test는 실제 context/feature DTO를 통해 statistics 및 benchmark availability mapping을
-검증한다. 이 검증은 실제 모델의 질문 이해, Tool 선택 품질, 최종 한국어 답변 품질을 보증하지 않는다.
+연결을 검증하고, 최소 연결 test는 실제 `PlayerComparisonContextService`/Builder와
+`PlayerComparisonFeatureService`를 지나 EMERALD IV의 benchmark 부족 결과와 champion-position 식별을 검증한다.
+Riot match loading, rank lookup, benchmark repository와 OpenAI만 대역으로 둔다. deadline boundary, 마지막 요청의
+Tool 금지, invalid/duplicate Tool 인자, incomplete provider response와 HTTP 기본 비활성화도 별도로 검증한다.
+이 검증은 실제 모델의 질문 이해, Tool 선택 품질, 최종 한국어 답변 품질을 보증하지 않는다.
 
-다음 실제 smoke에서만 provider key, `AGENT_ENABLED=true`, 해당 플레이어의 최근 Ranked Solo match, 필요한 benchmark
-표본을 준비해 실제 모델의 Tool 선택과 final answer 품질을 확인한다. benchmark가 없으면 stats Tool과 limitation
-답변은 검증할 수 있지만 peer comparison 수치가 있는 성공 응답은 검증할 수 없다.
+다음 실제 smoke에서만 provider key, `AGENT_ENABLED=true`, 해당 플레이어의 최근 Ranked Solo match, rate-limit 여유와
+필요한 동일 tier/division benchmark 표본을 준비해 실제 모델의 Tool 선택과 final answer 품질을 확인한다. benchmark가
+없으면 stats Tool과 limitation 답변은 검증할 수 있지만 peer comparison 수치가 있는 성공 응답은 검증할 수 없다. 이
+작업에서는 실제 smoke를 실행하지 않았으며, benchmark 부족이어도 Agent 모델 요청 자체의 비용은 발생할 수 있다.
