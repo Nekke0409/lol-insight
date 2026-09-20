@@ -1,5 +1,13 @@
 package io.github.nekke0409.lolinsight.global.web
 
+import io.github.nekke0409.lolinsight.agent.application.AgentFeatureDisabledException
+import io.github.nekke0409.lolinsight.agent.application.AgentModelAuthenticationException
+import io.github.nekke0409.lolinsight.agent.application.AgentModelConfigurationException
+import io.github.nekke0409.lolinsight.agent.application.AgentModelInvalidResponseException
+import io.github.nekke0409.lolinsight.agent.application.AgentModelProviderException
+import io.github.nekke0409.lolinsight.agent.application.AgentModelRateLimitException
+import io.github.nekke0409.lolinsight.agent.application.AgentModelTransportException
+import io.github.nekke0409.lolinsight.agent.application.AgentQuestionTooLongException
 import io.github.nekke0409.lolinsight.analysis.application.PlayerAnalysisAuthenticationException
 import io.github.nekke0409.lolinsight.analysis.application.PlayerAnalysisConfigurationException
 import io.github.nekke0409.lolinsight.analysis.application.PlayerAnalysisInvalidResponseException
@@ -25,6 +33,34 @@ import org.springframework.web.bind.annotation.RestControllerAdvice
 
 @RestControllerAdvice
 class GlobalExceptionHandler {
+    @ExceptionHandler(AgentFeatureDisabledException::class)
+    fun handleAgentFeatureDisabledException(): ProblemDetail =
+        ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, "AI agent is not enabled.")
+
+    @ExceptionHandler(AgentQuestionTooLongException::class)
+    fun handleAgentQuestionTooLongException(): ProblemDetail =
+        ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, "Agent question exceeds the allowed length.")
+
+    @ExceptionHandler(AgentModelConfigurationException::class)
+    fun handleAgentModelConfigurationException(): ProblemDetail =
+        ProblemDetail.forStatusAndDetail(HttpStatus.SERVICE_UNAVAILABLE, "AI agent is not configured.")
+
+    @ExceptionHandler(AgentModelAuthenticationException::class)
+    fun handleAgentModelAuthenticationException(): ProblemDetail =
+        ProblemDetail.forStatusAndDetail(HttpStatus.BAD_GATEWAY, "AI agent provider rejected the request.")
+
+    @ExceptionHandler(AgentModelRateLimitException::class)
+    fun handleAgentModelRateLimitException(): ProblemDetail =
+        ProblemDetail.forStatusAndDetail(HttpStatus.TOO_MANY_REQUESTS, "AI agent is temporarily rate limited.")
+
+    @ExceptionHandler(AgentModelProviderException::class, AgentModelInvalidResponseException::class)
+    fun handleAgentModelProviderException(): ProblemDetail =
+        ProblemDetail.forStatusAndDetail(HttpStatus.BAD_GATEWAY, "Unable to generate an AI agent response.")
+
+    @ExceptionHandler(AgentModelTransportException::class)
+    fun handleAgentModelTransportException(): ProblemDetail =
+        ProblemDetail.forStatusAndDetail(HttpStatus.SERVICE_UNAVAILABLE, "AI agent provider is temporarily unavailable.")
+
     @ExceptionHandler(AnalysisJobNotFoundException::class)
     fun handleAnalysisJobNotFoundException(): ProblemDetail =
         ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, "Analysis job not found.")

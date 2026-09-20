@@ -37,6 +37,10 @@ Riot API endpoint별 routing host와 용도를 빠르게 확인하는 참고 문
 - [`ai/player-comparison-feature-v0.2.md`](ai/player-comparison-feature-v0.2.md): fallback 없는 독립 comparison 결과
 - [`adr/008-use-explicit-benchmark-scopes.md`](adr/008-use-explicit-benchmark-scopes.md): scope 결정 기록
 
+### Tool-using AI Agent v0.1
+
+- [`agent/tool-using-agent-v0.1.md`](agent/tool-using-agent-v0.1.md): Tool 목록, 질문 범위, HTTP 계약, 실행/비용/보안 경계
+
 ### 성능 기준선
 
 [`performance/recent-matches-latency-baseline.md`](performance/recent-matches-latency-baseline.md)
@@ -66,8 +70,8 @@ ADR은 "현재 구조가 무엇인가"보다 다음 질문에 답하는 기록�
 현재 구조 자체를 빠르게 파악할 때는 `architecture.md`,
 그 구조가 만들어진 이유를 추적할 때는 ADR을 사용합니다.
 
-Automation의 현재 contract는 [`automation/new-ranked-match-analysis-v0.1.md`](automation/new-ranked-match-analysis-v0.1.md)에
-기록한다. Tool-using Agent의 세부 문서는 실제 구현을 시작할 때에만 `docs/agent/`에 추가한다.
+Automation의 현재 contract는 [`automation/new-ranked-match-analysis-v0.1.md`](automation/new-ranked-match-analysis-v0.1.md)에,
+Tool-using Agent v0.1의 현재 contract는 [`agent/tool-using-agent-v0.1.md`](agent/tool-using-agent-v0.1.md)에 기록한다.
 
 ## 현재 결정
 
@@ -87,3 +91,4 @@ Automation의 현재 contract는 [`automation/new-ranked-match-analysis-v0.1.md`
 - [`ADR-014: Peer Benchmark에 경기 시작 시각 기반 유효 표본 기간 사용`](adr/014-use-game-start-validity-window-for-peer-benchmark.md)
 - [`ADR-015: Coverage-driven bounded Benchmark Replenishment 사용`](adr/015-use-coverage-driven-benchmark-replenishment.md)
 - [`ADR-016: Single-instance Private Deployment v0.1 준비`](adr/016-prepare-single-instance-private-deployment.md)
+- [`ADR-017: Bounded Tool-using Agent 경계 사용`](adr/017-use-bounded-tool-using-agent.md)

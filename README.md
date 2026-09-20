@@ -31,7 +31,7 @@ Riot의 공식 Ranked Ladder를 대체하는 MMR, ELO 또는 자체 Skill Rating
 | AI 분석 | `PlayerAnalysisInput` fingerprint 기반 Redis completed-result cache, OpenAI Responses API Structured Outputs, sync·async 제공 | 결과 품질 평가, 인증 사용자 quota, provider 전략 |
 | 운영 경계 | Redis Match Detail·analysis result cache, PostgreSQL/Flyway, OpenAI usage·latency 계측, 분석 생성 rate limit, bounded async job과 in-flight dedupe | crash recovery, distributed 운영 정책, 배포·확장 구조 |
 | AI Automation | persisted Ranked Solo cursor·idempotent execution·bounded scheduler와 기존 analysis job 재사용, 429 이후 JVM-local Riot cooldown | distributed scheduler/claim, automation quota, notification |
-| Tool-using Agent | 구현하지 않음 | Application Service를 감싼 Backend Tool로 질의 응답을 구성 |
+| Tool-using Agent | 기본 비활성화된 Agent v0.1, Responses API function calling, 최근 20개 Ranked Solo 통계/peer comparison Tool, bounded loop | 실제 model smoke와 질문 품질 검증 후 범위 확대 |
 | RAG / Vector Search | 구현하지 않음 | 비정형 지식 검색이 실제 필요할 때 PostgreSQL + pgvector부터 검토 |
 
 completed-result cache는 `PlayerAnalysisInput`의 결정적인 JSON을 SHA-256 fingerprint로 만든 Redis key
@@ -105,7 +105,7 @@ LangChain, LangGraph, 별도 Vector DB 같은 framework는 실제 복잡도를 �
 
 현재 사용 중인 기술은 Kotlin, Spring Boot, JDK 21, Spring MVC `RestClient`, PostgreSQL, Spring Data JPA, Flyway, Redis, Caffeine, Bucket4j, Docker, OpenAI Java SDK입니다.
 
-Spring Security, AWS, 인증 사용자 기준 quota, 다중 LLM Provider, Tool-using Agent, RAG는 현재 구현 범위가 아닙니다.
+Spring Security, AWS, 인증 사용자 기준 quota, 다중 LLM Provider, RAG는 현재 구현 범위가 아닙니다.
 
 ## 문서
 
@@ -117,6 +117,8 @@ Spring Security, AWS, 인증 사용자 기준 quota, 다중 LLM Provider, Tool-u
 - [Peer Benchmark v0.2](docs/benchmark/peer-benchmark-v0.2.md): scope와 availability 정책
 - [ADR-014](docs/adr/014-use-game-start-validity-window-for-peer-benchmark.md): Peer Benchmark 유효 표본 기간 결정
 - [ADR-015](docs/adr/015-use-coverage-driven-benchmark-replenishment.md): bounded benchmark coverage replenishment 결정
+- [Tool-using AI Agent v0.1](docs/agent/tool-using-agent-v0.1.md): Tool 범위, 실행 제한, 보안 경계
+- [ADR-017](docs/adr/017-use-bounded-tool-using-agent.md): bounded Tool-using Agent 경계 결정
 - [단일 인스턴스 비공개 배포 v0.1](docs/deployment/single-instance-private-v0.1.md): Docker Compose, SSM 접근, 운영·복구 절차와 현재 보류·재개 조건
 
 현재 구현과 설정의 source of truth는 code, `README.md`, `docs/architecture.md`, `docs/adr/`입니다. Project Memory나 AI assistant context는 저장소의 실제 상태를 대체하지 않습니다.

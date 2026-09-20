@@ -7,8 +7,9 @@
 
 아직 구현되지 않은 세부사항은 필요 이상으로 미리 확정하지 않는다.
 
-이 문서에서 **현재 구현**은 code와 현재 contract 문서로 검증된 동작만 뜻한다. Tool-using Agent,
-RAG / Vector Search, deployment 확장처럼 아직 구현되지 않은 항목은 미래 방향과 경계로만 기록하며, 현재 제공 기능처럼
+이 문서에서 **현재 구현**은 code와 현재 contract 문서로 검증된 동작만 뜻한다. Tool-using Agent v0.1과 새 Ranked Solo
+Match 기반 Automation v0.1은 구현된 현재 기능이며, RAG / Vector Search, deployment 확장처럼 아직 구현되지 않은 항목은
+미래 방향과 경계로만 기록하며, 현재 제공 기능처럼
 표현하지 않는다. 새 Ranked Solo Match 기반 Automation v0.1은 구현된 현재 기능이며, 이후 Automation 확장은 별도
 요구가 확인될 때만 추가한다.
 
@@ -840,9 +841,24 @@ Trigger
 계산된 결과를 자연어로 설명할 수 있지만 trigger condition을 임의로 결정하지 않는다. 실제 구현을 시작할 때에만
 `docs/automation/`에 세부 contract를 추가한다.
 
-### 향후 Tool-using Agent 경계
+### Tool-using Agent v0.1
 
-Tool-using Agent도 아직 구현하지 않았다. 초기 구조는 다음처럼 LLM과 기존 application boundary를 분리한다.
+`POST /api/v1/players/{gameName}/{tagLine}/agent-questions`는 path로 고정한 대상 플레이어의 질문만 받는다.
+기능은 기본 비활성화이며 `AGENT_ENABLED=true`인 개인 검증 경로에서만 실행한다. Agent는 `AgentModelGateway`
+경계에서 OpenAI Responses API function calling을 사용하지만, application 계층은 provider SDK type을 알지 않는다.
+
+`get_ranked_stats`, `get_peer_comparison`은 각각 `PlayerComparisonContextService`와
+`PlayerComparisonFeatureService`를 감싼 읽기 전용 Tool이다. 둘은 request-local `PlayerComparisonContext`를
+공유하므로 대상의 최근 Ranked Solo 최대 20경기 match loading과 통계 계산을 중복하지 않는다. Tool payload에는
+raw Riot DTO, Entity, PUUID, Riot ID, match ID, API key가 없고, exact benchmark availability와 scope를 보존한다.
+
+loop는 model response → 0 또는 1개 Tool call → structured result → 후속 model response 순서이며
+`parallel_tool_calls=false`, 최대 모델 요청 3회, Tool 실행 2회, retry 0, per-request timeout과 전체 deadline을
+강제한다. 같은 Tool/JSON 인자는 request 안에서 다시 실행하지 않고, 복수 Tool call 또는 예산 초과는 추가 실행
+없이 제한 상태로 끝낸다. Agent answer cache, memory, DB, job queue는 추가하지 않는다. 자세한 계약은
+[`agent/tool-using-agent-v0.1.md`](agent/tool-using-agent-v0.1.md), 결정 근거는 [ADR-017](adr/017-use-bounded-tool-using-agent.md)을 따른다.
+
+### 향후 Tool-using Agent 확장 경계
 
 ```text
 User question

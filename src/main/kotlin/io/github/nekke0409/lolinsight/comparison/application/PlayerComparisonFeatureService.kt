@@ -21,8 +21,15 @@ class PlayerComparisonFeatureService(
         tagLine: String,
         start: Int,
         count: Int,
-    ): PlayerComparisonFeature {
-        val context = playerComparisonContextService.buildContext(gameName, tagLine, start, count)
+    ): PlayerComparisonFeature = buildFeature(playerComparisonContextService.buildContext(gameName, tagLine, start, count))
+
+    /**
+     * Builds comparisons from an already loaded context.
+     *
+     * Callers that need both scoped statistics and peer comparisons can reuse the same Ranked
+     * Solo match load instead of issuing a second player-history request.
+     */
+    fun buildFeature(context: PlayerComparisonContext): PlayerComparisonFeature {
         val statistics = context.toScopedStatistics().sortedWith(SCOPED_STATISTICS_ORDER)
 
         return PlayerComparisonFeature(

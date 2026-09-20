@@ -35,6 +35,17 @@ openai:
   reasoning-effort: ${OPENAI_REASONING_EFFORT:low}
   text-verbosity: ${OPENAI_TEXT_VERBOSITY:low}
 
+agent:
+  # 기본값은 false다. 개인 local 검증에서만 명시적으로 활성화한다.
+  enabled: ${AGENT_ENABLED:false}
+  model-request-timeout: ${AGENT_MODEL_REQUEST_TIMEOUT:30s}
+  execution-deadline: ${AGENT_EXECUTION_DEADLINE:60s}
+  max-model-requests: ${AGENT_MAX_MODEL_REQUESTS:3}
+  max-tool-executions: ${AGENT_MAX_TOOL_EXECUTIONS:2}
+  max-question-characters: ${AGENT_MAX_QUESTION_CHARACTERS:1000}
+  max-tool-result-characters: ${AGENT_MAX_TOOL_RESULT_CHARACTERS:12000}
+  max-output-tokens: ${AGENT_MAX_OUTPUT_TOKENS:600}
+
 analysis:
   result-cache:
     ttl: ${ANALYSIS_RESULT_CACHE_TTL:30m}
