@@ -87,6 +87,31 @@ tick은 `BENCHMARK_REPLENISHMENT_MAX_COHORTS_PER_TICK=1`, page 1개, player 10�
 선택 우선순위는 `NO_DATA` position 수, unavailable POSITION 수, sample/unique-player deficit, tier/division의
 결정적인 tie-break 순서다.
 
+### 제한된 seed 후보 선택
+
+manual seed와 replenishment는 모두 `BenchmarkSeedService`의 같은 후보 선택 경로를 사용한다. discovery는 요청한 유한한
+1-based page 범위를 순서대로 읽고 첫 빈 page에서 중단한다. page 내부 PUUID는 정렬한 뒤 전체 page 범위에서 중복을 제거하지만,
+`playerLimit`으로 discovery를 조기 종료하지 않는다. 즉 `pageCount`는 Match API 호출 예산이 아니라 후보를 비교할 허용 범위를
+정한다. `pagesProcessed`는 실제 Riot discovery 응답을 받은 page 수이며, 빈 page와 discovery 429/cooldown의 cursor 의미는
+기존과 같다.
+
+정상 discovery 뒤에는 후보 PUUID 전체에 대해 한 번의 PostgreSQL `GROUP BY puuid` query를 실행한다. scope는
+`region + queueId + tier + division`이고, position/champion은 필터에 넣지 않는다. 유효 표본은 aggregate/coverage와 같은
+`game_start_timestamp`의 `[fromInclusive, toExclusive)` window만 사용한다. query 결과가 없는 후보만 0건으로 해석하고,
+빈 후보 묶음은 DB query를 실행하지 않으며 DB 오류를 0건 결과로 바꾸지 않는다. direct seed는 시작 시 window를 한 번 만들고,
+replenishment는 coverage를 계산한 그 window를 request에 전달한다.
+
+`BenchmarkSeedCandidateSelector`는 `validSampleCount ASC`, `PUUID ASC`로 결정적으로 정렬한 뒤에만 `playerLimit`을
+적용한다. 따라서 0건 후보가 먼저 오고, 그 수가 부족하면 양수 중 표본이 적은 후보로 남은 자리를 채운다. 실제 collector에는
+선택된 player만 전달되므로 후보를 더 많이 비교해도 Match 목록·Detail 호출 수는 기존 `playerLimit`을 넘지 않는다.
+`BenchmarkSeedResult`는 raw discovery 수, 고유 후보 수(`candidatePlayers`), 실제 선택·collector 입력 수(`uniquePlayers`),
+선택된 0건/양수 유효 표본 후보 수를 분리해 보고한다.
+
+이 선택은 0건 후보가 최근 경기를 제공한다는 보장, TOP player를 직접 찾는 정책, 무작위/대표 표본 추출, page 내부 모든 후보의
+언젠가 처리, 429 예방 또는 실제 HTTP 호출 수 절감을 제공하지 않는다. 만료 표본만 가진 비활성 player도 다시 0건 후보가 될 수
+있고, 모든 후보가 0건이면 PUUID 순서가 기존 선택과 같을 수 있다. 다른 tier/division으로 저장된 row와 `(match_id, puuid)`
+중복 저장 방지 정책의 기존 제약도 그대로다. 결정 근거는 [ADR-018](../adr/018-prioritize-benchmark-collection-candidates-by-valid-sample-count.md)을 따른다.
+
 각 cohort의 `benchmark_replenishment_cursor`는 다음 discovery page를 저장한다. 정상적으로 discovery가 끝난 실제 page 수만큼
 다음 page로 전진하고, 빈 page는 1로 wrap한다. discovery 자체가 local cooldown 또는 Riot 429로 중단되면 마지막 시도 시각만
 갱신하고 같은 page를 보존한다. discovery 뒤의 Match collection 429는 새 page cursor를 유지하되, 해당 tick의 이후 cohort 수집을 중단한다.
@@ -104,3 +129,30 @@ Riot ID, Match ID, API key, raw response는 포함하지 않는다.
 player percentile, rank history, top-X-percent, player-level benchmark claim을 제공하지 않는다. 사용자의 최근 Ranked Solo
 최대 20경기 분석 범위는 peer의 30일 유효기간과 별도다. Redis aggregate cache, aggregate table, demand-driven cohort
 activation, public benchmark endpoint는 범위 밖이다.
+
+## 공통 Benchmark Preflight
+
+`BenchmarkPreflightManualSmokeTest`는 특정 티어/포지션을 코드에 고정하지 않는 opt-in live 진단이다. 기본적으로
+비활성화되어 있으며, 대상의 최근 Ranked Solo 최대 20경기 context와 실제 Solo rank를 읽고, 지정 position의 사용자 경기 수,
+전체 benchmark, self-excluded benchmark를 같은 query window에서 확인한다. sample, AnalysisJob, Automation, Agent와 OpenAI
+호출은 시작하지 않는다. 단, context를 만들 때 Riot API 또는 기존 cache를 읽을 수 있다.
+
+실행 전에 다음 환경 변수를 모두 명시한다. tier/division은 현재 League-V4 discovery 지원 범위(`IRON`~`DIAMOND`, `I`~`IV`),
+position은 `TOP`, `JUNGLE`, `MIDDLE`, `BOTTOM`, `UTILITY`만 허용하며 누락·빈 값·지원하지 않는 값은 Riot 조회 전에 실패한다.
+
+```powershell
+$env:RUN_BENCHMARK_PREFLIGHT = 'true'
+$env:RIOT_API_KEY = 'your-riot-api-key'
+$env:TARGET_GAME_NAME = 'example-game-name'
+$env:TARGET_TAG_LINE = 'KR1'
+$env:BENCHMARK_PREFLIGHT_EXPECTED_TIER = 'EMERALD'
+$env:BENCHMARK_PREFLIGHT_EXPECTED_DIVISION = 'IV'
+$env:BENCHMARK_PREFLIGHT_POSITION = 'TOP'
+.\gradlew.bat test --tests '*BenchmarkPreflightManualSmokeTest'
+```
+
+이 test는 실제 rank/expected rank 일치, 사용자 position 표본, self-excluded availability, 최종 `READY` 또는 `NOT_READY`와
+사유를 별도로 출력한다. self-exclusion count 교차 검증이 통과해도 `0 - 0 = 0`만으로 READY가 되지 않으며, 기존 comparison의
+사용자 최소 경기 수와 benchmark availability policy를 그대로 사용한다. 과거
+`RUN_EMERALD_TOP_BENCHMARK_PREFLIGHT` flag는 더 이상 어떤 test도 활성화하지 않는다. preflight Spring context에서는
+Automation/bootstrap, replenishment scheduler/run-once, Agent를 명시적으로 false로 고정한다.

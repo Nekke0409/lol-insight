@@ -4,7 +4,10 @@ data class BenchmarkSeedResult(
     val requestedStartPage: Int,
     val requestedPageCount: Int,
     val discoveredPlayers: Int,
+    val candidatePlayers: Int,
     val uniquePlayers: Int,
+    val selectedZeroValidSamplePlayers: Int,
+    val selectedExistingValidSamplePlayers: Int,
     val pagesProcessed: Int,
     val collectionResult: BenchmarkCollectionResult?,
     val rateLimitStopped: Boolean,
@@ -15,7 +18,13 @@ data class BenchmarkSeedResult(
         require(requestedStartPage > 0) { "requestedStartPage must be positive" }
         require(requestedPageCount > 0) { "requestedPageCount must be positive" }
         require(discoveredPlayers >= uniquePlayers) { "discoveredPlayers cannot be less than uniquePlayers" }
+        require(candidatePlayers >= uniquePlayers) { "candidatePlayers cannot be less than uniquePlayers" }
         require(uniquePlayers >= 0) { "uniquePlayers cannot be negative" }
+        require(selectedZeroValidSamplePlayers >= 0) { "selectedZeroValidSamplePlayers cannot be negative" }
+        require(selectedExistingValidSamplePlayers >= 0) { "selectedExistingValidSamplePlayers cannot be negative" }
+        require(selectedZeroValidSamplePlayers + selectedExistingValidSamplePlayers == uniquePlayers) {
+            "selected sample groups must equal uniquePlayers"
+        }
         require(pagesProcessed >= 0) { "pagesProcessed cannot be negative" }
     }
 

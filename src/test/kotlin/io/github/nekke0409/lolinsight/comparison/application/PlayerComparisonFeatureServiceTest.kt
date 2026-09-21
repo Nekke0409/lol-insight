@@ -27,6 +27,7 @@ class PlayerComparisonFeatureServiceTest {
         PlayerComparisonFeatureService(
             playerComparisonContextService = playerComparisonContextService,
             peerBenchmarkQueryService = peerBenchmarkQueryService,
+            playerComparisonAvailabilityPolicy = PlayerComparisonAvailabilityPolicy(),
         )
 
     @Test

@@ -35,7 +35,10 @@ class BenchmarkSeedManualSmokeTest {
             "Benchmark seed: tier=${request.tier}, division=${request.division}, " +
                 "requestedStartPage=${result.requestedStartPage}, requestedPageCount=${result.requestedPageCount}, " +
                 "pagesProcessed=${result.pagesProcessed}, discoveredPlayers=${result.discoveredPlayers}, " +
-                "uniquePlayers=${result.uniquePlayers}, createdSamples=${result.createdSamples}, " +
+                "candidatePlayers=${result.candidatePlayers}, selectedPlayers=${result.uniquePlayers}, " +
+                "selectedZeroValidSamplePlayers=${result.selectedZeroValidSamplePlayers}, " +
+                "selectedExistingValidSamplePlayers=${result.selectedExistingValidSamplePlayers}, " +
+                "createdSamples=${result.createdSamples}, " +
                 "skippedDuplicates=${result.skippedDuplicates}, skippedInvalidSamples=${result.skippedInvalidSamples}, " +
                 "playerMatchListFailures=${result.playerMatchListFailures}, failedMatches=${result.failedMatches}, " +
                 "rateLimitStopped=${result.rateLimitStopped}, retryAfterSeconds=${result.retryAfterSeconds}",

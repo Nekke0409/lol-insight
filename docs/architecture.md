@@ -671,10 +671,14 @@ match 예산을 받아 KR `RANKED_SOLO_5x5` / queue 420으로 수집 범위를 �
 Spring Batch job, retry loop, sleep, benchmark 전용 rate limiter는 추가하지 않는다.
 
 `RankedPlayerDiscoveryService.discoverPaged`는 요청한 1-based page를 순서대로 조회하고 최초의 빈 page에서
-중단한다. 각 page의 PUUID를 정렬하고 그 결정적인 순서에서 처음 나타난 PUUID만 유지한다. player 예산은 unique
-player에 적용한다. 기존 non-paged discovery method는 기존 호출자를 위해 유지한다. discovery와 collection 모두
-manual seed에서 Riot 429를 terminal condition으로 처리한다. 이후 discovery page 또는 새로운 collection 요청을
-시작하지 않으며, 유효한 `Retry-After` 초 값은 `BenchmarkSeedResult`에 포함하고 응답 전에 저장된 sample은 유지한다.
+중단한다. 각 page의 PUUID를 정렬하고 그 결정적인 순서에서 처음 나타난 PUUID만 유지한다. `playerLimit`은 discovery를
+조기 종료시키지 않으며, 허용된 page 범위 전체 후보를 `BenchmarkSampleValidityRepository`의 한 번의 `GROUP BY puuid`
+query로 비교한 뒤 `BenchmarkSeedCandidateSelector`가 유효 표본 수 오름차순·PUUID 오름차순으로 최종 적용한다. 따라서
+collector는 선택된 player만 받고 Match API 호출 예산은 유지한다. direct seed는 시작 시 한 번 만든 validity window를 쓰고,
+replenishment는 coverage에 사용한 window를 seed에 전달한다. 기존 non-paged discovery method는 기존 호출자를 위해 유지한다.
+discovery와 collection 모두 manual seed에서 Riot 429를 terminal condition으로 처리한다. 이후 discovery page 또는 새로운
+collection 요청을 시작하지 않으며, 유효한 `Retry-After` 초 값은 `BenchmarkSeedResult`에 포함하고 응답 전에 저장된 sample은
+유지한다. `candidatePlayers`, `uniquePlayers`, 선택된 0건/양수 후보 수는 서로 다른 관측값이다.
 
 `BenchmarkCohortCoverageQueryService`는 comparison query가 아닌 내부 개발용 read model이다. repository는 유효기간과 필수
 region/queue/tier/division scope에서 PostgreSQL `GROUP BY region, queue_id, tier, division, position, champion_id`와

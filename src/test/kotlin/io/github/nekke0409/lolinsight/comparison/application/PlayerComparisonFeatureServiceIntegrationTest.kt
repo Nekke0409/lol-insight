@@ -45,6 +45,7 @@ import kotlin.test.assertNull
     BenchmarkQueryWindowFactory::class,
     BenchmarkSampleAggregateRepository::class,
     PeerBenchmarkQueryService::class,
+    PlayerComparisonAvailabilityPolicy::class,
     PlayerComparisonFeatureService::class,
     PlayerComparisonFeatureServiceIntegrationTest.ContextServiceStubConfiguration::class,
     PlayerComparisonFeatureServiceIntegrationTest.FixedClockConfiguration::class,

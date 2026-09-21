@@ -32,7 +32,7 @@ Riot API endpoint별 routing host와 용도를 빠르게 확인하는 참고 문
 ### Peer Benchmark v0.2
 
 - [`benchmark/peer-benchmark-v0.2.md`](benchmark/peer-benchmark-v0.2.md): 명시적인 `POSITION`,
-  `CHAMPION_POSITION` aggregate, coverage, bounded replenishment와 한계
+  `CHAMPION_POSITION` aggregate, coverage, bounded replenishment·후보 선택·preflight와 한계
 - [`ai/player-comparison-context-v0.2.md`](ai/player-comparison-context-v0.2.md): scope에 맞춘 user statistic
 - [`ai/player-comparison-feature-v0.2.md`](ai/player-comparison-feature-v0.2.md): fallback 없는 독립 comparison 결과
 - [`adr/008-use-explicit-benchmark-scopes.md`](adr/008-use-explicit-benchmark-scopes.md): scope 결정 기록
@@ -92,3 +92,4 @@ Tool-using Agent v0.1의 현재 contract는 [`agent/tool-using-agent-v0.1.md`](a
 - [`ADR-015: Coverage-driven bounded Benchmark Replenishment 사용`](adr/015-use-coverage-driven-benchmark-replenishment.md)
 - [`ADR-016: Single-instance Private Deployment v0.1 준비`](adr/016-prepare-single-instance-private-deployment.md)
 - [`ADR-017: Bounded Tool-using Agent 경계 사용`](adr/017-use-bounded-tool-using-agent.md)
+- [`ADR-018: 유효 표본 수 기반 Benchmark 수집 후보 우선순위 사용`](adr/018-prioritize-benchmark-collection-candidates-by-valid-sample-count.md)

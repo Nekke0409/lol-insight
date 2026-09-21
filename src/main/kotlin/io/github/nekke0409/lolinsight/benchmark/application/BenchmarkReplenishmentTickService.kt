@@ -81,6 +81,7 @@ class BenchmarkReplenishmentTickService(
                             pageCount = properties.pageCountPerCohort,
                             playerLimit = properties.playerLimitPerCohort,
                             matchesPerPlayer = properties.matchesPerPlayer,
+                            queryWindow = window,
                         ),
                     )
 

@@ -7,6 +7,7 @@ import io.github.nekke0409.lolinsight.benchmark.domain.BenchmarkAvailability
 import io.github.nekke0409.lolinsight.benchmark.domain.BenchmarkCohort
 import io.github.nekke0409.lolinsight.benchmark.domain.BenchmarkQueryWindow
 import io.github.nekke0409.lolinsight.benchmark.domain.PeerBenchmarkResult
+import io.github.nekke0409.lolinsight.comparison.application.PlayerComparisonAvailabilityPolicy
 import io.github.nekke0409.lolinsight.comparison.application.PlayerComparisonContextBuilder
 import io.github.nekke0409.lolinsight.comparison.application.PlayerComparisonContextService
 import io.github.nekke0409.lolinsight.comparison.application.PlayerComparisonFeatureService
@@ -45,7 +46,7 @@ class AgentQuestionServiceIntegrationTest {
                 rankLookup,
                 PlayerComparisonContextBuilder(),
             )
-        val featureService = PlayerComparisonFeatureService(contextService, benchmarkQuery)
+        val featureService = PlayerComparisonFeatureService(contextService, benchmarkQuery, PlayerComparisonAvailabilityPolicy())
         val dispatcher = AgentToolDispatcher(JsonMapper.builder().build(), contextService, featureService)
         val rateLimiter = mock(AnalysisGenerationRateLimiter::class.java)
         val model =

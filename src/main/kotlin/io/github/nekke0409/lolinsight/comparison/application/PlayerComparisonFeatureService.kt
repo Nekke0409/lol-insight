@@ -1,7 +1,6 @@
 package io.github.nekke0409.lolinsight.comparison.application
 
 import io.github.nekke0409.lolinsight.benchmark.application.PeerBenchmarkQueryService
-import io.github.nekke0409.lolinsight.benchmark.domain.BenchmarkAvailability
 import io.github.nekke0409.lolinsight.benchmark.domain.BenchmarkCohort
 import io.github.nekke0409.lolinsight.benchmark.domain.BenchmarkMetricDistribution
 import io.github.nekke0409.lolinsight.benchmark.domain.BenchmarkScope
@@ -15,6 +14,7 @@ import org.springframework.stereotype.Service
 class PlayerComparisonFeatureService(
     private val playerComparisonContextService: PlayerComparisonContextService,
     private val peerBenchmarkQueryService: PeerBenchmarkQueryService,
+    private val playerComparisonAvailabilityPolicy: PlayerComparisonAvailabilityPolicy,
 ) {
     fun buildFeature(
         gameName: String,
@@ -107,7 +107,7 @@ class PlayerComparisonFeatureService(
         cohort: BenchmarkCohort,
         benchmarkResult: PeerBenchmarkResult,
     ): PlayerCohortComparison {
-        val status = comparisonStatus(benchmarkResult.status)
+        val status = playerComparisonAvailabilityPolicy.determine(games, benchmarkResult.status)
 
         return PlayerCohortComparison(
             scope = scope,
@@ -123,18 +123,6 @@ class PlayerComparisonFeatureService(
                     ?.takeIf { status == PlayerCohortComparisonStatus.AVAILABLE }
                     ?.toMetrics(this),
         )
-    }
-
-    private fun ScopedPlayerStatistics.comparisonStatus(benchmarkAvailability: BenchmarkAvailability): PlayerCohortComparisonStatus {
-        if (games < MINIMUM_USER_GAMES_FOR_COMPARISON) {
-            return PlayerCohortComparisonStatus.INSUFFICIENT_USER_SAMPLE
-        }
-
-        return when (benchmarkAvailability) {
-            BenchmarkAvailability.NO_DATA -> PlayerCohortComparisonStatus.BENCHMARK_NO_DATA
-            BenchmarkAvailability.INSUFFICIENT_SAMPLE -> PlayerCohortComparisonStatus.BENCHMARK_INSUFFICIENT_SAMPLE
-            BenchmarkAvailability.AVAILABLE -> PlayerCohortComparisonStatus.AVAILABLE
-        }
     }
 
     private fun PeerBenchmark.toMetrics(statistics: ScopedPlayerStatistics): PlayerComparisonMetrics =
@@ -206,8 +194,6 @@ class PlayerComparisonFeatureService(
 
     private companion object {
         const val KR_REGION = "KR"
-        const val MINIMUM_USER_GAMES_FOR_COMPARISON = 5
-
         val SCOPED_STATISTICS_ORDER =
             compareBy<ScopedPlayerStatistics> { it.scope }
                 .thenByDescending { it.games }

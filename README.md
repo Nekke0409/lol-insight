@@ -27,7 +27,7 @@ Riot의 공식 Ranked Ladder를 대체하는 MMR, ELO 또는 자체 Skill Rating
 | --- | --- | --- |
 | Riot 데이터 | Account-V1 Riot ID 조회, Match-V5 Match ID/Detail 조회, League-V4 기반 KR Ranked Solo 표본 player discovery | representative sampling 정책 |
 | 데이터 처리·통계 | Riot DTO 정규화, 일반 전적용 최근 전체 경기 통계와 AI comparison용 최근 Ranked Solo 경기 통계, participant-level `BenchmarkSample` 저장 | 추가 분석 feature |
-| Peer Benchmark | 최근 30일 유효 표본 집계, target self-exclusion, role/champion-position scope 비교, POSITION-first bounded replenishment | 표본 품질과 coverage 개선 |
+| Peer Benchmark | 최근 30일 유효 표본 집계, target self-exclusion, role/champion-position scope 비교, 유효 표본 수 우선의 bounded 후보 선택과 POSITION-first replenishment | 표본 품질과 coverage 개선 |
 | AI 분석 | `PlayerAnalysisInput` fingerprint 기반 Redis completed-result cache, OpenAI Responses API Structured Outputs, sync·async 제공 | 결과 품질 평가, 인증 사용자 quota, provider 전략 |
 | 운영 경계 | Redis Match Detail·analysis result cache, PostgreSQL/Flyway, OpenAI usage·latency 계측, 분석 생성 rate limit, bounded async job과 in-flight dedupe | crash recovery, distributed 운영 정책, 배포·확장 구조 |
 | AI Automation | persisted Ranked Solo cursor·idempotent execution·bounded scheduler와 기존 analysis job 재사용, 429 이후 JVM-local Riot cooldown | distributed scheduler/claim, automation quota, notification |
@@ -117,6 +117,7 @@ Spring Security, AWS, 인증 사용자 기준 quota, 다중 LLM Provider, RAG는
 - [Peer Benchmark v0.2](docs/benchmark/peer-benchmark-v0.2.md): scope와 availability 정책
 - [ADR-014](docs/adr/014-use-game-start-validity-window-for-peer-benchmark.md): Peer Benchmark 유효 표본 기간 결정
 - [ADR-015](docs/adr/015-use-coverage-driven-benchmark-replenishment.md): bounded benchmark coverage replenishment 결정
+- [ADR-018](docs/adr/018-prioritize-benchmark-collection-candidates-by-valid-sample-count.md): 유효 표본 수 기반 bounded 수집 후보 선택 결정
 - [Tool-using AI Agent v0.1](docs/agent/tool-using-agent-v0.1.md): Tool 범위, 실행 제한, 보안 경계
 - [ADR-017](docs/adr/017-use-bounded-tool-using-agent.md): bounded Tool-using Agent 경계 결정
 - [단일 인스턴스 비공개 배포 v0.1](docs/deployment/single-instance-private-v0.1.md): Docker Compose, SSM 접근, 운영·복구 절차와 현재 보류·재개 조건

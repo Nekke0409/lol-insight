@@ -78,7 +78,6 @@ class RankedPlayerDiscoveryServiceTest {
                 division = "I",
                 startPage = 2,
                 pageCount = 4,
-                playerLimit = 10,
             )
 
         assertEquals(listOf("puuid-2", "puuid-3"), result.players.map { it.puuid })
@@ -92,7 +91,7 @@ class RankedPlayerDiscoveryServiceTest {
     }
 
     @Test
-    fun `deduplicates PUUIDs in source order and applies the player limit to unique players`() {
+    fun `deduplicates PUUIDs while traversing every requested nonempty page`() {
         `when`(riotLeagueClient.findRankedPlayerPuuidsOnPage("GOLD", "I", 2))
             .thenReturn(listOf("puuid-2", "puuid-1"))
         `when`(riotLeagueClient.findRankedPlayerPuuidsOnPage("GOLD", "I", 3))
@@ -104,14 +103,13 @@ class RankedPlayerDiscoveryServiceTest {
                 division = "I",
                 startPage = 2,
                 pageCount = 3,
-                playerLimit = 3,
             )
 
-        assertEquals(listOf("puuid-1", "puuid-2", "puuid-3"), result.players.map { it.puuid })
-        assertEquals(4, result.discoveredPlayers)
-        assertEquals(3, result.uniquePlayers)
-        assertEquals(2, result.pagesProcessed)
-        verify(riotLeagueClient, never()).findRankedPlayerPuuidsOnPage("GOLD", "I", 4)
+        assertEquals(listOf("puuid-1", "puuid-2", "puuid-3", "puuid-4"), result.players.map { it.puuid })
+        assertEquals(5, result.discoveredPlayers)
+        assertEquals(4, result.uniquePlayers)
+        assertEquals(3, result.pagesProcessed)
+        verify(riotLeagueClient).findRankedPlayerPuuidsOnPage("GOLD", "I", 4)
     }
 
     @Test
@@ -126,7 +124,6 @@ class RankedPlayerDiscoveryServiceTest {
                 division = "I",
                 startPage = 2,
                 pageCount = 3,
-                playerLimit = 10,
             )
 
         assertEquals(listOf("puuid-2"), result.players.map { it.puuid })

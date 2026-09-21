@@ -30,6 +30,7 @@ import io.github.nekke0409.lolinsight.benchmark.domain.BenchmarkScope
 import io.github.nekke0409.lolinsight.benchmark.persistence.BenchmarkSampleAggregateRepository
 import io.github.nekke0409.lolinsight.benchmark.persistence.BenchmarkSampleJpaRepository
 import io.github.nekke0409.lolinsight.benchmark.persistence.toEntity
+import io.github.nekke0409.lolinsight.comparison.application.PlayerComparisonAvailabilityPolicy
 import io.github.nekke0409.lolinsight.comparison.application.PlayerComparisonContext
 import io.github.nekke0409.lolinsight.comparison.application.PlayerComparisonContextPlayer
 import io.github.nekke0409.lolinsight.comparison.application.PlayerComparisonContextSample
@@ -88,6 +89,7 @@ import kotlin.test.assertTrue
     BenchmarkQueryWindowFactory::class,
     BenchmarkSampleAggregateRepository::class,
     PeerBenchmarkQueryService::class,
+    PlayerComparisonAvailabilityPolicy::class,
     PlayerComparisonFeatureService::class,
     NewRankedMatchAnalysisWorkflowIntegrationTest.ContextServiceStubConfiguration::class,
     NewRankedMatchAnalysisWorkflowIntegrationTest.FixedClockConfiguration::class,

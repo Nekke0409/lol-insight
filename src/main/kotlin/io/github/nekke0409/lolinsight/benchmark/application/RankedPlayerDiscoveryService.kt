@@ -45,15 +45,12 @@ class RankedPlayerDiscoveryService(
         division: String,
         startPage: Int,
         pageCount: Int,
-        playerLimit: Int,
     ): PagedRankedPlayerDiscoveryResult {
         require(tier.isNotBlank()) { "tier must not be blank" }
         require(division.isNotBlank()) { "division must not be blank" }
         require(startPage > 0) { "startPage must be positive" }
         require(pageCount > 0) { "pageCount must be positive" }
         require(startPage <= Int.MAX_VALUE - pageCount + 1) { "requested page range is too large" }
-        require(playerLimit > 0) { "playerLimit must be positive" }
-
         val rankCapturedAt = clock.instant()
         val playersByPuuid = linkedMapOf<String, SampledRankedPlayer>()
         var discoveredPlayers = 0
@@ -102,16 +99,6 @@ class RankedPlayerDiscoveryService(
                         rankCapturedAt = rankCapturedAt,
                     ),
                 )
-                if (playersByPuuid.size == playerLimit) {
-                    return PagedRankedPlayerDiscoveryResult(
-                        players = playersByPuuid.values.toList(),
-                        discoveredPlayers = discoveredPlayers,
-                        pagesProcessed = pagesProcessed,
-                        rateLimitStopped = false,
-                        retryAfterSeconds = null,
-                        emptyPageEncountered = false,
-                    )
-                }
             }
         }
 

@@ -1,5 +1,7 @@
 package io.github.nekke0409.lolinsight.benchmark.application
 
+import io.github.nekke0409.lolinsight.benchmark.domain.BenchmarkQueryWindow
+
 data class BenchmarkSeedRequest(
     val tier: String,
     val division: String,
@@ -7,6 +9,7 @@ data class BenchmarkSeedRequest(
     val pageCount: Int,
     val playerLimit: Int,
     val matchesPerPlayer: Int,
+    val queryWindow: BenchmarkQueryWindow? = null,
 ) {
     init {
         require(tier in SUPPORTED_TIERS) { "tier must be a supported League-V4 tier" }

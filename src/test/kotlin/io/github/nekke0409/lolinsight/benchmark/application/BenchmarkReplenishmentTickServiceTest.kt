@@ -148,7 +148,7 @@ class BenchmarkReplenishmentTickServiceTest {
     }
 
     @Test
-    fun `advances by pages processed when player limit completes discovery before the requested range`() {
+    fun `advances by actual discovery pages when candidate selection limits collection`() {
         val properties = properties(pageCountPerCohort = 3)
         val cohort = BenchmarkReplenishmentCohort("GOLD", "I")
         val cursor = cursor(cohort, 5)
@@ -308,12 +308,14 @@ class BenchmarkReplenishmentTickServiceTest {
             pageCount = properties.pageCountPerCohort,
             playerLimit = properties.playerLimitPerCohort,
             matchesPerPlayer = properties.matchesPerPlayer,
+            queryWindow = window(),
         )
 
     private fun seedResult(
         requestedPageCount: Int = 1,
         discoveredPlayers: Int = 0,
         uniquePlayers: Int = 0,
+        candidatePlayers: Int = uniquePlayers,
         pagesProcessed: Int = 1,
         rateLimitStopped: Boolean = false,
         collectionResult: BenchmarkCollectionResult? = collectionResult(),
@@ -324,7 +326,10 @@ class BenchmarkReplenishmentTickServiceTest {
             requestedStartPage = 1,
             requestedPageCount = requestedPageCount,
             discoveredPlayers = discoveredPlayers,
+            candidatePlayers = candidatePlayers,
             uniquePlayers = uniquePlayers,
+            selectedZeroValidSamplePlayers = uniquePlayers,
+            selectedExistingValidSamplePlayers = 0,
             pagesProcessed = pagesProcessed,
             collectionResult = collectionResult,
             rateLimitStopped = rateLimitStopped,

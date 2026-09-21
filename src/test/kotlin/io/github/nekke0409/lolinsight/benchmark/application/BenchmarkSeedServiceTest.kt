@@ -1,10 +1,14 @@
 package io.github.nekke0409.lolinsight.benchmark.application
 
+import io.github.nekke0409.lolinsight.benchmark.domain.BenchmarkQueryWindow
 import io.github.nekke0409.lolinsight.benchmark.domain.SampledRankedPlayer
+import io.github.nekke0409.lolinsight.benchmark.persistence.BenchmarkSampleValidityRepository
+import io.github.nekke0409.lolinsight.match.domain.RankedSoloQueue
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.never
 import org.mockito.Mockito.verify
+import org.mockito.Mockito.verifyNoInteractions
 import org.mockito.Mockito.`when`
 import java.time.Instant
 import kotlin.test.assertEquals
@@ -13,8 +17,17 @@ import kotlin.test.assertTrue
 
 class BenchmarkSeedServiceTest {
     private val rankedPlayerDiscoveryService = mock(RankedPlayerDiscoveryService::class.java)
+    private val benchmarkSampleValidityRepository = mock(BenchmarkSampleValidityRepository::class.java)
     private val benchmarkMatchCollectionService = mock(BenchmarkMatchCollectionService::class.java)
-    private val service = BenchmarkSeedService(rankedPlayerDiscoveryService, benchmarkMatchCollectionService)
+    private val benchmarkQueryWindowFactory = mock(BenchmarkQueryWindowFactory::class.java)
+    private val service =
+        BenchmarkSeedService(
+            rankedPlayerDiscoveryService,
+            benchmarkSampleValidityRepository,
+            BenchmarkSeedCandidateSelector(),
+            benchmarkMatchCollectionService,
+            benchmarkQueryWindowFactory,
+        )
 
     @Test
     fun `uses the requested bounded page range deduplicates players and reuses the collector`() {
@@ -26,7 +39,6 @@ class BenchmarkSeedServiceTest {
                 division = "I",
                 startPage = 2,
                 pageCount = 2,
-                playerLimit = 20,
             ),
         ).thenReturn(
             PagedRankedPlayerDiscoveryResult(
@@ -38,22 +50,43 @@ class BenchmarkSeedServiceTest {
             ),
         )
         val collectionResult = collectionResult(createdSamples = 4, skippedDuplicates = 1, skippedInvalidSamples = 2)
-        `when`(benchmarkMatchCollectionService.collect(listOf(playerOne, playerTwo), 5)).thenReturn(collectionResult)
+        `when`(
+            benchmarkSampleValidityRepository.findValidSampleCounts(
+                listOf("player-one", "player-two"),
+                "KR",
+                RankedSoloQueue.ID,
+                "GOLD",
+                "I",
+                WINDOW,
+            ),
+        ).thenReturn(mapOf("player-one" to 4, "player-two" to 0))
+        `when`(benchmarkMatchCollectionService.collect(listOf(playerTwo, playerOne), 5)).thenReturn(collectionResult)
 
         val result = service.seed(request(startPage = 2, pageCount = 2, playerLimit = 20, matchesPerPlayer = 5))
 
         assertEquals(2, result.requestedStartPage)
         assertEquals(2, result.requestedPageCount)
         assertEquals(3, result.discoveredPlayers)
+        assertEquals(2, result.candidatePlayers)
         assertEquals(2, result.uniquePlayers)
+        assertEquals(1, result.selectedZeroValidSamplePlayers)
+        assertEquals(1, result.selectedExistingValidSamplePlayers)
         assertEquals(2, result.pagesProcessed)
         assertEquals(collectionResult, result.collectionResult)
         assertEquals(4, result.createdSamples)
         assertEquals(1, result.skippedDuplicates)
         assertEquals(2, result.skippedInvalidSamples)
         verify(rankedPlayerDiscoveryService)
-            .discoverPaged(tier = "GOLD", division = "I", startPage = 2, pageCount = 2, playerLimit = 20)
-        verify(benchmarkMatchCollectionService).collect(listOf(playerOne, playerTwo), 5)
+            .discoverPaged(tier = "GOLD", division = "I", startPage = 2, pageCount = 2)
+        verify(benchmarkSampleValidityRepository).findValidSampleCounts(
+            listOf("player-one", "player-two"),
+            "KR",
+            RankedSoloQueue.ID,
+            "GOLD",
+            "I",
+            WINDOW,
+        )
+        verify(benchmarkMatchCollectionService).collect(listOf(playerTwo, playerOne), 5)
     }
 
     @Test
@@ -64,7 +97,6 @@ class BenchmarkSeedServiceTest {
                 division = "I",
                 startPage = 3,
                 pageCount = 1,
-                playerLimit = 10,
             ),
         ).thenReturn(
             PagedRankedPlayerDiscoveryResult(
@@ -82,6 +114,9 @@ class BenchmarkSeedServiceTest {
         assertEquals(9, result.retryAfterSeconds)
         assertNull(result.collectionResult)
         assertEquals(0, result.createdSamples)
+        assertEquals(1, result.candidatePlayers)
+        assertEquals(0, result.uniquePlayers)
+        verifyNoInteractions(benchmarkSampleValidityRepository)
         verify(
             benchmarkMatchCollectionService,
             never(),
@@ -97,7 +132,6 @@ class BenchmarkSeedServiceTest {
                 division = "I",
                 startPage = 1,
                 pageCount = 1,
-                playerLimit = 10,
             ),
         ).thenReturn(
             PagedRankedPlayerDiscoveryResult(
@@ -108,6 +142,16 @@ class BenchmarkSeedServiceTest {
                 retryAfterSeconds = null,
             ),
         )
+        `when`(
+            benchmarkSampleValidityRepository.findValidSampleCounts(
+                listOf("player-one"),
+                "KR",
+                RankedSoloQueue.ID,
+                "GOLD",
+                "I",
+                WINDOW,
+            ),
+        ).thenReturn(mapOf("player-one" to 0))
         val collectionResult = collectionResult(createdSamples = 2, rateLimitStopped = true, retryAfterSeconds = 4)
         `when`(benchmarkMatchCollectionService.collect(listOf(player), 5)).thenReturn(collectionResult)
 
@@ -132,6 +176,7 @@ class BenchmarkSeedServiceTest {
             pageCount = pageCount,
             playerLimit = playerLimit,
             matchesPerPlayer = matchesPerPlayer,
+            queryWindow = WINDOW,
         )
 
     private fun player(puuid: String): SampledRankedPlayer =
@@ -165,4 +210,12 @@ class BenchmarkSeedServiceTest {
             rateLimitStopped = rateLimitStopped,
             retryAfterSeconds = retryAfterSeconds,
         )
+
+    private companion object {
+        val WINDOW =
+            BenchmarkQueryWindow(
+                Instant.parse("2026-08-14T00:00:00Z"),
+                Instant.parse("2026-09-13T00:00:00Z"),
+            )
+    }
 }

@@ -54,7 +54,10 @@ class BenchmarkReplenishmentRunOnceDiagnosticTest {
                                     requestedStartPage = 5,
                                     requestedPageCount = 3,
                                     discoveredPlayers = 10,
+                                    candidatePlayers = 10,
                                     uniquePlayers = 10,
+                                    selectedZeroValidSamplePlayers = 10,
+                                    selectedExistingValidSamplePlayers = 0,
                                     pagesProcessed = 1,
                                     collectionResult =
                                         BenchmarkCollectionResult(
@@ -107,6 +110,11 @@ class BenchmarkReplenishmentRunOnceDiagnosticTest {
         assertEquals(5, attempt.requestedPage)
         assertEquals(1, attempt.pagesProcessed)
         assertEquals(6, attempt.nextPage)
+        assertEquals(10, attempt.discoveredPlayers)
+        assertEquals(10, attempt.candidatePlayers)
+        assertEquals(10, attempt.selectedPlayers)
+        assertEquals(10, attempt.selectedZeroValidSamplePlayers)
+        assertEquals(0, attempt.selectedExistingValidSamplePlayers)
         assertEquals("COMPLETED", attempt.discoveryOutcome)
         assertEquals("COMPLETED", attempt.collectionOutcome)
         assertEquals(8, attempt.createdSamples)
