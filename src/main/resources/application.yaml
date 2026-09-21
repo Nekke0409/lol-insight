@@ -35,6 +35,11 @@ riot:
     read-timeout: ${RIOT_READ_TIMEOUT:5s}
     # 429에 Retry-After가 없거나 유효하지 않을 때의 JVM-local cooldown 보수값이다.
     cooldown-fallback: ${RIOT_COOLDOWN_FALLBACK:60s}
+    outbound-pacing:
+      # 수동 수집에서만 명시적으로 켠다. Riot quota를 보장하는 값이 아니다.
+      enabled: ${RIOT_OUTBOUND_PACING_ENABLED:false}
+      min-interval: ${RIOT_OUTBOUND_MIN_INTERVAL:2s}
+      max-wait: ${RIOT_OUTBOUND_MAX_WAIT:10s}
 
 openai:
   api-key: ${OPENAI_API_KEY:}

@@ -13,6 +13,8 @@ class RiotApiHttpClient(
     private val restClient: RestClient,
     private val properties: RiotApiProperties,
     private val cooldown: RiotApiCooldown,
+    private val outboundPacing: RiotApiOutboundPacing = RiotApiOutboundPacing { },
+    private val observationRecorder: RiotApiObservationRecorder = NoOpRiotApiObservationRecorder,
 ) {
     fun <T : Any> get(
         routing: RiotApiRouting,
@@ -34,30 +36,50 @@ class RiotApiHttpClient(
                 .encode()
                 .toUri()
 
+        val endpoint = endpointKind(path)
         return try {
-            cooldown.checkAdmission()
-            restClient
-                .get()
-                .uri(uri)
-                .retrieve()
-                .onStatus(HttpStatusCode::isError) { _, response ->
-                    val retryAfterSeconds = parseRetryAfterSeconds(response.headers.getFirst("Retry-After"))
-                    if (response.statusCode.value() == TOO_MANY_REQUESTS) {
-                        cooldown.registerRateLimit(retryAfterSeconds)
-                    }
-                    throw RiotApiResponseException(
-                        statusCode = response.statusCode,
-                        responseBody = response.body.readAllBytes().toString(StandardCharsets.UTF_8),
-                        retryAfterSeconds = retryAfterSeconds,
-                    )
-                }.body(responseType)
-                ?: throw RiotApiEmptyResponseException()
+            checkCooldownAdmission()
+            outboundPacing.awaitAdmission()
+            observationRecorder.recordHttpAttempt(endpoint)
+            val entity =
+                restClient
+                    .get()
+                    .uri(uri)
+                    .retrieve()
+                    .onStatus(HttpStatusCode::isError) { _, response ->
+                        val retryAfterSeconds = parseRetryAfterSeconds(response.headers.getFirst("Retry-After"))
+                        val rateLimitType = parseRateLimitType(response.headers.getFirst("X-Rate-Limit-Type"))
+                        observationRecorder.recordHttpResponse(endpoint, response.statusCode.value())
+                        if (response.statusCode.value() == TOO_MANY_REQUESTS) {
+                            cooldown.registerRateLimit(retryAfterSeconds)
+                            observationRecorder.recordUpstreamRateLimit(retryAfterSeconds, rateLimitType)
+                        }
+                        throw RiotApiResponseException(
+                            statusCode = response.statusCode,
+                            responseBody = response.body.readAllBytes().toString(StandardCharsets.UTF_8),
+                            retryAfterSeconds = retryAfterSeconds,
+                            rateLimitType = rateLimitType,
+                        )
+                    }.toEntity(responseType)
+            observationRecorder.recordHttpResponse(endpoint, entity.statusCode.value())
+            entity.body ?: throw RiotApiEmptyResponseException()
         } catch (exception: RiotApiException) {
             throw exception
         } catch (exception: ResourceAccessException) {
+            observationRecorder.recordTransportFailure(endpoint)
             throw RiotApiTransportException(exception)
         } catch (exception: RestClientException) {
+            observationRecorder.recordTransportFailure(endpoint)
             throw RiotApiInvalidResponseException(exception)
+        }
+    }
+
+    private fun checkCooldownAdmission() {
+        try {
+            cooldown.checkAdmission()
+        } catch (exception: RiotApiCooldownException) {
+            observationRecorder.recordCooldownBlocked()
+            throw exception
         }
     }
 
@@ -67,7 +89,25 @@ class RiotApiHttpClient(
             ?.toLongOrNull()
             ?.takeIf { it >= 0 }
 
+    private fun parseRateLimitType(value: String?): String =
+        value
+            ?.trim()
+            ?.lowercase()
+            ?.takeIf { it in RATE_LIMIT_TYPES }
+            ?: "unknown"
+
+    private fun endpointKind(path: String): String =
+        when (path) {
+            "/riot/account/v1/accounts/by-riot-id/{gameName}/{tagLine}" -> "account_by_riot_id"
+            "/lol/league/v4/entries/{queue}/{tier}/{division}" -> "league_entries"
+            "/lol/league/v4/entries/by-puuid/{puuid}" -> "league_by_puuid"
+            "/lol/match/v5/matches/by-puuid/{puuid}/ids" -> "match_ids"
+            "/lol/match/v5/matches/{matchId}" -> "match_detail"
+            else -> "other"
+        }
+
     private companion object {
         const val TOO_MANY_REQUESTS = 429
+        val RATE_LIMIT_TYPES = setOf("application", "method", "service")
     }
 }

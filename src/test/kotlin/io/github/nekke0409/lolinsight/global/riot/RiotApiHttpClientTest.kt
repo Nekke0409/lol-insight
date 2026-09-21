@@ -44,6 +44,8 @@ class RiotApiHttpClientTest {
                         RiotApiProperties(key = "test-api-key"),
                         Clock.systemUTC(),
                     ),
+                outboundPacing = noPacing(),
+                observationRecorder = NoOpRiotApiObservationRecorder,
             )
     }
 
@@ -109,6 +111,8 @@ class RiotApiHttpClientTest {
                     restClient = builder.build(),
                     properties = properties,
                     cooldown = RiotApiCooldown(properties, Clock.systemUTC()),
+                    outboundPacing = noPacing(),
+                    observationRecorder = NoOpRiotApiObservationRecorder,
                 )
             val path = "/retry-after-$index"
             val response = withStatus(HttpStatus.TOO_MANY_REQUESTS)
@@ -157,6 +161,8 @@ class RiotApiHttpClientTest {
                 restClient = builder.build(),
                 properties = properties,
                 cooldown = RiotApiCooldown(properties, Clock.systemUTC()),
+                outboundPacing = noPacing(),
+                observationRecorder = NoOpRiotApiObservationRecorder,
             )
         individualServer
             .expect(requestTo("https://platform.test/rate-limited"))
@@ -208,6 +214,8 @@ class RiotApiHttpClientTest {
                     restClient = RiotApiConfiguration().riotApiRestClient(properties),
                     properties = properties,
                     cooldown = RiotApiCooldown(properties, Clock.systemUTC()),
+                    outboundPacing = noPacing(),
+                    observationRecorder = NoOpRiotApiObservationRecorder,
                 )
 
             val exception =
@@ -224,4 +232,6 @@ class RiotApiHttpClientTest {
             server.stop(0)
         }
     }
+
+    private fun noPacing(): RiotApiOutboundPacing = RiotApiOutboundPacing { }
 }

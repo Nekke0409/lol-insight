@@ -3,8 +3,8 @@ package io.github.nekke0409.lolinsight.benchmark.application
 import io.github.nekke0409.lolinsight.benchmark.domain.SampledRankedPlayer
 import io.github.nekke0409.lolinsight.benchmark.infrastructure.riot.RiotLeagueClient
 import io.github.nekke0409.lolinsight.global.riot.RiotApiException
-import io.github.nekke0409.lolinsight.global.riot.isRateLimited
 import io.github.nekke0409.lolinsight.global.riot.rateLimitRetryAfterSeconds
+import io.github.nekke0409.lolinsight.global.riot.requiresCollectionStop
 import io.github.nekke0409.lolinsight.match.domain.RankedSoloQueue
 import org.springframework.stereotype.Service
 import java.time.Clock
@@ -61,7 +61,7 @@ class RankedPlayerDiscoveryService(
                 try {
                     riotLeagueClient.findRankedPlayerPuuidsOnPage(tier, division, page)
                 } catch (exception: RiotApiException) {
-                    if (exception.isRateLimited()) {
+                    if (exception.requiresCollectionStop()) {
                         return PagedRankedPlayerDiscoveryResult(
                             players = playersByPuuid.values.toList(),
                             discoveredPlayers = discoveredPlayers,

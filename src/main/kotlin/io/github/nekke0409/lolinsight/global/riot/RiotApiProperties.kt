@@ -16,10 +16,22 @@ data class RiotApiProperties(
     val connectTimeout: Duration = Duration.ofSeconds(2),
     val readTimeout: Duration = Duration.ofSeconds(5),
     val cooldownFallback: Duration = Duration.ofSeconds(60),
+    val outboundPacing: RiotApiOutboundPacingProperties = RiotApiOutboundPacingProperties(),
 ) {
     init {
         require(!cooldownFallback.isNegative && !cooldownFallback.isZero) {
             "cooldownFallback must be positive."
         }
+    }
+}
+
+data class RiotApiOutboundPacingProperties(
+    val enabled: Boolean = false,
+    val minInterval: Duration = Duration.ofSeconds(2),
+    val maxWait: Duration = Duration.ofSeconds(10),
+) {
+    init {
+        require(!minInterval.isNegative && !minInterval.isZero) { "outboundPacing.minInterval must be positive." }
+        require(!maxWait.isNegative && !maxWait.isZero) { "outboundPacing.maxWait must be positive." }
     }
 }

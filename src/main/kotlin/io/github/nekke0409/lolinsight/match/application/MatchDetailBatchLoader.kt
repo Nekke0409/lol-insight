@@ -75,7 +75,9 @@ class MatchDetailBatchLoader(
         }
 
     private fun cancelPendingDetails(inFlight: Collection<Future<IndexedMatchDetailLoadResult>>) {
-        inFlight.forEach { it.cancel(false) }
+        // A task waiting for local pacing must wake before it starts a late HTTP request.
+        // An already-started HTTP exchange cannot be rolled back by Future cancellation.
+        inFlight.forEach { it.cancel(true) }
     }
 
     private data class IndexedMatchDetailLoadResult(

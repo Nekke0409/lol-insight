@@ -3,8 +3,8 @@ package io.github.nekke0409.lolinsight.benchmark.application
 import io.github.nekke0409.lolinsight.benchmark.domain.BenchmarkSample
 import io.github.nekke0409.lolinsight.benchmark.domain.SampledRankedPlayer
 import io.github.nekke0409.lolinsight.global.riot.RiotApiException
-import io.github.nekke0409.lolinsight.global.riot.isRateLimited
 import io.github.nekke0409.lolinsight.global.riot.rateLimitRetryAfterSeconds
+import io.github.nekke0409.lolinsight.global.riot.requiresCollectionStop
 import io.github.nekke0409.lolinsight.match.application.MatchDetailBatchLoader
 import io.github.nekke0409.lolinsight.match.application.MatchDetailLoadFailure
 import io.github.nekke0409.lolinsight.match.application.MatchDetailLoadSuccess
@@ -49,7 +49,7 @@ class BenchmarkMatchCollectionService(
                     )
                 } catch (exception: RiotApiException) {
                     playerMatchListFailures += 1
-                    if (exception.isRateLimited()) {
+                    if (exception.requiresCollectionStop()) {
                         rateLimitStopped = true
                         retryAfterSeconds = exception.rateLimitRetryAfterSeconds()
                         break
@@ -90,7 +90,7 @@ class BenchmarkMatchCollectionService(
 
         val detailResults =
             matchDetailBatchLoader.load(sampledPlayersByMatchId.keys.toList()) { failure ->
-                (failure.exception as? RiotApiException)?.isRateLimited() == true
+                (failure.exception as? RiotApiException)?.requiresCollectionStop() == true
             }
 
         detailResults.forEach { detailResult ->
@@ -114,7 +114,7 @@ class BenchmarkMatchCollectionService(
                 is MatchDetailLoadFailure -> {
                     failedMatches += 1
                     val riotException = detailResult.exception as? RiotApiException
-                    if (riotException?.isRateLimited() == true) {
+                    if (riotException?.requiresCollectionStop() == true) {
                         rateLimitStopped = true
                         retryAfterSeconds = riotException.rateLimitRetryAfterSeconds()
                     }
