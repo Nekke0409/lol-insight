@@ -37,14 +37,15 @@ HTTP status를 함께 확인한다.
 
 1. Windows에 `curl.exe`가 있어야 한다. Windows 10/11 기본 설치 환경에서 일반적으로 사용할 수 있다.
 2. backend를 실제 Riot API key를 가진 local development 설정으로 실행한다. application process에는
-   `RIOT_API_KEY`가 필요하다. `.env` 파일은 이 프로젝트에서 자동으로 읽히지 않는다.
+   `RIOT_API_KEY`가 필요하다. Gradle `bootRun`은 Git-ignored `.env`를 자동으로 읽지만, IDE 실행 구성은 해당 파일을 자동으로 읽지 않는다.
 3. benchmark를 실행할 terminal에는 대상 Riot ID를 환경변수 또는 script argument로 전달한다. 실제
    PUUID나 Riot ID, API key를 repository에 기록하지 않는다.
 
 예를 들어 backend를 별도 PowerShell terminal에서 시작한다.
 
+`.env.example`을 `.env`로 복사한 뒤 `RIOT_API_KEY`를 채우고 다음 명령으로 시작한다.
+
 ```powershell
-$env:RIOT_API_KEY = "your-riot-api-key"
 .\gradlew.bat --no-daemon bootRun
 ```
 

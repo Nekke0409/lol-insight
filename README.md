@@ -137,6 +137,15 @@ RIOT_API_KEY=your-riot-api-key
 docker compose up -d
 ```
 
+`.env.example`을 `.env`로 복사한 뒤 `RIOT_API_KEY`를 채운다. `.env`는 Git에서 제외되며 `bootRun` 실행 시에만 자동으로 주입된다. shell에 이미 설정된 환경변수는 `.env`보다 우선한다.
+
+```powershell
+Copy-Item .env.example .env
+.\gradlew.bat bootRun
+```
+
+IDE 실행 구성과 일반 `java -jar` 실행은 `.env`를 자동으로 읽지 않으므로, 해당 실행 환경에는 필요한 변수를 별도로 설정한다.
+
 `local` profile은 PostgreSQL의 로컬 기본값(`localhost:5432`, database/user `lol_insight`)을 사용합니다. `POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`로 값을 덮어쓸 수 있으며 production에서는 모든 값을 환경변수로 제공해야 합니다.
 
 ## Local API 문서
@@ -144,7 +153,7 @@ docker compose up -d
 `local` profile에서만 Swagger UI와 OpenAPI JSON이 활성화됩니다. 기본 profile과 `deploy` profile에서는 둘 다 비활성화되므로 배포 환경에 문서 endpoint가 의도치 않게 노출되지 않습니다.
 
 ```powershell
-.\gradlew.bat bootRun --args="--spring.profiles.active=local"
+.\gradlew.bat bootRun
 ```
 
 - Swagger UI: [http://localhost:8080/swagger-ui.html](http://localhost:8080/swagger-ui.html)

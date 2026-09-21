@@ -1,3 +1,6 @@
+import org.springframework.boot.gradle.tasks.run.BootRun
+import java.io.File
+
 plugins {
     kotlin("jvm") version "2.3.21"
     kotlin("plugin.jpa") version "2.3.21"
@@ -58,4 +61,38 @@ kotlin {
 
 tasks.withType<Test> {
     useJUnitPlatform()
+}
+
+fun loadDotenv(file: File): Map<String, String> {
+    if (!file.isFile) {
+        return emptyMap()
+    }
+
+    return file
+        .readLines()
+        .mapIndexedNotNull { index, rawLine ->
+            val line = rawLine.trim()
+            if (line.isEmpty() || line.startsWith("#")) {
+                return@mapIndexedNotNull null
+            }
+
+            val separator = line.indexOf('=')
+            require(separator > 0) { ".env line ${index + 1} must use KEY=VALUE format." }
+
+            val key = line.substring(0, separator).trim()
+            require(key.matches(Regex("[A-Za-z_][A-Za-z0-9_]*"))) {
+                ".env line ${index + 1} has an invalid environment variable name."
+            }
+
+            val rawValue = line.substring(separator + 1).trim()
+            val value = rawValue.removeSurrounding("\"").removeSurrounding("'")
+            key to value
+        }.toMap()
+}
+
+tasks.named<BootRun>("bootRun") {
+    val dotenv = loadDotenv(layout.projectDirectory.file(".env").asFile)
+
+    // Existing shell variables take precedence over local defaults and secrets in .env.
+    environment(dotenv.filterKeys { System.getenv(it) == null })
 }
