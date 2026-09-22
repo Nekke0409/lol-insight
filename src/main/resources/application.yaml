@@ -48,6 +48,22 @@ openai:
   reasoning-effort: ${OPENAI_REASONING_EFFORT:low}
   text-verbosity: ${OPENAI_TEXT_VERBOSITY:low}
 
+rag:
+  # 패치 노트 snapshot을 명시적으로 인덱싱·검색할 때만 켠다. 기본 DB migration과는 분리한다.
+  enabled: ${RAG_ENABLED:false}
+  embedding:
+    model: ${RAG_EMBEDDING_MODEL:text-embedding-3-small}
+    dimensions: ${RAG_EMBEDDING_DIMENSIONS:1536}
+    timeout: ${RAG_EMBEDDING_TIMEOUT:30s}
+    max-batch-size: ${RAG_EMBEDDING_MAX_BATCH_SIZE:16}
+    max-input-characters: ${RAG_EMBEDDING_MAX_INPUT_CHARACTERS:8000}
+    max-total-batch-characters: ${RAG_EMBEDDING_MAX_TOTAL_BATCH_CHARACTERS:24000}
+  chunking:
+    max-characters: ${RAG_CHUNKING_MAX_CHARACTERS:2000}
+  retrieval:
+    max-top-k: ${RAG_RETRIEVAL_MAX_TOP_K:10}
+    evidence-max-characters: ${RAG_RETRIEVAL_EVIDENCE_MAX_CHARACTERS:600}
+
 agent:
   # 기본값은 false다. 개인 local 검증에서만 명시적으로 활성화한다.
   enabled: ${AGENT_ENABLED:false}

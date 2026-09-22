@@ -14,12 +14,15 @@ LOL Insight는 Riot Games 데이터를 Backend에서 결정적으로 정규화·
 4. 운영 안정성, 비용 통제, 관측성 강화
 5. AI Automation
 6. LLM 기반 Tool-using AI Agent
-7. AI Automation과 Agent 경험을 마친 뒤 비공개 배포 재개
-8. 실제 필요가 확인된 경우에만 RAG / Vector Search
+7. 공식 패치 노트 retrieval 기반과 수동 품질 평가
+8. 평가 근거가 확인된 경우에만 RAG 답변 생성·Agent 연결 및 비공개 배포 재개
 
 일반적인 게시글·댓글 중심 community CRUD는 현재 핵심 로드맵에 포함하지 않습니다. 사용자 계정과 인증은 automation 설정, 분석 이력, 개인화, job ownership, Agent 개인화에 실제로 필요해지는 시점에 도입합니다.
 
 Riot의 공식 Ranked Ladder를 대체하는 MMR, ELO 또는 자체 Skill Rating은 만들지 않습니다.
+
+EMERALD IV 실제 수집·본인 계정 분석, 로컬 비공개 배포와 AWS 작업은 보류합니다. 기존 배포 문서는 준비된
+single-instance v0.1의 범위와 절차를 기록할 뿐, 이번 우선순위에서 실제 배포를 진행한다는 뜻이 아닙니다.
 
 ## 현재 구현과 향후 방향
 
@@ -32,7 +35,7 @@ Riot의 공식 Ranked Ladder를 대체하는 MMR, ELO 또는 자체 Skill Rating
 | 운영 경계 | Redis Match Detail·analysis result cache, PostgreSQL/Flyway, OpenAI usage·latency 계측, 분석 생성 rate limit, bounded async job과 in-flight dedupe | crash recovery, distributed 운영 정책, 배포·확장 구조 |
 | AI Automation | persisted Ranked Solo cursor·idempotent execution·bounded scheduler와 기존 analysis job 재사용, 429 이후 JVM-local Riot cooldown | distributed scheduler/claim, automation quota, notification |
 | Tool-using Agent | 기본 비활성화된 Agent v0.1, Responses API function calling, 최근 20개 Ranked Solo 통계/peer comparison Tool, 전체 deadline·최종 Tool 금지·bounded loop | 실제 model smoke와 질문 품질 검증 후 범위 확대 |
-| RAG / Vector Search | 구현하지 않음 | 비정형 지식 검색이 실제 필요할 때 PostgreSQL + pgvector부터 검토 |
+| 공식 패치 노트 retrieval | 기본 비활성화된 local snapshot 정제·heading 보존 chunking·OpenAI embedding 경계·opt-in pgvector exact cosine 검색 | 실제 Korean snapshot 평가 후 답변 생성·Agent 연결 검토 |
 
 completed-result cache는 `PlayerAnalysisInput`의 결정적인 JSON을 SHA-256 fingerprint로 만든 Redis key
 `analysis:result:{version}:{fingerprint}`에 성공한 `PlayerAnalysisResult`만 저장합니다. URL, Riot ID, PUUID, match ID는
@@ -97,7 +100,10 @@ Automation은 "최근 경기 성과가 유의하게 하락했다"와 같은 조�
 
 Tool-using Agent는 사용자의 질문에 따라 LLM이 명시적인 Backend Tool을 선택하고, Tool이 기존 Application Service를 호출한 구조화된 결과를 반환하는 형태로 시작합니다. Agent가 Riot HTTP client, PostgreSQL repository, Redis, OpenAI SDK 같은 infrastructure를 직접 다루지 않습니다. `CHAMPION_POSITION` 결과는 분석용 `championId`로 서로 다른 챔피언을 구분하지만 PUUID·Riot ID·match ID는 전달하지 않습니다. Agent는 실제 모델 요청과 Tool 실행에 전체 deadline을 적용하며, 마지막 모델 요청에는 추가 Tool을 허용하지 않습니다. 실제 local smoke 1회에서 모델의 통계·비교 Tool 연속 선택과 비교 불가 최종 응답 생성을 확인했지만, 실행 당시 detailed comparison 로그 누락으로 Backend comparison 값과 답변의 직접 대조 또는 `AVAILABLE` 수치 정확성은 확인하지 못했습니다. `AGENT_SMOKE_OBSERVATION_ENABLED=true`의 상세 comparison 출력은 이후 외부 호출 없는 회귀 테스트로 검증하며, 질문·최종 답변·식별자·raw provider 응답은 로그에 남기지 않습니다.
 
-구조화된 플레이어·경기 데이터는 Backend Tool로 조회합니다. RAG는 patch note, 챔피언·아이템 문서 같은 비정형 지식이 필요할 때의 선택지이며 Agent의 선행 조건이 아닙니다. 초기 도입이 필요하면 기존 PostgreSQL과의 운영 일관성을 위해 pgvector를 우선 검토하되, 지금 이를 필수 dependency로 선언하지 않습니다.
+구조화된 플레이어·경기 데이터는 Backend Tool로 조회합니다. RAG는 patch note, 챔피언·아이템 문서 같은 비정형 지식이 필요할 때의 선택지이며 Agent의 선행 조건이 아닙니다. 현재는 공식 패치 노트 local snapshot을 대상으로 한 기본 비활성화 retrieval 기반만 구현했습니다. 기존 PostgreSQL/Flyway 이력과 분리한 opt-in pgvector migration을 사용하며, 최종 답변 생성·Agent 연결과 실제 의미 검색 품질 검증은 아직 구현하지 않았습니다.
+
+즉, 정형 경기 데이터 Tool은 기존 Application Service의 결정적 계산 결과를 제공하고, 문서 검색은 비정형 patch note의
+근거 절과 출처를 제공하는 별도 책임입니다. RAG 도입으로 Benchmark availability·비교 안전장치를 완화하거나 대체하지 않습니다.
 
 LangChain, LangGraph, 별도 Vector DB 같은 framework는 실제 복잡도를 해결해야 하는 시점에만 도입합니다. 초기에는 OpenAI Tool Calling, 명시적 Tool 정의, 직접 작성한 dispatcher와 bounded Agent loop를 우선 검토합니다.
 
@@ -105,7 +111,7 @@ LangChain, LangGraph, 별도 Vector DB 같은 framework는 실제 복잡도를 �
 
 현재 사용 중인 기술은 Kotlin, Spring Boot, JDK 21, Spring MVC `RestClient`, PostgreSQL, Spring Data JPA, Flyway, Redis, Caffeine, Bucket4j, Docker, OpenAI Java SDK, springdoc-openapi입니다.
 
-Spring Security, AWS, 인증 사용자 기준 quota, 다중 LLM Provider, RAG는 현재 구현 범위가 아닙니다.
+Spring Security, AWS, 인증 사용자 기준 quota, 다중 LLM Provider, 최종 RAG 질의응답은 현재 구현 범위가 아닙니다.
 
 ## 문서
 
@@ -120,6 +126,8 @@ Spring Security, AWS, 인증 사용자 기준 quota, 다중 LLM Provider, RAG는
 - [ADR-018](docs/adr/018-prioritize-benchmark-collection-candidates-by-valid-sample-count.md): 유효 표본 수 기반 bounded 수집 후보 선택 결정
 - [Tool-using AI Agent v0.1](docs/agent/tool-using-agent-v0.1.md): Tool 범위, 실행 제한, 보안 경계
 - [ADR-017](docs/adr/017-use-bounded-tool-using-agent.md): bounded Tool-using Agent 경계 결정
+- [공식 패치 노트 retrieval v0.1](docs/rag/patch-note-retrieval-v0.1.md): local snapshot·pgvector 검색 계약과 검증 한계
+- [ADR-020](docs/adr/020-use-opt-in-pgvector-patch-note-retrieval.md): opt-in pgvector retrieval 결정
 - [단일 인스턴스 비공개 배포 v0.1](docs/deployment/single-instance-private-v0.1.md): Docker Compose, SSM 접근, 운영·복구 절차와 현재 보류·재개 조건
 
 현재 구현과 설정의 source of truth는 code, `README.md`, `docs/architecture.md`, `docs/adr/`입니다. Project Memory나 AI assistant context는 저장소의 실제 상태를 대체하지 않습니다.

@@ -34,6 +34,7 @@ dependencies {
     implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:3.1.1")
     implementation("com.bucket4j:bucket4j_jdk17-core:8.19.0")
     implementation("com.github.ben-manes.caffeine:caffeine")
+    implementation("org.jsoup:jsoup:1.21.2")
     implementation("org.jetbrains.kotlin:kotlin-reflect")
     implementation("tools.jackson.module:jackson-module-kotlin")
     implementation("com.openai:openai-java:4.63.1") {

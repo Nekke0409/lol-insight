@@ -41,6 +41,11 @@ Riot API endpoint별 routing host와 용도를 빠르게 확인하는 참고 문
 
 - [`agent/tool-using-agent-v0.1.md`](agent/tool-using-agent-v0.1.md): Tool 목록, 질문 범위, HTTP 계약, 실행/비용/보안 경계
 
+### 공식 패치 노트 retrieval v0.1
+
+- [`rag/patch-note-retrieval-v0.1.md`](rag/patch-note-retrieval-v0.1.md): local snapshot 정제·chunking·embedding 경계,
+  opt-in pgvector migration, revision 및 검색 계약과 검증 한계
+
 ### 성능 기준선
 
 [`performance/recent-matches-latency-baseline.md`](performance/recent-matches-latency-baseline.md)
@@ -93,3 +98,4 @@ Tool-using Agent v0.1의 현재 contract는 [`agent/tool-using-agent-v0.1.md`](a
 - [`ADR-016: Single-instance Private Deployment v0.1 준비`](adr/016-prepare-single-instance-private-deployment.md)
 - [`ADR-017: Bounded Tool-using Agent 경계 사용`](adr/017-use-bounded-tool-using-agent.md)
 - [`ADR-018: 유효 표본 수 기반 Benchmark 수집 후보 우선순위 사용`](adr/018-prioritize-benchmark-collection-candidates-by-valid-sample-count.md)
+- [`ADR-020: Opt-in pgvector 패치 노트 retrieval v0.1 사용`](adr/020-use-opt-in-pgvector-patch-note-retrieval.md)
