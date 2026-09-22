@@ -17,7 +17,6 @@ import org.flywaydb.core.api.FlywayException
 import org.springframework.beans.factory.InitializingBean
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.boot.context.properties.ConfigurationProperties
-import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.context.annotation.DependsOn
@@ -33,6 +32,7 @@ data class RagProperties(
     val embedding: RagEmbeddingProperties = RagEmbeddingProperties(),
     val chunking: RagChunkingProperties = RagChunkingProperties(),
     val retrieval: RagRetrievalProperties = RagRetrievalProperties(),
+    val answer: RagAnswerProperties = RagAnswerProperties(),
 )
 
 data class RagEmbeddingProperties(
@@ -64,8 +64,28 @@ data class RagRetrievalProperties(
     val evidenceMaxCharacters: Int = 600,
 )
 
+data class RagAnswerProperties(
+    val enabled: Boolean = false,
+    val maxQuestionCharacters: Int = 1_000,
+    val topK: Int = 5,
+    val maxEvidenceCharacters: Int = 5_000,
+    val maxStatements: Int = 5,
+    val maxOutputTokens: Long = 1_200,
+    val generationTimeout: Duration = Duration.ofSeconds(30),
+    val executionDeadline: Duration = Duration.ofSeconds(60),
+) {
+    init {
+        require(maxQuestionCharacters > 0) { "rag.answer.max-question-characters must be positive" }
+        require(topK > 0) { "rag.answer.top-k must be positive" }
+        require(maxEvidenceCharacters > 0) { "rag.answer.max-evidence-characters must be positive" }
+        require(maxStatements > 0) { "rag.answer.max-statements must be positive" }
+        require(maxOutputTokens > 0) { "rag.answer.max-output-tokens must be positive" }
+        require(!generationTimeout.isZero && !generationTimeout.isNegative) { "rag.answer.generation-timeout must be positive" }
+        require(!executionDeadline.isZero && !executionDeadline.isNegative) { "rag.answer.execution-deadline must be positive" }
+    }
+}
+
 @Configuration(proxyBeanMethods = false)
-@EnableConfigurationProperties(RagProperties::class)
 @ConditionalOnProperty(prefix = "rag", name = ["enabled"], havingValue = "true")
 class RagConfiguration {
     /** Separate history prevents vector-extension migration from touching the baseline Flyway history. */

@@ -1110,3 +1110,9 @@ patch-aware benchmark, deployment scaling은 아직 구현하지 않았다. 이�
 
 아키텍처 문서는 코드보다 앞서 미래 구조를 선언하는 문서가 아니라,
 **현재 코드베이스의 주요 설계 방향을 신뢰할 수 있게 설명하는 문서**여야 한다.
+
+## 패치 노트 답변 생성 경계
+
+`PatchNoteQuestionController`는 명시 patch/locale 질문을 `PatchNoteQuestionService`로 전달한다. Service는 기존 `PatchNoteRetrievalService`를 한 번만 호출하고 immutable evidence bundle을 구성한 뒤 `PatchNoteAnswerGenerator`를 최대 한 번 호출한다. provider adapter는 infrastructure에만 두며, Backend가 statement의 evidence ID를 검증하고 citation metadata를 조합한다. 이 경계는 Agent Tool, PlayerAnalysisService, 분석 cache/prompt/schema와 분리된다.
+
+RAG와 answer는 기본 비활성화다. answer가 꺼졌거나 RAG가 꺼진 상태는 외부 호출 없이 endpoint 404로 처리한다. 관측에는 제한된 카운터와 지연 시간만 남기며 question, evidence, answer, vector, raw provider payload는 기록하지 않는다.

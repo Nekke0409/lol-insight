@@ -26,6 +26,17 @@ import io.github.nekke0409.lolinsight.global.riot.RiotApiResponseException
 import io.github.nekke0409.lolinsight.global.riot.RiotApiTransportException
 import io.github.nekke0409.lolinsight.match.application.MatchNotFoundException
 import io.github.nekke0409.lolinsight.player.application.PlayerNotFoundException
+import io.github.nekke0409.lolinsight.rag.application.PatchNoteAnswerConfigurationException
+import io.github.nekke0409.lolinsight.rag.application.PatchNoteAnswerDeadlineExceededException
+import io.github.nekke0409.lolinsight.rag.application.PatchNoteAnswerFeatureDisabledException
+import io.github.nekke0409.lolinsight.rag.application.PatchNoteAnswerInvalidResponseException
+import io.github.nekke0409.lolinsight.rag.application.PatchNoteQuestionValidationException
+import io.github.nekke0409.lolinsight.rag.infrastructure.openai.PatchNoteAnswerAuthenticationException
+import io.github.nekke0409.lolinsight.rag.infrastructure.openai.PatchNoteAnswerIncompleteException
+import io.github.nekke0409.lolinsight.rag.infrastructure.openai.PatchNoteAnswerProviderException
+import io.github.nekke0409.lolinsight.rag.infrastructure.openai.PatchNoteAnswerRateLimitException
+import io.github.nekke0409.lolinsight.rag.infrastructure.openai.PatchNoteAnswerRefusalException
+import io.github.nekke0409.lolinsight.rag.infrastructure.openai.PatchNoteAnswerTransportException
 import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpStatus
 import org.springframework.http.ProblemDetail
@@ -35,6 +46,42 @@ import org.springframework.web.bind.annotation.RestControllerAdvice
 
 @RestControllerAdvice
 class GlobalExceptionHandler {
+    @ExceptionHandler(PatchNoteAnswerFeatureDisabledException::class)
+    fun handlePatchNoteAnswerFeatureDisabled(): ProblemDetail =
+        ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, "Patch-note answers are not enabled.")
+
+    @ExceptionHandler(PatchNoteQuestionValidationException::class)
+    fun handlePatchNoteQuestionValidation(): ProblemDetail =
+        ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, "Patch-note question is invalid.")
+
+    @ExceptionHandler(PatchNoteAnswerConfigurationException::class)
+    fun handlePatchNoteAnswerConfiguration(): ProblemDetail =
+        ProblemDetail.forStatusAndDetail(HttpStatus.SERVICE_UNAVAILABLE, "Patch-note answers are not configured.")
+
+    @ExceptionHandler(
+        PatchNoteAnswerAuthenticationException::class,
+        PatchNoteAnswerProviderException::class,
+        PatchNoteAnswerInvalidResponseException::class,
+    )
+    fun handlePatchNoteAnswerProvider(): ProblemDetail =
+        ProblemDetail.forStatusAndDetail(HttpStatus.BAD_GATEWAY, "Unable to generate a patch-note answer.")
+
+    @ExceptionHandler(PatchNoteAnswerIncompleteException::class)
+    fun handlePatchNoteAnswerIncomplete(): ProblemDetail =
+        ProblemDetail.forStatusAndDetail(HttpStatus.BAD_GATEWAY, "Patch-note answer response was incomplete.")
+
+    @ExceptionHandler(PatchNoteAnswerRefusalException::class)
+    fun handlePatchNoteAnswerRefusal(): ProblemDetail =
+        ProblemDetail.forStatusAndDetail(HttpStatus.UNPROCESSABLE_CONTENT, "Patch-note answer was refused.")
+
+    @ExceptionHandler(PatchNoteAnswerRateLimitException::class)
+    fun handlePatchNoteAnswerRateLimit(): ProblemDetail =
+        ProblemDetail.forStatusAndDetail(HttpStatus.TOO_MANY_REQUESTS, "Patch-note answer provider is temporarily rate limited.")
+
+    @ExceptionHandler(PatchNoteAnswerTransportException::class, PatchNoteAnswerDeadlineExceededException::class)
+    fun handlePatchNoteAnswerUnavailable(): ProblemDetail =
+        ProblemDetail.forStatusAndDetail(HttpStatus.SERVICE_UNAVAILABLE, "Patch-note answer provider is temporarily unavailable.")
+
     @ExceptionHandler(AgentFeatureDisabledException::class)
     fun handleAgentFeatureDisabledException(): ProblemDetail =
         ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, "AI agent is not enabled.")

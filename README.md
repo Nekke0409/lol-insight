@@ -189,3 +189,5 @@ docker compose --env-file deploy.env --env-file deploy.secrets.env -f compose.de
 ```
 
 시작·SSM 접근·backup/restore·재배포 절차와 현재 한계는 [단일 인스턴스 비공개 배포 runbook](docs/deployment/single-instance-private-v0.1.md)을 따른다.
+
+패치 노트 답변 생성은 `RAG_ENABLED=true`와 `RAG_ANSWER_ENABLED=true`가 모두 필요한 local opt-in이다. 서버는 전달한 evidence ID만 검증해 citation을 조합하며, 기본 설정에서는 endpoint가 404이고 외부 호출이 없다. [답변 생성 v0.1](docs/rag/patch-note-answer-v0.1.md)과 [ADR-021](docs/adr/021-validate-rag-answer-citations-at-backend.md)을 참고한다.

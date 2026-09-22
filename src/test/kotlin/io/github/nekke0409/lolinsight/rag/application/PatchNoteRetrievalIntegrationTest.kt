@@ -1,7 +1,13 @@
 package io.github.nekke0409.lolinsight.rag.application
 
 import io.github.nekke0409.lolinsight.analysis.infrastructure.openai.OpenAiConfiguration
+import io.github.nekke0409.lolinsight.analysis.ratelimit.AnalysisGenerationRateLimiter
+import io.github.nekke0409.lolinsight.analysis.ratelimit.AnalysisRateLimitKey
+import io.github.nekke0409.lolinsight.analysis.ratelimit.AnalysisRateLimitProperties
+import io.github.nekke0409.lolinsight.rag.infrastructure.RagAnswerProperties
 import io.github.nekke0409.lolinsight.rag.infrastructure.RagConfiguration
+import io.github.nekke0409.lolinsight.rag.infrastructure.RagProperties
+import io.github.nekke0409.lolinsight.rag.infrastructure.RagPropertiesConfiguration
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest
@@ -33,7 +39,12 @@ import kotlin.test.assertTrue
     ],
 )
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@Import(OpenAiConfiguration::class, RagConfiguration::class, PatchNoteRetrievalIntegrationTest.RagTestConfiguration::class)
+@Import(
+    OpenAiConfiguration::class,
+    RagPropertiesConfiguration::class,
+    RagConfiguration::class,
+    PatchNoteRetrievalIntegrationTest.RagTestConfiguration::class,
+)
 @Testcontainers
 class PatchNoteRetrievalIntegrationTest {
     @Autowired
@@ -127,6 +138,113 @@ class PatchNoteRetrievalIntegrationTest {
             retrievalService.search(PatchNoteSearchRequest("아리", "16.99", "ko-KR", topK = 1))
         }
     }
+
+    @Test
+    fun `runs fixture indexing through pgvector retrieval evidence construction and citation validation`() {
+        indexingService.index(snapshot(FIXTURE_HTML))
+        var delivered: PatchNoteAnswerGenerationRequest? = null
+        val generator =
+            object : PatchNoteAnswerGenerator {
+                override fun generate(
+                    request: PatchNoteAnswerGenerationRequest,
+                    timeout: java.time.Duration,
+                ): PatchNoteGeneratedAnswer {
+                    delivered = request
+                    return PatchNoteGeneratedAnswer(
+                        PatchNoteAnswerStatus.ANSWERED,
+                        listOf(PatchNoteGeneratedStatement("fixture grounded answer", listOf("E2"))),
+                        listOf("fixture limitation"),
+                    )
+                }
+            }
+        val service =
+            PatchNoteQuestionService(
+                RagProperties(enabled = true, answer = RagAnswerProperties(enabled = true, topK = 3)),
+                AnalysisGenerationRateLimiter(AnalysisRateLimitProperties(capacity = 10), Clock.systemUTC()),
+                retrievalService,
+                generator,
+            )
+
+        val response = service.answer(PatchNoteQuestionRequest("16.99", "ko-KR", "fixture question"), AnalysisRateLimitKey("test"))
+
+        assertEquals(PatchNoteAnswerStatus.ANSWERED, response.status)
+        assertEquals(listOf("E2"), response.citations.map { it.evidenceId })
+        assertEquals(delivered?.evidence?.get(1)?.chunkId, response.citations.single().chunkId)
+        assertEquals("16.99", response.citations.single().patchVersion)
+        assertEquals(3, delivered?.evidence?.size)
+    }
+
+    @Test
+    fun `does not embed or generate when the requested corpus is empty`() {
+        var generated = 0
+        val service =
+            PatchNoteQuestionService(
+                RagProperties(enabled = true, answer = RagAnswerProperties(enabled = true)),
+                AnalysisGenerationRateLimiter(AnalysisRateLimitProperties(capacity = 10), Clock.systemUTC()),
+                retrievalService,
+                object : PatchNoteAnswerGenerator {
+                    override fun generate(
+                        request: PatchNoteAnswerGenerationRequest,
+                        timeout: java.time.Duration,
+                    ): PatchNoteGeneratedAnswer {
+                        generated++
+                        error("generation must not run")
+                    }
+                },
+            )
+        val embeddingCalls = embeddingGateway.calls
+
+        val response = service.answer(PatchNoteQuestionRequest("missing", "ko-KR", "fixture question"), AnalysisRateLimitKey("empty"))
+
+        assertEquals(PatchNoteAnswerStatus.INSUFFICIENT_EVIDENCE, response.status)
+        assertEquals(embeddingCalls, embeddingGateway.calls)
+        assertEquals(0, generated)
+    }
+
+    @Test
+    fun `keeps a generator evidence shortage separate from an invalid citation`() {
+        indexingService.index(snapshot(FIXTURE_HTML))
+        var calls = 0
+        val insufficientService =
+            questionService { PatchNoteGeneratedAnswer(PatchNoteAnswerStatus.INSUFFICIENT_EVIDENCE, emptyList(), listOf("not relevant")) }
+
+        val insufficient =
+            insufficientService.answer(
+                PatchNoteQuestionRequest("16.99", "ko-KR", "unrelated fixture question"),
+                AnalysisRateLimitKey("insufficient"),
+            )
+
+        assertEquals(PatchNoteAnswerStatus.INSUFFICIENT_EVIDENCE, insufficient.status)
+        val invalidCitationService =
+            questionService {
+                calls++
+                PatchNoteGeneratedAnswer(
+                    PatchNoteAnswerStatus.ANSWERED,
+                    listOf(PatchNoteGeneratedStatement("unsupported", listOf("E999"))),
+                    emptyList(),
+                )
+            }
+        assertFailsWith<PatchNoteAnswerInvalidResponseException> {
+            invalidCitationService.answer(
+                PatchNoteQuestionRequest("16.99", "ko-KR", "fixture question"),
+                AnalysisRateLimitKey("invalid-citation"),
+            )
+        }
+        assertEquals(1, calls)
+    }
+
+    private fun questionService(answer: (PatchNoteAnswerGenerationRequest) -> PatchNoteGeneratedAnswer): PatchNoteQuestionService =
+        PatchNoteQuestionService(
+            RagProperties(enabled = true, answer = RagAnswerProperties(enabled = true, topK = 3)),
+            AnalysisGenerationRateLimiter(AnalysisRateLimitProperties(capacity = 10), Clock.systemUTC()),
+            retrievalService,
+            object : PatchNoteAnswerGenerator {
+                override fun generate(
+                    request: PatchNoteAnswerGenerationRequest,
+                    timeout: java.time.Duration,
+                ): PatchNoteGeneratedAnswer = answer(request)
+            },
+        )
 
     private fun snapshot(html: String): PatchNoteSnapshot =
         PatchNoteSnapshot(
