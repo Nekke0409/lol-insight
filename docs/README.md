@@ -45,6 +45,8 @@ Riot API endpoint별 routing host와 용도를 빠르게 확인하는 참고 문
 
 - [`rag/patch-note-retrieval-v0.1.md`](rag/patch-note-retrieval-v0.1.md): local snapshot 정제·chunking·embedding 경계,
   opt-in pgvector migration, revision 및 검색 계약과 검증 한계
+- [`rag/patch-note-retrieval-25-10-ko-kr-evaluation-2026-09-22.md`](rag/patch-note-retrieval-25-10-ko-kr-evaluation-2026-09-22.md):
+  공식 한국어 25.10 snapshot 한 건의 실제 embedding·검색 평가 기록
 
 ### 성능 기준선
 

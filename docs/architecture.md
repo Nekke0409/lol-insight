@@ -8,8 +8,9 @@
 아직 구현되지 않은 세부사항은 필요 이상으로 미리 확정하지 않는다.
 
 이 문서에서 **현재 구현**은 code와 현재 contract 문서로 검증된 동작만 뜻한다. Tool-using Agent v0.1, Ranked Solo
-Match 기반 Automation v0.1, 그리고 기본 비활성화된 공식 패치 노트 retrieval v0.1은 구현된 현재 기능이다. 최종 RAG
-답변 생성·Agent 연결, 실제 공식 snapshot의 의미 검색 품질 검증, deployment 확장처럼 아직 구현되지 않은 항목은 미래
+Match 기반 Automation v0.1, 그리고 기본 비활성화된 공식 패치 노트 retrieval v0.1과 공식 Korean 25.10 한 건의 실제
+embedding·검색 평가는 구현된 현재 기능이다. 최종 RAG 답변 생성·Agent 연결, 여러 문서에 일반화한 의미 검색 품질 검증,
+deployment 확장처럼 아직 구현되지 않은 항목은 미래
 방향과 경계로만 기록하며 현재 제공 기능처럼 표현하지 않는다.
 
 EMERALD IV 실제 수집·본인 계정 분석과 로컬 비공개 배포/AWS 실행은 현재 보류한다. 기존 deployment v0.1은 준비된
@@ -908,7 +909,8 @@ champion/item 문서, 공식 gameplay knowledge 같은 비정형 지식 검색�
 제한한 pgvector exact cosine retrieval 결과만 반환한다. 기본 `RAG_ENABLED=false`에서는 RAG bean과 vector migration이
 없으며, 활성화할 때만 별도 Flyway history가 extension/schema를 적용한다. 문서 본문은 untrusted data이고 후속 답변 생성도
 문서 안의 명령 실행, URL 조회, SQL 실행, 환경변수 접근을 허용하지 않는다. 최종 answer generation, Agent 연결,
-자동 수집·scheduler, HNSW/IVFFlat, 별도 Vector DB와 실문서 의미 검색 품질 검증은 아직 구현하지 않았다. 상세 contract는
+자동 수집·scheduler, HNSW/IVFFlat, 별도 Vector DB와 여러 실문서의 의미 검색 품질 검증은 아직 구현하지 않았다. 한 건의
+공식 Korean 25.10 수동 평가는 [평가 기록](rag/patch-note-retrieval-25-10-ko-kr-evaluation-2026-09-22.md)을 따른다. 상세 contract는
 [`rag/patch-note-retrieval-v0.1.md`](rag/patch-note-retrieval-v0.1.md), 결정 근거는
 [ADR-020](adr/020-use-opt-in-pgvector-patch-note-retrieval.md)을 따른다.
 
@@ -1043,7 +1045,7 @@ Riot API 오류를 서비스 관점의 오류로 변환한 뒤
 - persisted PUUID tracking/cursor와 idempotent Ranked Solo Match Automation trigger, 기존 `AnalysisJob` 재사용
 - Match Detail·completed analysis result Redis cache, PostgreSQL/JPA/Flyway, 핵심 단위·통합 테스트
 - 기본 비활성화된 patch note snapshot retrieval: heading 보존 chunking, `EmbeddingGateway`, 분리된 opt-in pgvector
-  migration/history, revision-safe exact cosine 검색과 출처 반환
+  migration/history, revision-safe exact cosine 검색과 출처 반환, 공식 Korean 25.10 한 건의 실제 embedding·검색 평가
 - `deploy` profile과 별도 Compose를 사용하는 single-instance private deployment: app loopback bind, PostgreSQL named volume,
   Flyway startup migration, 최소 actuator health, non-root runtime image
 
@@ -1083,8 +1085,8 @@ stale-job recovery는 여전히 single-instance v0.1 범위 밖이다. 운영 �
 3. AI analysis 품질과 cache hit-rate를 포함한 운영 안정성 강화
 4. explicit Backend rule을 기반으로 한 AI Automation
 5. Application Service boundary를 사용하는 Tool-using AI Agent
-6. 공식 Korean patch snapshot의 수동 retrieval 평가와 provider 비용·latency 확인
-7. 평가 근거가 있을 때만 RAG 답변 생성·Agent 연결과 비공개 배포 재개
+6. 추가 공식 Korean patch snapshot의 수동 retrieval 평가와 provider 비용·latency 비교
+7. 누적 평가 근거가 있을 때만 RAG 답변 생성·Agent 연결과 비공개 배포 재개
 8. 인증, multi-instance 운영과 scaling 요구가 확인된 뒤의 구조 진화
 
 사용자 계정·인증은 community CRUD를 위한 선행 기능으로 두지 않는다. automation 설정, 분석 이력, 개인화,

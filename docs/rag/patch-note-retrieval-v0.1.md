@@ -22,8 +22,10 @@
 
 ## 정제와 chunk 정책
 
-`JsoupPatchNoteParser`는 `script`, `style`, `nav`, `header`, `footer`, `aside`, form과 navigation 역할 요소를 제거하고,
-`article`/`main`/알려진 content 영역을 우선 사용한다. `h1`~`h6`, 문단, 목록과 표에서 본문을 만들며 heading path를 보존한다.
+`JsoupPatchNoteParser`는 `script`, `style`, `nav`, `footer`, `aside`, form과 navigation 역할 요소를 제거하고,
+`#patch-notes-container`를 최우선으로, 그 밖에는 `article`/`main`/알려진 content 영역을 사용한다. `h1`~`h6`, 문단,
+목록, 표와 `blockquote`에서 본문을 만들며 DOM 순서와 heading level을 보존한다. 따라서 실제 공식 문서의 section `header`와
+조정 사유 `blockquote`를 navigation으로 오인해 버리지 않는다.
 지원하는 searchable body가 없으면 빈 document를 성공으로 저장하지 않고 실패한다.
 
 `DeterministicPatchNoteChunker`는 한 heading section 안에서만 chunk를 만든다. 그래서 챔피언·아이템 경계를 넘어 문단을
@@ -115,13 +117,10 @@ cosine distance를 포함한다. distance는 해당 필터 범위에서 작을�
 `아리 Q 피해량 변경`은 `테스트 패치 노트 > 챔피언 > 아리` 절과 source URL을 첫 결과로 반환한다. 이 fixture는 실제 Riot
 패치 원문이 아니며 한국어 의미 검색 품질 또는 실제 OpenAI embedding 호출을 검증한 결과가 아니다.
 
-후속 실문서 평가에서는 수동으로 고른 소수의 공식 Korean snapshot마다 다음을 기록한다.
-
-| patchVersion | 질의 | 사람이 확인한 기대 근거 절 | 상태 |
-| --- | --- | --- | --- |
-| 지정할 실제 patch | 챔피언/아이템 조정 질문 | source URL과 heading path를 함께 기록 | 아직 snapshot·embedding 미실행 |
-
-실문서 snapshot 수집, 실제 embedding 비용·latency 측정, 이 표의 채움은 별도 승인 task에서만 수행한다.
+실제 공식 한국어 25.10 snapshot 한 건의 수동 평가를 완료했다. 고정 URL, raw snapshot hash, 질문 원본·기대 근거, provider
+usage/latency, search 결과와 보존 절차는 [25.10 한국어 수동 평가 기록](patch-note-retrieval-25-10-ko-kr-evaluation-2026-09-22.md)에
+남긴다. 이는 한 문서·네 개의 grounded question에 대한 small-sample 확인일 뿐, 일반적인 한국어 검색 품질이나 답변 생성의
+검증은 아니다.
 
 ## 답변 생성 단계의 보안 경계
 

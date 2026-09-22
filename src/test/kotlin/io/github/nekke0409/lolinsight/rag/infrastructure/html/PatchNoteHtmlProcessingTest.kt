@@ -54,6 +54,37 @@ class PatchNoteHtmlProcessingTest {
         }
     }
 
+    @Test
+    fun `keeps blockquote reasons and nested list text under their correct sibling heading paths`() {
+        val html =
+            """
+            <main>
+              <section id="patch-notes-container">
+                <header><h2>챔피언</h2></header>
+                <h3>초가스</h3>
+                <blockquote><p>중단 공격로 성능을 낮추고자 합니다.</p></blockquote>
+                <h4><img alt="Image" /> Q - 파열</h4>
+                <ul><li>피해량: 80 ⇒ 70</li></ul>
+                <h3>룰루</h3>
+                <p>개인 랭크에서 강력합니다.</p>
+                <h2>아이템</h2>
+                <p>다음 h2는 챔피언의 자식이 아닙니다.</p>
+              </section>
+              <section><h2>관련 글</h2><p>검색 대상이 아닙니다.</p></section>
+            </main>
+            """.trimIndent()
+
+        val sections = parser.parse(snapshot(html)).sections
+
+        assertEquals(listOf("챔피언", "초가스"), sections[0].headingPath)
+        assertTrue(sections[0].body.contains("중단 공격로 성능"))
+        assertEquals(listOf("챔피언", "초가스", "Q - 파열"), sections[1].headingPath)
+        assertTrue(sections[1].body.contains("피해량: 80 ⇒ 70"))
+        assertEquals(listOf("챔피언", "룰루"), sections[2].headingPath)
+        assertEquals(listOf("아이템"), sections[3].headingPath)
+        assertFalse(sections.joinToString(" ") { it.body }.contains("관련 글"))
+    }
+
     private fun snapshot(html: String): PatchNoteSnapshot =
         PatchNoteSnapshot(
             sourceUrl = "https://example.test/patch/16-99",
