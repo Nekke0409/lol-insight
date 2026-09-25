@@ -27,6 +27,8 @@ import io.github.nekke0409.lolinsight.global.riot.RiotApiTransportException
 import io.github.nekke0409.lolinsight.match.application.MatchNotFoundException
 import io.github.nekke0409.lolinsight.player.application.PlayerNotFoundException
 import io.github.nekke0409.lolinsight.rag.application.ManualRagSmokeBudgetExceededException
+import io.github.nekke0409.lolinsight.rag.application.ManualRagSmokeExecutionPlanException
+import io.github.nekke0409.lolinsight.rag.application.ManualRagSmokeInputMismatchException
 import io.github.nekke0409.lolinsight.rag.application.PatchNoteAnswerConfigurationException
 import io.github.nekke0409.lolinsight.rag.application.PatchNoteAnswerDeadlineExceededException
 import io.github.nekke0409.lolinsight.rag.application.PatchNoteAnswerFeatureDisabledException
@@ -58,6 +60,27 @@ class GlobalExceptionHandler {
     @ExceptionHandler(ManualRagSmokeBudgetExceededException::class)
     fun handleManualRagSmokeBudgetExceeded(): ProblemDetail =
         ProblemDetail.forStatusAndDetail(HttpStatus.TOO_MANY_REQUESTS, "Patch-note manual smoke budget is exhausted.")
+
+    @ExceptionHandler(ManualRagSmokeInputMismatchException::class)
+    fun handleManualRagSmokeInputMismatch(exception: ManualRagSmokeInputMismatchException): ProblemDetail =
+        ProblemDetail
+            .forStatusAndDetail(
+                HttpStatus.UNPROCESSABLE_CONTENT,
+                "Patch-note manual input does not match the approved plan.",
+            ).apply {
+                setProperty("code", "MANUAL_INPUT_MISMATCH")
+                setProperty("reason", exception.reason.name)
+            }
+
+    @ExceptionHandler(ManualRagSmokeExecutionPlanException::class)
+    fun handleManualRagSmokeExecutionPlan(): ProblemDetail =
+        ProblemDetail
+            .forStatusAndDetail(
+                HttpStatus.UNPROCESSABLE_CONTENT,
+                "Patch-note manual execution plan rejected this request.",
+            ).apply {
+                setProperty("code", "MANUAL_EXECUTION_PLAN_REJECTED")
+            }
 
     @ExceptionHandler(PatchNoteAnswerConfigurationException::class)
     fun handlePatchNoteAnswerConfiguration(): ProblemDetail =

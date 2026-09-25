@@ -37,9 +37,6 @@ class PatchNoteQuestionService(
         try {
             requireEnabled()
             request.validate(properties.answer)
-            if (properties.answer.manualCaptureEnabled && request.manualQuestionId == null) {
-                throw PatchNoteQuestionValidationException()
-            }
             val allowance = executionBudget.beforeRequest(request)
             rateLimiter.check(clientIdentity)
             val deadline = PatchNoteQuestionDeadline.after(properties.answer.executionDeadline)
@@ -72,8 +69,8 @@ class PatchNoteQuestionService(
             evidenceCount = evidence.size
             if (evidence.isEmpty()) return insufficient("검색된 근거가 요청 처리 한도 안에 포함되지 않았습니다.").also { outcome = it.status.name }
             val timeout = deadline.nextTimeout(properties.answer.generationTimeout) ?: throw PatchNoteAnswerDeadlineExceededException()
-            generationAttempts++
             executionBudget.beforeGeneration(request)
+            generationAttempts++
             val generation =
                 requireNotNull(answerGenerator) { "RAG answer generator is unavailable" }
                     .generate(PatchNoteAnswerGenerationRequest(request.question, evidence, properties.answer.maxStatements), timeout)
@@ -89,6 +86,15 @@ class PatchNoteQuestionService(
         } catch (exception: PatchNoteAnswerInvalidResponseException) {
             outcome = "CITATION_OR_SCHEMA_INVALID"
             throw exception
+        } catch (exception: ManualRagSmokeInputMismatchException) {
+            outcome = "MANUAL_INPUT_MISMATCH_${exception.reason.name}"
+            throw exception
+        } catch (exception: ManualRagSmokeBudgetExceededException) {
+            outcome = "MANUAL_BUDGET_REJECTED"
+            throw exception
+        } catch (_: PatchNoteRetrievalExecutionBudgetExceededException) {
+            outcome = "MANUAL_EXECUTION_PLAN_REJECTED"
+            throw ManualRagSmokeExecutionPlanException()
         } catch (exception: PatchNoteAnswerIncompleteException) {
             generationUsage = exception.usage
             generationLatency = exception.providerLatency
@@ -100,7 +106,7 @@ class PatchNoteQuestionService(
             outcome = "GENERATION_REFUSAL"
             throw exception
         } finally {
-            observationRecorder.recordSafely(
+            val summary =
                 PatchNoteQuestionExecutionSummary(
                     outcome,
                     retrievalAttempts,
@@ -116,8 +122,9 @@ class PatchNoteQuestionService(
                     Duration.ofNanos(
                         System.nanoTime() - startedAt,
                     ),
-                ),
-            )
+                )
+            evidenceObserver.recordExecutionSafely(request, summary)
+            observationRecorder.recordSafely(summary)
         }
     }
 
@@ -341,6 +348,20 @@ class ManualRagSmokeBudgetExceededException(
     message: String,
 ) : RuntimeException(message)
 
+class ManualRagSmokeInputMismatchException(
+    val reason: ManualRagSmokeInputMismatchReason,
+) : RuntimeException("manual RAG input does not match the approved plan")
+
+enum class ManualRagSmokeInputMismatchReason {
+    MISSING_QUESTION_ID,
+    UNAPPROVED_QUESTION_ID,
+    PATCH_VERSION_MISMATCH,
+    LOCALE_MISMATCH,
+    QUESTION_MISMATCH,
+}
+
+class ManualRagSmokeExecutionPlanException : RuntimeException("manual RAG execution plan does not permit this provider call")
+
 class PatchNoteAnswerIncompleteException(
     val reason: PatchNoteAnswerIncompleteReason,
     val usage: PatchNoteAnswerUsage?,
@@ -387,6 +408,11 @@ interface PatchNoteAnswerEvidenceObserver {
         answer: PatchNoteGeneratedAnswer,
         response: PatchNoteQuestionResponse,
     )
+
+    fun recordExecution(
+        request: PatchNoteQuestionRequest,
+        summary: PatchNoteQuestionExecutionSummary,
+    ) = Unit
 }
 
 interface PatchNoteQuestionExecutionBudget {
@@ -437,6 +463,17 @@ private fun PatchNoteAnswerEvidenceObserver.recordSafely(
         record(request, evidence, answer, response)
     } catch (_: Exception) {
         // Manual evidence capture must not cause a second provider request or change the response.
+    }
+}
+
+private fun PatchNoteAnswerEvidenceObserver.recordExecutionSafely(
+    request: PatchNoteQuestionRequest,
+    summary: PatchNoteQuestionExecutionSummary,
+) {
+    try {
+        recordExecution(request, summary)
+    } catch (_: Exception) {
+        // Manual artifact failure must not cause a provider retry or change the response.
     }
 }
 

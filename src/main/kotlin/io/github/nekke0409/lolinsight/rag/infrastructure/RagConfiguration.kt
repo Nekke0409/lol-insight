@@ -22,6 +22,7 @@ import org.springframework.context.annotation.Configuration
 import org.springframework.context.annotation.DependsOn
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
 import org.springframework.transaction.PlatformTransactionManager
+import java.nio.file.Path
 import java.time.Clock
 import java.time.Duration
 import javax.sql.DataSource
@@ -75,6 +76,11 @@ data class RagAnswerProperties(
     val generationTimeout: Duration = Duration.ofSeconds(30),
     val executionDeadline: Duration = Duration.ofSeconds(60),
     val manualCaptureEnabled: Boolean = false,
+    val manualPlanPath: String? = null,
+    val manualPlanSha256: String? = null,
+    val manualPlanLocale: String? = null,
+    val manualEvaluationRunId: String? = null,
+    val manualCaptureDirectory: Path = Path.of(".local", "rag", "answer-evaluation"),
 ) {
     init {
         require(maxQuestionCharacters > 0) { "rag.answer.max-question-characters must be positive" }

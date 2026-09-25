@@ -37,6 +37,12 @@ prompt는 고정 instructions와 별도의 untrusted question/evidence data로 �
 
 자동 검증은 fictional fixture를 parser/chunker/indexing, fake embedding, pgvector retrieval, scripted generator, citation validation까지 연결한다. 이는 실제 생성 품질 평가가 아니며 `.local/rag` 자료나 실제 OpenAI/Riot 호출을 사용하지 않는다.
 
-실제 수동 smoke에만 `RAG_ANSWER_MANUAL_CAPTURE_ENABLED=true`를 추가할 수 있다. localhost 요청의 `X-Rag-Manual-Question-Id`는 고정된 평가 ID를 식별하며, 전달 evidence의 ID·chunk/document/revision·heading·본문 hash/최대 600자 발췌, 생성 statement와 최종 citation을 `.local/rag/answer-evaluation/`에 기록한다. 이는 Git-ignored 평가 artifact이며 정상 로그에는 남기지 않는다. 이 opt-in은 지정된 다섯 ID를 각각 한 번만 허용하고, 25.09에 대한 query embedding을 막으며, 최대 HTTP 5회·query embedding 4회·generation 4회로 제한한다.
+실제 수동 smoke에만 `RAG_ANSWER_MANUAL_CAPTURE_ENABLED=true`를 추가할 수 있다. 이 opt-in은 `RAG_ANSWER_MANUAL_PLAN_PATH`, `RAG_ANSWER_MANUAL_PLAN_SHA256`, `RAG_ANSWER_MANUAL_PLAN_LOCALE`, 새 `RAG_ANSWER_MANUAL_EVALUATION_RUN_ID`를 모두 요구한다. 서버는 시작 시 plan 원본 bytes를 한 번만 UTF-8(BOM 없음)로 읽어 승인 SHA-256과 대조하고, 이후 파일을 다시 읽지 않는다. 현재 보존 plan에는 문항별 locale이 없으므로 승인 hash와 함께 `MANUAL_PLAN_LOCALE=ko-KR`로 scope를 고정한다. 새 plan은 문항별 locale을 명시할 수 있다.
 
-후속 수동 smoke에서는 보존한 `.local/rag`의 25.10 RAG-only export를 격리 DB에 복원하고, 기존 평가 질문으로 전달 evidence, 생성 답변, citation/source/revision 일치, 부족 근거 처리, embedding/generation 사용량을 확인한다. 이 작업에서는 export를 복원하거나 요청을 실행하지 않는다.
+localhost 요청의 `X-Rag-Manual-Question-Id`는 plan의 ID를 식별할 뿐 request의 `question`을 대체하지 않는다. controller가 역직렬화한 `patchVersion`·`locale`·`question`이 서버가 읽은 plan과 정확히 같아야 retrieval 전에 admission된다. 불일치는 `422 MANUAL_INPUT_MISMATCH`로 끝나며 retrieval, query embedding, generation은 모두 0회다. `UNINDEXED` plan 문항은 먼저 실제 corpus 계약을 조회한다. corpus가 비어 있으면 기존 `INSUFFICIENT_EVIDENCE` 경로를 유지하지만, corpus가 있는데 plan이 embedding을 막으면 `422 MANUAL_EXECUTION_PLAN_REJECTED`로 실패한다. 따라서 예산 장치가 근거 부족 결과를 만들어 내지 않는다.
+
+각 새 run은 `.local/rag/answer-evaluation/<run-id>/<question-id>.json`에 plan hash, 기대/실제 question hash·UTF-8 byte 수·code point 수, 입력 일치 여부, 안전한 거절 사유, provider 단계 진입 여부와 기존 evidence/citation 정보를 원자적으로 한 번만 기록한다. 같은 ID의 이후 거절은 `-attempt-N.json`으로 분리한다. 과거 run이나 같은 ID artifact는 덮어쓰지 않는다. 일반 로그와 metric에는 원문 question/evidence/answer를 추가하지 않는다.
+
+수동 client는 [Invoke-PatchNoteAnswerEvaluation.ps1](../../scripts/rag/Invoke-PatchNoteAnswerEvaluation.ps1)만 사용한다. 이 스크립트는 plan을 명시 UTF-8로 읽고 hash를 검증한 뒤 JSON을 재파싱하여 세 요청 필드가 일치하는지 확인한다. `HttpClient`의 `ByteArrayContent`에 BOM 없는 UTF-8 body bytes와 `application/json; charset=utf-8`을 명시해 localhost에 한 번만 전송한다. response bytes와 ASCII transmission metadata를 별도 새 client directory에 저장하며, 기존 결과를 덮어쓰거나 자동 수정·재전송하지 않는다.
+
+후속 유료 smoke는 이 경계가 실제 Windows localhost test provider로 통과한 뒤에도 자동 시작하지 않는다. 별도 승인된 live round에서만 보존한 `.local/rag`의 25.10 RAG-only export를 격리 DB에 복원하고, 기존 평가 질문으로 전달 evidence, 생성 답변, citation/source/revision 일치, 부족 근거 처리, embedding/generation 사용량을 확인한다. 이 작업에서는 export를 복원하거나 요청을 실행하지 않는다.

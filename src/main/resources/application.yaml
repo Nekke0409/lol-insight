@@ -75,6 +75,12 @@ rag:
     generation-timeout: ${RAG_ANSWER_GENERATION_TIMEOUT:30s}
     execution-deadline: ${RAG_ANSWER_EXECUTION_DEADLINE:60s}
     manual-capture-enabled: ${RAG_ANSWER_MANUAL_CAPTURE_ENABLED:false}
+    # manual capture를 켤 때만 read-only plan의 위치·승인 hash·scope·새 run ID를 모두 명시한다.
+    manual-plan-path: ${RAG_ANSWER_MANUAL_PLAN_PATH:}
+    manual-plan-sha256: ${RAG_ANSWER_MANUAL_PLAN_SHA256:}
+    manual-plan-locale: ${RAG_ANSWER_MANUAL_PLAN_LOCALE:}
+    manual-evaluation-run-id: ${RAG_ANSWER_MANUAL_EVALUATION_RUN_ID:}
+    manual-capture-directory: ${RAG_ANSWER_MANUAL_CAPTURE_DIRECTORY:.local/rag/answer-evaluation}
 
 agent:
   # 기본값은 false다. 개인 local 검증에서만 명시적으로 활성화한다.

@@ -6,6 +6,8 @@
 
 따라서 아래 25.10 결과는 모델 품질이나 retrieval 품질의 성공 근거가 아니다. 특히 초가스와 피들스틱 결과는 실제 전달 evidence가 질문의 기대 근거를 포함하지 않았고, 답변도 질문을 충족하지 못했다.
 
+이 결과는 정상 입력의 Hit@K, 정답률, 환각률 또는 개선 전 baseline으로 사용하지 않는다. citation ID가 전달 evidence의 부분집합이었다는 사실도 손상된 입력에서의 답변 사실성을 보장하지 않는다. 반대로 이 출력만으로 원래 한국어 질문의 의미를 모델이 이해하지 못했거나 embedding이 특정 챔피언을 검색하지 못했다고 결론 내릴 수 없다.
+
 ## 격리·복원 확인
 
 - 실행일: 2026-09-25
@@ -38,3 +40,13 @@ provider usage가 없는 실패를 0으로 표시하지 않았다. 위 0회는 �
 - 실행한 25.10 요청은 각 한 번의 retrieval, embedding, generation만 수행했고 backend citation ID 검증을 통과했다. citation은 실제 전달 evidence의 부분집합만 포함했다.
 - 유효한 citation ID가 답변의 의미적 정확성을 보장하지 않았다. 이 실행에서는 topK retrieval/evidence bundle이 기대 근거와 어긋날 수 있음을 확인했다.
 - 한국어 HTTP request body를 byte-preserving UTF-8로 전송하고 서버가 수신한 고정 문구를 유료 호출 전에 확인하는 준비가 다음 수동 round의 선행 조건이다. 이 task에서는 이를 보정하기 위한 재호출을 하지 않는다.
+
+## 후속 무과금 UTF-8 전송·입력 무결성 검증
+
+이후 별도 무과금 작업에서 기존 실패 artifact, snapshot, metadata, question plan, RAG-only SQL export를 수정·복원·삭제하지 않았다. 현재 Windows PowerShell은 `5.1.26100.9444` Desktop이며, 보존 plan은 BOM 없는 UTF-8 2,719 bytes, SHA-256 `5f030d109f43514b01378ade3af0124de66fce246e5126521857973835e04eae`다. 과거 client의 메모리 문자열·직렬화 JSON·실제 body bytes는 보존되지 않았으므로, 서버 수신값의 손상은 확인됐지만 최초 손상 지점은 미확정으로 유지한다.
+
+새 client는 plan bytes를 명시 UTF-8로 읽고 승인 hash를 확인한 뒤 JSON을 다시 파싱하며, BOM 없는 UTF-8 `ByteArrayContent`와 `application/json; charset=utf-8`로만 localhost에 보낸다. response도 raw bytes로 저장한다. 실제 Windows localhost HTTP test는 test-only recording embedding/generation 대역과 함께 한글, 공백, 따옴표, 숫자, slash, `→`를 포함한 plan 문항이 controller DTO·embedding·generator까지 동일하게 전달되고, 한국어 statement/heading이 client 저장 response에 보존됨을 확인했다. 이 test에는 API key, OpenAI/Riot 요청, corpus export, DB/Redis가 필요하지 않았다.
+
+수동 mode server guard는 read-only plan의 SHA-256을 시작 시 확인하고 수신 DTO의 ID·patch·locale·question을 plan과 대조한다. `?` 손상, 다른 question, patch/locale 변경, 미승인 ID는 provider 대역 0회인 `MANUAL_INPUT_MISMATCH`로, malformed JSON은 controller 역직렬화 오류로 끝난다. 동등한 Unicode escape JSON은 DTO 역직렬화 뒤 원문과 같으므로 허용한다. 정상 empty corpus와 active corpus에서 embedding 금지인 plan 오류도 각각 `INSUFFICIENT_EVIDENCE`와 `MANUAL_EXECUTION_PLAN_REJECTED`로 구분했다. 이번 변화는 전송·admission 검증일 뿐 실제 25.10 RAG 답변 품질 평가가 아니다.
+
+따라서 이 문서 상단의 실제 provider 6회 사용량과 HTTP 4회 기록은 그대로 유지하며, 새 무과금 test를 그 사용량에 합산하지 않는다. 다음 live round는 새 run ID와 비어 있는 artifact directory, 승인된 plan hash·locale, 격리 DB의 기존 export hash/active revision 재확인, 명시적인 유료 호출 승인이 모두 갖춰진 뒤에만 별도로 실행한다.
