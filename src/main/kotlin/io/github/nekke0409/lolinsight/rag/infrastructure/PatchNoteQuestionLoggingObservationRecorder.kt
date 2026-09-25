@@ -10,10 +10,17 @@ import org.springframework.stereotype.Component
 class PatchNoteQuestionLoggingObservationRecorder : PatchNoteQuestionObservationRecorder {
     override fun record(summary: PatchNoteQuestionExecutionSummary) {
         logger.info(
-            "rag_patch_note_question outcome={} retrievalAttempts={} generationAttempts={} retrievalResults={} evidence={} citations={} durationMs={}",
+            "rag_patch_note_question outcome={} retrievalAttempts={} queryEmbeddingAttempts={} queryEmbeddingInputTokens={} embeddingLatencyMs={} generationAttempts={} generationInputTokens={} generationOutputTokens={} generationTotalTokens={} generationLatencyMs={} retrievalResults={} evidence={} citations={} durationMs={}",
             summary.outcome,
             summary.retrievalAttempts,
+            summary.queryEmbeddingAttempts,
+            summary.queryEmbeddingInputTokens,
+            summary.embeddingLatency?.toMillis(),
             summary.generationAttempts,
+            summary.generationUsage?.inputTokens,
+            summary.generationUsage?.outputTokens,
+            summary.generationUsage?.totalTokens,
+            summary.generationLatency?.toMillis(),
             summary.retrievalResultCount,
             summary.evidenceCount,
             summary.citationCount,

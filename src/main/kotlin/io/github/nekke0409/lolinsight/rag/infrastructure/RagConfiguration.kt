@@ -71,8 +71,10 @@ data class RagAnswerProperties(
     val maxEvidenceCharacters: Int = 5_000,
     val maxStatements: Int = 5,
     val maxOutputTokens: Long = 1_200,
+    val retrievalTimeout: Duration = Duration.ofSeconds(30),
     val generationTimeout: Duration = Duration.ofSeconds(30),
     val executionDeadline: Duration = Duration.ofSeconds(60),
+    val manualCaptureEnabled: Boolean = false,
 ) {
     init {
         require(maxQuestionCharacters > 0) { "rag.answer.max-question-characters must be positive" }
@@ -80,6 +82,7 @@ data class RagAnswerProperties(
         require(maxEvidenceCharacters > 0) { "rag.answer.max-evidence-characters must be positive" }
         require(maxStatements > 0) { "rag.answer.max-statements must be positive" }
         require(maxOutputTokens > 0) { "rag.answer.max-output-tokens must be positive" }
+        require(!retrievalTimeout.isZero && !retrievalTimeout.isNegative) { "rag.answer.retrieval-timeout must be positive" }
         require(!generationTimeout.isZero && !generationTimeout.isNegative) { "rag.answer.generation-timeout must be positive" }
         require(!executionDeadline.isZero && !executionDeadline.isNegative) { "rag.answer.execution-deadline must be positive" }
     }

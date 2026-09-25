@@ -27,10 +27,16 @@ HTTP -> PatchNoteQuestionService -> PatchNoteRetrievalService(1회) -> evidence 
 - OpenAI retry 0, `store(false)`, 기존 analysis/Agent와 같은 generation quota 사용
 - 질문, evidence, 답변, raw provider response, API key, vector, URL/chunk ID를 로그나 metric tag에 남기지 않는다. 결과 상태, 시도 수, 결과/evidence/citation 수, 지연 시간만 기록한다.
 
+전체 deadline의 남은 시간과 호출별 설정 중 더 짧은 값을 query embedding과 generation의 SDK request timeout으로 전달한다. corpus 계약 조회와 pgvector 검색은 요청별 JDBC statement timeout을 사용하며 공유 JDBC 설정을 바꾸지 않는다. JDBC timeout은 초 단위이고 이미 시작한 HTTP/DB 작업의 즉시 취소를 보장하지는 않지만, deadline 뒤 새 embedding/generation을 시작하지 않는다.
+
+답변 adapter는 provider usage가 제공되면 input/output/total token과 provider latency를 application 실행 요약으로 넘긴다. incomplete/refusal에도 응답 usage가 있으면 한 번 보존하며, usage 없는 실패를 0으로 만들지 않는다.
+
 prompt는 고정 instructions와 별도의 untrusted question/evidence data로 구성한다. tools, URL fetch, SQL, 파일, 환경 변수 또는 Riot/Backend 함수는 제공하지 않는다. 이는 prompt injection을 모두 해결했다고 주장하는 보안 보증이 아니다.
 
 ## 검증과 후속 smoke
 
 자동 검증은 fictional fixture를 parser/chunker/indexing, fake embedding, pgvector retrieval, scripted generator, citation validation까지 연결한다. 이는 실제 생성 품질 평가가 아니며 `.local/rag` 자료나 실제 OpenAI/Riot 호출을 사용하지 않는다.
+
+실제 수동 smoke에만 `RAG_ANSWER_MANUAL_CAPTURE_ENABLED=true`를 추가할 수 있다. localhost 요청의 `X-Rag-Manual-Question-Id`는 고정된 평가 ID를 식별하며, 전달 evidence의 ID·chunk/document/revision·heading·본문 hash/최대 600자 발췌, 생성 statement와 최종 citation을 `.local/rag/answer-evaluation/`에 기록한다. 이는 Git-ignored 평가 artifact이며 정상 로그에는 남기지 않는다. 이 opt-in은 지정된 다섯 ID를 각각 한 번만 허용하고, 25.09에 대한 query embedding을 막으며, 최대 HTTP 5회·query embedding 4회·generation 4회로 제한한다.
 
 후속 수동 smoke에서는 보존한 `.local/rag`의 25.10 RAG-only export를 격리 DB에 복원하고, 기존 평가 질문으로 전달 evidence, 생성 답변, citation/source/revision 일치, 부족 근거 처리, embedding/generation 사용량을 확인한다. 이 작업에서는 export를 복원하거나 요청을 실행하지 않는다.

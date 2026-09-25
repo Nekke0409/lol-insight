@@ -1,5 +1,7 @@
 package io.github.nekke0409.lolinsight.rag.application
 
+import java.time.Duration
+
 class PatchNoteRetrievalService(
     private val embeddingGateway: EmbeddingGateway,
     private val store: PatchNoteDocumentStore,
@@ -11,19 +13,41 @@ class PatchNoteRetrievalService(
         require(maximumEvidenceCharacters > 0) { "maximumEvidenceCharacters must be positive" }
     }
 
-    fun search(request: PatchNoteSearchRequest): List<PatchNoteSearchResult> {
+    fun search(request: PatchNoteSearchRequest): List<PatchNoteSearchResult> = searchWithExecution(request, null).results
+
+    fun searchWithExecution(
+        request: PatchNoteSearchRequest,
+        timeout: Duration?,
+        allowQueryEmbedding: Boolean = true,
+    ): PatchNoteRetrievalExecution {
         request.validate(maximumTopK)
-        val contracts = store.findActiveEmbeddingContracts(request.patchVersion, request.locale)
+        val deadline = timeout?.let(PatchNoteRetrievalDeadline::after)
+        val contracts =
+            deadline?.withRemaining { remaining ->
+                store.findActiveEmbeddingContracts(request.patchVersion, request.locale, remaining)
+            } ?: store.findActiveEmbeddingContracts(request.patchVersion, request.locale)
         if (contracts.isEmpty()) {
-            return emptyList()
+            return PatchNoteRetrievalExecution(
+                emptyList(),
+                queryEmbeddingAttempted = false,
+                queryEmbeddingInputTokens = null,
+                embeddingLatency = null,
+            )
         }
         if (contracts != setOf(embeddingGateway.contract)) {
             throw RagCorpusContractMismatchException(
                 "active patch-note corpus must be reindexed for embedding contract ${embeddingGateway.contract.model}/${embeddingGateway.contract.dimensions}",
             )
         }
+        if (!allowQueryEmbedding) {
+            throw PatchNoteRetrievalExecutionBudgetExceededException()
+        }
 
-        val response = embeddingGateway.embed(listOf(request.query))
+        val embeddingStartedAt = System.nanoTime()
+        val response =
+            deadline?.withRemaining { remaining -> embeddingGateway.embed(listOf(request.query), remaining) }
+                ?: embeddingGateway.embed(listOf(request.query))
+        val embeddingLatency = Duration.ofNanos(System.nanoTime() - embeddingStartedAt)
         if (response.contract != embeddingGateway.contract || response.vectors.size != 1) {
             throw RagEmbeddingInvalidResponseException("embedding provider returned an invalid query embedding response")
         }
@@ -32,29 +56,72 @@ class PatchNoteRetrievalService(
             throw RagEmbeddingInvalidResponseException("embedding provider returned an unexpected query vector dimension")
         }
 
-        return store
-            .search(
-                patchVersion = request.patchVersion,
-                locale = request.locale,
-                contract = embeddingGateway.contract,
-                queryEmbedding = queryEmbedding,
-                topK = request.topK,
-            ).map { row ->
-                PatchNoteSearchResult(
-                    chunkId = row.chunkId,
-                    documentId = row.documentId,
-                    title = row.title,
-                    sourceUrl = row.sourceUrl,
-                    patchVersion = row.patchVersion,
-                    locale = row.locale,
-                    revisionFingerprint = row.revisionFingerprint,
-                    headingPath = row.headingPath,
-                    evidenceText = row.body.truncate(maximumEvidenceCharacters),
-                    cosineDistance = row.cosineDistance,
+        val rows =
+            deadline?.withRemaining { remaining ->
+                store.search(
+                    patchVersion = request.patchVersion,
+                    locale = request.locale,
+                    contract = embeddingGateway.contract,
+                    queryEmbedding = queryEmbedding,
+                    topK = request.topK,
+                    timeout = remaining,
                 )
-            }
+            } ?: store
+                .search(
+                    patchVersion = request.patchVersion,
+                    locale = request.locale,
+                    contract = embeddingGateway.contract,
+                    queryEmbedding = queryEmbedding,
+                    topK = request.topK,
+                )
+        return PatchNoteRetrievalExecution(
+            results =
+                rows.map { row ->
+                    PatchNoteSearchResult(
+                        chunkId = row.chunkId,
+                        documentId = row.documentId,
+                        title = row.title,
+                        sourceUrl = row.sourceUrl,
+                        patchVersion = row.patchVersion,
+                        locale = row.locale,
+                        revisionFingerprint = row.revisionFingerprint,
+                        headingPath = row.headingPath,
+                        evidenceText = row.body.truncate(maximumEvidenceCharacters),
+                        cosineDistance = row.cosineDistance,
+                    )
+                },
+            queryEmbeddingAttempted = true,
+            queryEmbeddingInputTokens = response.inputTokens,
+            embeddingLatency = embeddingLatency,
+        )
     }
 }
+
+data class PatchNoteRetrievalExecution(
+    val results: List<PatchNoteSearchResult>,
+    val queryEmbeddingAttempted: Boolean,
+    val queryEmbeddingInputTokens: Long?,
+    val embeddingLatency: Duration?,
+)
+
+private class PatchNoteRetrievalDeadline private constructor(
+    private val deadlineNanos: Long,
+) {
+    fun <T> withRemaining(call: (Duration) -> T): T {
+        val remaining = deadlineNanos - System.nanoTime()
+        if (remaining <= 0) throw PatchNoteRetrievalDeadlineExceededException()
+        return call(Duration.ofNanos(remaining))
+    }
+
+    companion object {
+        fun after(timeout: Duration): PatchNoteRetrievalDeadline =
+            PatchNoteRetrievalDeadline(Math.addExact(System.nanoTime(), timeout.toNanos()))
+    }
+}
+
+class PatchNoteRetrievalDeadlineExceededException : RagException("RAG retrieval deadline exceeded")
+
+class PatchNoteRetrievalExecutionBudgetExceededException : RagException("RAG query embedding execution budget is exhausted")
 
 data class PatchNoteSearchRequest(
     val query: String,

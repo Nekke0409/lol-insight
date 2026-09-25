@@ -148,12 +148,14 @@ class PatchNoteRetrievalIntegrationTest {
                 override fun generate(
                     request: PatchNoteAnswerGenerationRequest,
                     timeout: java.time.Duration,
-                ): PatchNoteGeneratedAnswer {
+                ): PatchNoteAnswerGenerationResult {
                     delivered = request
-                    return PatchNoteGeneratedAnswer(
-                        PatchNoteAnswerStatus.ANSWERED,
-                        listOf(PatchNoteGeneratedStatement("fixture grounded answer", listOf("E2"))),
-                        listOf("fixture limitation"),
+                    return PatchNoteAnswerGenerationResult(
+                        PatchNoteGeneratedAnswer(
+                            PatchNoteAnswerStatus.ANSWERED,
+                            listOf(PatchNoteGeneratedStatement("fixture grounded answer", listOf("E2"))),
+                            listOf("fixture limitation"),
+                        ),
                     )
                 }
             }
@@ -186,7 +188,7 @@ class PatchNoteRetrievalIntegrationTest {
                     override fun generate(
                         request: PatchNoteAnswerGenerationRequest,
                         timeout: java.time.Duration,
-                    ): PatchNoteGeneratedAnswer {
+                    ): PatchNoteAnswerGenerationResult {
                         generated++
                         error("generation must not run")
                     }
@@ -242,7 +244,7 @@ class PatchNoteRetrievalIntegrationTest {
                 override fun generate(
                     request: PatchNoteAnswerGenerationRequest,
                     timeout: java.time.Duration,
-                ): PatchNoteGeneratedAnswer = answer(request)
+                ): PatchNoteAnswerGenerationResult = PatchNoteAnswerGenerationResult(answer(request))
             },
         )
 

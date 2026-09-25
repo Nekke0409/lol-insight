@@ -13,6 +13,7 @@ import org.springframework.transaction.PlatformTransactionManager
 import org.springframework.transaction.support.TransactionTemplate
 import java.sql.ResultSet
 import java.sql.Types
+import java.time.Duration
 import java.time.ZoneOffset
 import java.util.UUID
 
@@ -89,6 +90,27 @@ class PgvectorPatchNoteDocumentStore(
                 EmbeddingContract(resultSet.getString("embedding_model"), resultSet.getInt("embedding_dimensions"))
             }.toSet()
 
+    override fun findActiveEmbeddingContracts(
+        patchVersion: String,
+        locale: String,
+        timeout: Duration,
+    ): Set<EmbeddingContract> =
+        queryWithTimeout(
+            timeout,
+            """
+            SELECT DISTINCT embedding_model, embedding_dimensions
+            FROM rag_patch_note_document_revision
+            WHERE is_active
+              AND patch_version = :patchVersion
+              AND locale = :locale
+            """.trimIndent(),
+            MapSqlParameterSource()
+                .addValue("patchVersion", patchVersion)
+                .addValue("locale", locale),
+        ) { resultSet, _ ->
+            EmbeddingContract(resultSet.getString("embedding_model"), resultSet.getInt("embedding_dimensions"))
+        }.toSet()
+
     override fun search(
         patchVersion: String,
         locale: String,
@@ -129,6 +151,60 @@ class PgvectorPatchNoteDocumentStore(
             searchRowMapper,
         )
     }
+
+    override fun search(
+        patchVersion: String,
+        locale: String,
+        contract: EmbeddingContract,
+        queryEmbedding: EmbeddingVector,
+        topK: Int,
+        timeout: Duration,
+    ): List<PatchNoteSearchRow> {
+        require(queryEmbedding.values.size == contract.dimensions) { "query vector dimension does not match contract" }
+        return queryWithTimeout(
+            timeout,
+            SEARCH_SQL,
+            searchParameters(patchVersion, locale, contract, queryEmbedding, topK),
+            searchRowMapper,
+        )
+    }
+
+    private fun searchParameters(
+        patchVersion: String,
+        locale: String,
+        contract: EmbeddingContract,
+        queryEmbedding: EmbeddingVector,
+        topK: Int,
+    ): MapSqlParameterSource =
+        MapSqlParameterSource()
+            .addValue("patchVersion", patchVersion)
+            .addValue("locale", locale)
+            .addValue("embeddingModel", contract.model)
+            .addValue("embeddingDimensions", contract.dimensions)
+            .addValue("queryVector", queryEmbedding.toPgvectorLiteral())
+            .addValue("topK", topK)
+
+    private fun <T> queryWithTimeout(
+        timeout: Duration,
+        sql: String,
+        parameters: MapSqlParameterSource,
+        rowMapper: RowMapper<T>,
+    ): List<T> =
+        jdbcTemplate.execute(sql, parameters) { statement ->
+            // JDBC accepts seconds. Rounding up avoids accidentally treating a positive remaining budget as unlimited.
+            statement.queryTimeout = timeout.toJdbcQueryTimeoutSeconds()
+            statement.executeQuery().use { resultSet ->
+                buildList {
+                    var rowNumber = 0
+                    while (resultSet.next()) {
+                        add(rowMapper.mapRow(resultSet, rowNumber++))
+                    }
+                }
+            }
+        }
+
+    private fun Duration.toJdbcQueryTimeoutSeconds(): Int =
+        ((toMillis() + 999) / 1_000).coerceAtLeast(1).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
 
     private fun insertDocumentRevision(indexed: IndexedPatchNote) {
         jdbcTemplate.update(
@@ -230,4 +306,29 @@ class PgvectorPatchNoteDocumentStore(
                 cosineDistance = resultSet.getDouble("cosine_distance"),
             )
         }
+
+    private companion object {
+        val SEARCH_SQL =
+            """
+            SELECT c.id AS chunk_id,
+                   d.id AS document_id,
+                   d.title,
+                   d.source_url,
+                   d.patch_version,
+                   d.locale,
+                   d.revision_fingerprint,
+                   c.heading_path,
+                   c.body,
+                   c.embedding <=> CAST(:queryVector AS vector) AS cosine_distance
+            FROM rag_patch_note_chunk c
+            JOIN rag_patch_note_document_revision d ON d.id = c.document_revision_id
+            WHERE d.is_active
+              AND d.patch_version = :patchVersion
+              AND d.locale = :locale
+              AND d.embedding_model = :embeddingModel
+              AND d.embedding_dimensions = :embeddingDimensions
+            ORDER BY c.embedding <=> CAST(:queryVector AS vector), c.id
+            LIMIT :topK
+            """.trimIndent()
+    }
 }

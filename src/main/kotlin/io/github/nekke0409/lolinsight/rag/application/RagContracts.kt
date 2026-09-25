@@ -1,5 +1,6 @@
 package io.github.nekke0409.lolinsight.rag.application
 
+import java.time.Duration
 import java.time.Instant
 import java.util.UUID
 
@@ -90,6 +91,12 @@ interface EmbeddingGateway {
     val contract: EmbeddingContract
 
     fun embed(inputs: List<String>): EmbeddingBatch
+
+    /** A caller may bound a query embedding without changing the configured client default. */
+    fun embed(
+        inputs: List<String>,
+        timeout: Duration,
+    ): EmbeddingBatch = embed(inputs)
 }
 
 interface PatchNoteParser {
@@ -152,6 +159,12 @@ interface PatchNoteDocumentStore {
         locale: String,
     ): Set<EmbeddingContract>
 
+    fun findActiveEmbeddingContracts(
+        patchVersion: String,
+        locale: String,
+        timeout: Duration,
+    ): Set<EmbeddingContract> = findActiveEmbeddingContracts(patchVersion, locale)
+
     fun search(
         patchVersion: String,
         locale: String,
@@ -159,6 +172,15 @@ interface PatchNoteDocumentStore {
         queryEmbedding: EmbeddingVector,
         topK: Int,
     ): List<PatchNoteSearchRow>
+
+    fun search(
+        patchVersion: String,
+        locale: String,
+        contract: EmbeddingContract,
+        queryEmbedding: EmbeddingVector,
+        topK: Int,
+        timeout: Duration,
+    ): List<PatchNoteSearchRow> = search(patchVersion, locale, contract, queryEmbedding, topK)
 }
 
 sealed class RagException(

@@ -71,8 +71,10 @@ rag:
     max-evidence-characters: ${RAG_ANSWER_MAX_EVIDENCE_CHARACTERS:5000}
     max-statements: ${RAG_ANSWER_MAX_STATEMENTS:5}
     max-output-tokens: ${RAG_ANSWER_MAX_OUTPUT_TOKENS:1200}
+    retrieval-timeout: ${RAG_ANSWER_RETRIEVAL_TIMEOUT:30s}
     generation-timeout: ${RAG_ANSWER_GENERATION_TIMEOUT:30s}
     execution-deadline: ${RAG_ANSWER_EXECUTION_DEADLINE:60s}
+    manual-capture-enabled: ${RAG_ANSWER_MANUAL_CAPTURE_ENABLED:false}
 
 agent:
   # 기본값은 false다. 개인 local 검증에서만 명시적으로 활성화한다.

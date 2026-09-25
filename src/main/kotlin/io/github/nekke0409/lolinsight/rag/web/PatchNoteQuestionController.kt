@@ -10,6 +10,7 @@ import jakarta.validation.constraints.NotBlank
 import jakarta.validation.constraints.Size
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
+import org.springframework.web.bind.annotation.RequestHeader
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
 
@@ -22,10 +23,11 @@ class PatchNoteQuestionController(
     @PostMapping("/patch-note-questions")
     fun ask(
         @RequestBody @Valid request: PatchNoteQuestionHttpRequest,
+        @RequestHeader(name = "X-Rag-Manual-Question-Id", required = false) manualQuestionId: String?,
         httpRequest: HttpServletRequest,
     ): PatchNoteQuestionResponse =
         questionService.answer(
-            PatchNoteQuestionRequest(request.patchVersion, request.locale, request.question),
+            PatchNoteQuestionRequest(request.patchVersion, request.locale, request.question, manualQuestionId),
             rateLimitKeyResolver.resolve(httpRequest),
         )
 }

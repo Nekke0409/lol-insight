@@ -26,16 +26,17 @@ import io.github.nekke0409.lolinsight.global.riot.RiotApiResponseException
 import io.github.nekke0409.lolinsight.global.riot.RiotApiTransportException
 import io.github.nekke0409.lolinsight.match.application.MatchNotFoundException
 import io.github.nekke0409.lolinsight.player.application.PlayerNotFoundException
+import io.github.nekke0409.lolinsight.rag.application.ManualRagSmokeBudgetExceededException
 import io.github.nekke0409.lolinsight.rag.application.PatchNoteAnswerConfigurationException
 import io.github.nekke0409.lolinsight.rag.application.PatchNoteAnswerDeadlineExceededException
 import io.github.nekke0409.lolinsight.rag.application.PatchNoteAnswerFeatureDisabledException
+import io.github.nekke0409.lolinsight.rag.application.PatchNoteAnswerIncompleteException
 import io.github.nekke0409.lolinsight.rag.application.PatchNoteAnswerInvalidResponseException
+import io.github.nekke0409.lolinsight.rag.application.PatchNoteAnswerRefusalException
 import io.github.nekke0409.lolinsight.rag.application.PatchNoteQuestionValidationException
 import io.github.nekke0409.lolinsight.rag.infrastructure.openai.PatchNoteAnswerAuthenticationException
-import io.github.nekke0409.lolinsight.rag.infrastructure.openai.PatchNoteAnswerIncompleteException
 import io.github.nekke0409.lolinsight.rag.infrastructure.openai.PatchNoteAnswerProviderException
 import io.github.nekke0409.lolinsight.rag.infrastructure.openai.PatchNoteAnswerRateLimitException
-import io.github.nekke0409.lolinsight.rag.infrastructure.openai.PatchNoteAnswerRefusalException
 import io.github.nekke0409.lolinsight.rag.infrastructure.openai.PatchNoteAnswerTransportException
 import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpStatus
@@ -53,6 +54,10 @@ class GlobalExceptionHandler {
     @ExceptionHandler(PatchNoteQuestionValidationException::class)
     fun handlePatchNoteQuestionValidation(): ProblemDetail =
         ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, "Patch-note question is invalid.")
+
+    @ExceptionHandler(ManualRagSmokeBudgetExceededException::class)
+    fun handleManualRagSmokeBudgetExceeded(): ProblemDetail =
+        ProblemDetail.forStatusAndDetail(HttpStatus.TOO_MANY_REQUESTS, "Patch-note manual smoke budget is exhausted.")
 
     @ExceptionHandler(PatchNoteAnswerConfigurationException::class)
     fun handlePatchNoteAnswerConfiguration(): ProblemDetail =

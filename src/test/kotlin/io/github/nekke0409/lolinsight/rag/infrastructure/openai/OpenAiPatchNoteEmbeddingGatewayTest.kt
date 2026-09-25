@@ -1,6 +1,7 @@
 package io.github.nekke0409.lolinsight.rag.infrastructure.openai
 
 import com.openai.client.OpenAIClient
+import com.openai.core.RequestOptions
 import com.openai.models.embeddings.CreateEmbeddingResponse
 import com.openai.models.embeddings.Embedding
 import com.openai.models.embeddings.EmbeddingCreateParams
@@ -26,7 +27,7 @@ class OpenAiPatchNoteEmbeddingGatewayTest {
         val first = embedding(index = 0, values = listOf(1.0f, 0.0f, 0.0f))
         val second = embedding(index = 1, values = listOf(0.0f, 1.0f, 0.0f))
         `when`(client.embeddings()).thenReturn(embeddingService)
-        `when`(embeddingService.create(anyEmbeddingParams())).thenReturn(response)
+        `when`(embeddingService.create(anyEmbeddingParams(), anyRequestOptions())).thenReturn(response)
         `when`(response.model()).thenReturn("text-embedding-3-small")
         `when`(response.data()).thenReturn(listOf(second, first))
         `when`(response.usage()).thenReturn(usage)
@@ -37,7 +38,7 @@ class OpenAiPatchNoteEmbeddingGatewayTest {
         assertEquals(listOf(1.0f, 0.0f, 0.0f), result.vectors[0].values)
         assertEquals(listOf(0.0f, 1.0f, 0.0f), result.vectors[1].values)
         assertEquals(7, result.inputTokens)
-        verify(embeddingService).create(anyEmbeddingParams())
+        verify(embeddingService).create(anyEmbeddingParams(), anyRequestOptions())
     }
 
     @Test
@@ -57,7 +58,7 @@ class OpenAiPatchNoteEmbeddingGatewayTest {
         val response = mock(CreateEmbeddingResponse::class.java)
         val outOfOrderEmbedding = embedding(index = 1, values = listOf(1.0f, 0.0f, 0.0f))
         `when`(client.embeddings()).thenReturn(embeddingService)
-        `when`(embeddingService.create(anyEmbeddingParams())).thenReturn(response)
+        `when`(embeddingService.create(anyEmbeddingParams(), anyRequestOptions())).thenReturn(response)
         `when`(response.model()).thenReturn("another-model")
         `when`(response.data()).thenReturn(listOf(outOfOrderEmbedding))
 
@@ -103,5 +104,10 @@ class OpenAiPatchNoteEmbeddingGatewayTest {
             .model("text-embedding-3-small")
             .input("input")
             .build()
+    }
+
+    private fun anyRequestOptions(): RequestOptions {
+        any(RequestOptions::class.java)
+        return RequestOptions.none()
     }
 }

@@ -15,6 +15,8 @@ class PatchNoteQuestionService(
     private val retrievalService: PatchNoteRetrievalService?,
     private val answerGenerator: PatchNoteAnswerGenerator?,
     private val observationRecorder: PatchNoteQuestionObservationRecorder = NoOpPatchNoteQuestionObservationRecorder,
+    private val evidenceObserver: PatchNoteAnswerEvidenceObserver = NoOpPatchNoteAnswerEvidenceObserver,
+    private val executionBudget: PatchNoteQuestionExecutionBudget = NoOpPatchNoteQuestionExecutionBudget,
 ) {
     fun answer(
         request: PatchNoteQuestionRequest,
@@ -23,6 +25,11 @@ class PatchNoteQuestionService(
         val startedAt = System.nanoTime()
         var retrievalAttempts = 0
         var generationAttempts = 0
+        var queryEmbeddingAttempts = 0
+        var queryEmbeddingInputTokens: Long? = null
+        var embeddingLatency: Duration? = null
+        var generationUsage: PatchNoteAnswerUsage? = null
+        var generationLatency: Duration? = null
         var resultCount = 0
         var evidenceCount = 0
         var citationCount = 0
@@ -30,14 +37,28 @@ class PatchNoteQuestionService(
         try {
             requireEnabled()
             request.validate(properties.answer)
+            if (properties.answer.manualCaptureEnabled && request.manualQuestionId == null) {
+                throw PatchNoteQuestionValidationException()
+            }
+            val allowance = executionBudget.beforeRequest(request)
             rateLimiter.check(clientIdentity)
             val deadline = PatchNoteQuestionDeadline.after(properties.answer.executionDeadline)
             val retrieval = requireNotNull(retrievalService) { "RAG retrieval is unavailable" }
             retrievalAttempts++
-            val results =
-                retrieval.search(
-                    PatchNoteSearchRequest(request.question, request.patchVersion, request.locale, properties.answer.topK),
-                )
+            val retrievalExecution =
+                try {
+                    retrieval.searchWithExecution(
+                        PatchNoteSearchRequest(request.question, request.patchVersion, request.locale, properties.answer.topK),
+                        deadline.nextTimeout(properties.answer.retrievalTimeout) ?: throw PatchNoteAnswerDeadlineExceededException(),
+                        allowance.allowQueryEmbedding,
+                    )
+                } catch (_: PatchNoteRetrievalDeadlineExceededException) {
+                    throw PatchNoteAnswerDeadlineExceededException()
+                }
+            val results = retrievalExecution.results
+            queryEmbeddingAttempts = if (retrievalExecution.queryEmbeddingAttempted) 1 else 0
+            queryEmbeddingInputTokens = retrievalExecution.queryEmbeddingInputTokens
+            embeddingLatency = retrievalExecution.embeddingLatency
             resultCount = results.size
             deadline.requireRemaining()
             if (results.isEmpty()) return insufficient("저장된 요청 범위에서 근거를 찾지 못했습니다.").also { outcome = it.status.name }
@@ -52,16 +73,31 @@ class PatchNoteQuestionService(
             if (evidence.isEmpty()) return insufficient("검색된 근거가 요청 처리 한도 안에 포함되지 않았습니다.").also { outcome = it.status.name }
             val timeout = deadline.nextTimeout(properties.answer.generationTimeout) ?: throw PatchNoteAnswerDeadlineExceededException()
             generationAttempts++
-            val generated =
+            executionBudget.beforeGeneration(request)
+            val generation =
                 requireNotNull(answerGenerator) { "RAG answer generator is unavailable" }
                     .generate(PatchNoteAnswerGenerationRequest(request.question, evidence, properties.answer.maxStatements), timeout)
+            generationUsage = generation.usage
+            generationLatency = generation.providerLatency
             deadline.requireRemaining()
-            return validateAndCompose(generated, evidence).also { response ->
+            val response = validateAndCompose(generation.answer, evidence)
+            evidenceObserver.recordSafely(request, evidence, generation.answer, response)
+            return response.also {
                 citationCount = response.citations.size
                 outcome = response.status.name
             }
         } catch (exception: PatchNoteAnswerInvalidResponseException) {
             outcome = "CITATION_OR_SCHEMA_INVALID"
+            throw exception
+        } catch (exception: PatchNoteAnswerIncompleteException) {
+            generationUsage = exception.usage
+            generationLatency = exception.providerLatency
+            outcome = "GENERATION_INCOMPLETE_${exception.reason.name}"
+            throw exception
+        } catch (exception: PatchNoteAnswerRefusalException) {
+            generationUsage = exception.usage
+            generationLatency = exception.providerLatency
+            outcome = "GENERATION_REFUSAL"
             throw exception
         } finally {
             observationRecorder.recordSafely(
@@ -69,6 +105,11 @@ class PatchNoteQuestionService(
                     outcome,
                     retrievalAttempts,
                     generationAttempts,
+                    queryEmbeddingAttempts,
+                    queryEmbeddingInputTokens,
+                    generationUsage,
+                    embeddingLatency,
+                    generationLatency,
                     resultCount,
                     evidenceCount,
                     citationCount,
@@ -162,15 +203,21 @@ data class PatchNoteQuestionRequest(
     val patchVersion: String,
     val locale: String,
     val question: String,
+    val manualQuestionId: String? = null,
 ) {
     fun validate(properties: RagAnswerProperties) {
         if (patchVersion.isBlank() ||
             locale.isBlank() ||
             question.isBlank() ||
-            question.length > properties.maxQuestionCharacters
+            question.length > properties.maxQuestionCharacters ||
+            (manualQuestionId != null && !MANUAL_QUESTION_ID.matches(manualQuestionId))
         ) {
             throw PatchNoteQuestionValidationException()
         }
+    }
+
+    private companion object {
+        val MANUAL_QUESTION_ID = Regex("[a-z0-9-]{1,80}")
     }
 }
 
@@ -225,7 +272,23 @@ interface PatchNoteAnswerGenerator {
     fun generate(
         request: PatchNoteAnswerGenerationRequest,
         timeout: Duration,
-    ): PatchNoteGeneratedAnswer
+    ): PatchNoteAnswerGenerationResult
+}
+
+data class PatchNoteAnswerGenerationResult(
+    val answer: PatchNoteGeneratedAnswer,
+    val usage: PatchNoteAnswerUsage? = null,
+    val providerLatency: Duration? = null,
+)
+
+data class PatchNoteAnswerUsage(
+    val inputTokens: Long,
+    val outputTokens: Long,
+    val totalTokens: Long,
+) {
+    init {
+        require(inputTokens >= 0 && outputTokens >= 0 && totalTokens >= 0) { "token usage must not be negative" }
+    }
 }
 
 data class PatchNoteGeneratedAnswer(
@@ -274,10 +337,38 @@ class PatchNoteAnswerInvalidResponseException(
 
 class PatchNoteAnswerDeadlineExceededException : RuntimeException("Patch-note answer deadline exceeded")
 
+class ManualRagSmokeBudgetExceededException(
+    message: String,
+) : RuntimeException(message)
+
+class PatchNoteAnswerIncompleteException(
+    val reason: PatchNoteAnswerIncompleteReason,
+    val usage: PatchNoteAnswerUsage?,
+    val providerLatency: Duration?,
+) : RuntimeException("RAG answer response was incomplete")
+
+enum class PatchNoteAnswerIncompleteReason {
+    MAX_OUTPUT_TOKENS,
+    MAX_MESSAGES,
+    CONTENT_FILTER,
+    STEERED,
+    UNKNOWN,
+}
+
+class PatchNoteAnswerRefusalException(
+    val usage: PatchNoteAnswerUsage?,
+    val providerLatency: Duration?,
+) : RuntimeException("RAG answer was refused")
+
 data class PatchNoteQuestionExecutionSummary(
     val outcome: String,
     val retrievalAttempts: Int,
     val generationAttempts: Int,
+    val queryEmbeddingAttempts: Int,
+    val queryEmbeddingInputTokens: Long?,
+    val generationUsage: PatchNoteAnswerUsage?,
+    val embeddingLatency: Duration?,
+    val generationLatency: Duration?,
     val retrievalResultCount: Int,
     val evidenceCount: Int,
     val citationCount: Int,
@@ -286,6 +377,42 @@ data class PatchNoteQuestionExecutionSummary(
 
 interface PatchNoteQuestionObservationRecorder {
     fun record(summary: PatchNoteQuestionExecutionSummary)
+}
+
+/** Manual smoke may opt in to this boundary; normal observability never receives raw question, evidence, or answer. */
+interface PatchNoteAnswerEvidenceObserver {
+    fun record(
+        request: PatchNoteQuestionRequest,
+        evidence: List<PatchNoteEvidence>,
+        answer: PatchNoteGeneratedAnswer,
+        response: PatchNoteQuestionResponse,
+    )
+}
+
+interface PatchNoteQuestionExecutionBudget {
+    fun beforeRequest(request: PatchNoteQuestionRequest): PatchNoteQuestionExecutionAllowance
+
+    fun beforeGeneration(request: PatchNoteQuestionRequest)
+}
+
+data class PatchNoteQuestionExecutionAllowance(
+    val allowQueryEmbedding: Boolean,
+)
+
+object NoOpPatchNoteQuestionExecutionBudget : PatchNoteQuestionExecutionBudget {
+    override fun beforeRequest(request: PatchNoteQuestionRequest): PatchNoteQuestionExecutionAllowance =
+        PatchNoteQuestionExecutionAllowance(true)
+
+    override fun beforeGeneration(request: PatchNoteQuestionRequest) = Unit
+}
+
+object NoOpPatchNoteAnswerEvidenceObserver : PatchNoteAnswerEvidenceObserver {
+    override fun record(
+        request: PatchNoteQuestionRequest,
+        evidence: List<PatchNoteEvidence>,
+        answer: PatchNoteGeneratedAnswer,
+        response: PatchNoteQuestionResponse,
+    ) = Unit
 }
 
 object NoOpPatchNoteQuestionObservationRecorder : PatchNoteQuestionObservationRecorder {
@@ -297,6 +424,19 @@ private fun PatchNoteQuestionObservationRecorder.recordSafely(summary: PatchNote
         record(summary)
     } catch (_: Exception) {
         // Observation must not change the response.
+    }
+}
+
+private fun PatchNoteAnswerEvidenceObserver.recordSafely(
+    request: PatchNoteQuestionRequest,
+    evidence: List<PatchNoteEvidence>,
+    answer: PatchNoteGeneratedAnswer,
+    response: PatchNoteQuestionResponse,
+) {
+    try {
+        record(request, evidence, answer, response)
+    } catch (_: Exception) {
+        // Manual evidence capture must not cause a second provider request or change the response.
     }
 }
 

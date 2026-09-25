@@ -12,6 +12,8 @@ import com.openai.errors.RateLimitException
 import com.openai.errors.UnauthorizedException
 import com.openai.models.Reasoning
 import com.openai.models.responses.ResponseStatus
+import com.openai.models.responses.ResponseUsage
+import com.openai.models.responses.StructuredResponse
 import com.openai.models.responses.StructuredResponseCreateParams
 import com.openai.models.responses.StructuredResponseTextConfig
 import io.github.nekke0409.lolinsight.analysis.infrastructure.openai.OPENAI_MAX_RETRIES
@@ -19,9 +21,14 @@ import io.github.nekke0409.lolinsight.analysis.infrastructure.openai.OpenAiConfi
 import io.github.nekke0409.lolinsight.analysis.infrastructure.openai.OpenAiProperties
 import io.github.nekke0409.lolinsight.rag.application.PatchNoteAnswerConfigurationException
 import io.github.nekke0409.lolinsight.rag.application.PatchNoteAnswerGenerationRequest
+import io.github.nekke0409.lolinsight.rag.application.PatchNoteAnswerGenerationResult
 import io.github.nekke0409.lolinsight.rag.application.PatchNoteAnswerGenerator
+import io.github.nekke0409.lolinsight.rag.application.PatchNoteAnswerIncompleteException
+import io.github.nekke0409.lolinsight.rag.application.PatchNoteAnswerIncompleteReason
 import io.github.nekke0409.lolinsight.rag.application.PatchNoteAnswerInvalidResponseException
+import io.github.nekke0409.lolinsight.rag.application.PatchNoteAnswerRefusalException
 import io.github.nekke0409.lolinsight.rag.application.PatchNoteAnswerStatus
+import io.github.nekke0409.lolinsight.rag.application.PatchNoteAnswerUsage
 import io.github.nekke0409.lolinsight.rag.application.PatchNoteGeneratedAnswer
 import io.github.nekke0409.lolinsight.rag.application.PatchNoteGeneratedStatement
 import io.github.nekke0409.lolinsight.rag.infrastructure.RagProperties
@@ -54,7 +61,7 @@ class OpenAiPatchNoteAnswerGenerator(
     override fun generate(
         request: PatchNoteAnswerGenerationRequest,
         timeout: Duration,
-    ): PatchNoteGeneratedAnswer =
+    ): PatchNoteAnswerGenerationResult =
         try {
             openAiProperties.requireConfigured()
             val prompt = objectMapper.writeValueAsString(request)
@@ -75,16 +82,23 @@ class OpenAiPatchNoteAnswerGenerator(
                             ).verbosity(openAiProperties.requestedTextVerbosity())
                             .build(),
                     ).build()
+            val providerStartedAt = System.nanoTime()
             val response = client.responses().create(params, RequestOptions.builder().timeout(timeout).build())
+            val providerLatency = Duration.ofNanos(System.nanoTime() - providerStartedAt)
             if (response.error().isPresent) throw PatchNoteAnswerProviderException(IllegalStateException("provider returned an error"))
             when (response.status().getOrNull()) {
                 ResponseStatus.COMPLETED -> Unit
-                ResponseStatus.INCOMPLETE -> throw PatchNoteAnswerIncompleteException()
+                ResponseStatus.INCOMPLETE ->
+                    throw PatchNoteAnswerIncompleteException(
+                        reason = response.incompleteReason(),
+                        usage = response.usage().getOrNull()?.toPatchNoteAnswerUsage(),
+                        providerLatency = providerLatency,
+                    )
                 null -> throw PatchNoteAnswerInvalidResponseException("missing response status")
                 else -> throw PatchNoteAnswerProviderException(IllegalStateException("provider did not complete response"))
             }
             if (response.rawResponse.output().any { item -> item.isMessage() && item.asMessage().content().any { it.isRefusal() } }) {
-                throw PatchNoteAnswerRefusalException()
+                throw PatchNoteAnswerRefusalException(response.usage().getOrNull()?.toPatchNoteAnswerUsage(), providerLatency)
             }
             val output =
                 response
@@ -100,12 +114,17 @@ class OpenAiPatchNoteAnswerGenerator(
                 runCatching {
                     PatchNoteAnswerStatus.valueOf(requireNotNull(output.status))
                 }.getOrElse { throw PatchNoteAnswerInvalidResponseException("invalid answer status") }
-            PatchNoteGeneratedAnswer(
-                status,
-                output.statements.orEmpty().map {
-                    PatchNoteGeneratedStatement(requireNotNull(it.text), requireNotNull(it.evidenceIds))
-                },
-                output.limitations.orEmpty(),
+            PatchNoteAnswerGenerationResult(
+                answer =
+                    PatchNoteGeneratedAnswer(
+                        status,
+                        output.statements.orEmpty().map {
+                            PatchNoteGeneratedStatement(requireNotNull(it.text), requireNotNull(it.evidenceIds))
+                        },
+                        output.limitations.orEmpty(),
+                    ),
+                usage = response.usage().getOrNull()?.toPatchNoteAnswerUsage(),
+                providerLatency = providerLatency,
             )
         } catch (_: OpenAiConfigurationException) {
             throw PatchNoteAnswerConfigurationException("OpenAI configuration is missing")
@@ -126,6 +145,29 @@ class OpenAiPatchNoteAnswerGenerator(
         } catch (exception: IllegalArgumentException) {
             throw PatchNoteAnswerInvalidResponseException("invalid structured output")
         }
+
+    private fun ResponseUsage.toPatchNoteAnswerUsage(): PatchNoteAnswerUsage =
+        PatchNoteAnswerUsage(
+            inputTokens = inputTokens(),
+            outputTokens = outputTokens(),
+            totalTokens = totalTokens(),
+        )
+
+    private fun StructuredResponse<OpenAiPatchNoteAnswerOutput>.incompleteReason(): PatchNoteAnswerIncompleteReason =
+        incompleteDetails()
+            .getOrNull()
+            ?.reason()
+            ?.getOrNull()
+            ?.asString()
+            ?.let {
+                when (it) {
+                    "max_output_tokens" -> PatchNoteAnswerIncompleteReason.MAX_OUTPUT_TOKENS
+                    "max_messages" -> PatchNoteAnswerIncompleteReason.MAX_MESSAGES
+                    "content_filter" -> PatchNoteAnswerIncompleteReason.CONTENT_FILTER
+                    "steered" -> PatchNoteAnswerIncompleteReason.STEERED
+                    else -> PatchNoteAnswerIncompleteReason.UNKNOWN
+                }
+            } ?: PatchNoteAnswerIncompleteReason.UNKNOWN
 
     private companion object {
         val INSTRUCTIONS =
@@ -154,7 +196,3 @@ class PatchNoteAnswerProviderException(
 class PatchNoteAnswerTransportException(
     cause: Throwable,
 ) : RuntimeException(cause)
-
-class PatchNoteAnswerIncompleteException : RuntimeException("RAG answer response was incomplete")
-
-class PatchNoteAnswerRefusalException : RuntimeException("RAG answer was refused")

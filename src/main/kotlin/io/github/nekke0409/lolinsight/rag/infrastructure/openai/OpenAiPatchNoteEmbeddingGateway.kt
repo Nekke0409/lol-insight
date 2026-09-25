@@ -2,6 +2,7 @@ package io.github.nekke0409.lolinsight.rag.infrastructure.openai
 
 import com.openai.client.OpenAIClient
 import com.openai.client.okhttp.OpenAIOkHttpClient
+import com.openai.core.RequestOptions
 import com.openai.errors.OpenAIInvalidDataException
 import com.openai.errors.OpenAIIoException
 import com.openai.errors.OpenAIServiceException
@@ -15,6 +16,7 @@ import io.github.nekke0409.lolinsight.rag.application.RagEmbeddingInvalidRespons
 import io.github.nekke0409.lolinsight.rag.application.RagEmbeddingProviderException
 import io.github.nekke0409.lolinsight.rag.application.RagEmbeddingTransportException
 import io.github.nekke0409.lolinsight.rag.infrastructure.RagEmbeddingProperties
+import java.time.Duration
 
 /** OpenAI SDK details stay at the infrastructure edge; callers receive only provider-neutral vectors. */
 internal class OpenAiPatchNoteEmbeddingGateway(
@@ -39,8 +41,14 @@ internal class OpenAiPatchNoteEmbeddingGateway(
             }
     }
 
-    override fun embed(inputs: List<String>): EmbeddingBatch {
+    override fun embed(inputs: List<String>): EmbeddingBatch = embed(inputs, properties.timeout)
+
+    override fun embed(
+        inputs: List<String>,
+        timeout: Duration,
+    ): EmbeddingBatch {
         validateInputs(inputs)
+        require(!timeout.isNegative && !timeout.isZero) { "embedding timeout must be positive" }
         return try {
             val response =
                 client
@@ -52,6 +60,7 @@ internal class OpenAiPatchNoteEmbeddingGateway(
                             .dimensions(contract.dimensions.toLong())
                             .inputOfArrayOfStrings(inputs)
                             .build(),
+                        RequestOptions.builder().timeout(timeout).build(),
                     )
             if (response.model() != contract.model) {
                 throw RagEmbeddingInvalidResponseException("embedding provider returned a different model")
