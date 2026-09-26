@@ -9,6 +9,10 @@ import io.github.nekke0409.lolinsight.agent.application.AgentModelProviderExcept
 import io.github.nekke0409.lolinsight.agent.application.AgentModelRateLimitException
 import io.github.nekke0409.lolinsight.agent.application.AgentModelRefusalException
 import io.github.nekke0409.lolinsight.agent.application.AgentModelTransportException
+import io.github.nekke0409.lolinsight.agent.application.AgentPatchNoteConfigurationException
+import io.github.nekke0409.lolinsight.agent.application.AgentPatchNoteFeatureDisabledException
+import io.github.nekke0409.lolinsight.agent.application.AgentPatchNoteRetrievalException
+import io.github.nekke0409.lolinsight.agent.application.AgentPatchNoteScopeInvalidException
 import io.github.nekke0409.lolinsight.agent.application.AgentQuestionTooLongException
 import io.github.nekke0409.lolinsight.analysis.application.PlayerAnalysisAuthenticationException
 import io.github.nekke0409.lolinsight.analysis.application.PlayerAnalysisConfigurationException
@@ -113,6 +117,18 @@ class GlobalExceptionHandler {
     @ExceptionHandler(AgentFeatureDisabledException::class)
     fun handleAgentFeatureDisabledException(): ProblemDetail =
         ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, "AI agent is not enabled.")
+
+    @ExceptionHandler(AgentPatchNoteFeatureDisabledException::class)
+    fun handleAgentPatchNoteFeatureDisabled(): ProblemDetail =
+        ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, "Agent patch-note search is not enabled.")
+
+    @ExceptionHandler(AgentPatchNoteScopeInvalidException::class)
+    fun handleAgentPatchNoteScopeInvalid(): ProblemDetail =
+        ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, "Agent patch-note scope is invalid.")
+
+    @ExceptionHandler(AgentPatchNoteConfigurationException::class, AgentPatchNoteRetrievalException::class)
+    fun handleAgentPatchNoteUnavailable(): ProblemDetail =
+        ProblemDetail.forStatusAndDetail(HttpStatus.SERVICE_UNAVAILABLE, "Agent patch-note retrieval is unavailable.")
 
     @ExceptionHandler(AgentQuestionTooLongException::class)
     fun handleAgentQuestionTooLongException(): ProblemDetail =

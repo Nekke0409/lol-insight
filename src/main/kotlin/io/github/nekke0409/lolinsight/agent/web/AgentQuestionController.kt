@@ -1,5 +1,6 @@
 package io.github.nekke0409.lolinsight.agent.web
 
+import io.github.nekke0409.lolinsight.agent.application.AgentPatchNoteScope
 import io.github.nekke0409.lolinsight.agent.application.AgentQuestionResponse
 import io.github.nekke0409.lolinsight.agent.application.AgentQuestionService
 import io.github.nekke0409.lolinsight.analysis.ratelimit.AnalysisRateLimitKeyResolver
@@ -33,7 +34,10 @@ class AgentQuestionController(
     @PostMapping("/{gameName}/{tagLine}/agent-questions")
     @Operation(
         summary = "플레이어 경기 데이터에 질문",
-        description = "최근 Ranked Solo 통계와 peer comparison Tool을 사용하는 Agent 질문입니다. 기본 설정에서는 비활성화되어 404를 반환하며, 호출 시 외부 API 비용과 기존 제한이 적용됩니다.",
+        description =
+            "최근 Ranked Solo 통계와 peer comparison Tool을 사용하는 Agent 질문입니다. " +
+                "knowledgeScope를 명시하고 Agent 패치 노트 Tool과 RAG retrieval을 모두 활성화한 경우에만 " +
+                "해당 범위의 공식 패치 노트 검색 Tool을 추가합니다. 독립 RAG answer generator 설정은 필요하지 않습니다.",
     )
     @ApiResponses(
         value = [
@@ -44,7 +48,7 @@ class AgentQuestionController(
             ),
             ApiResponse(
                 responseCode = "400",
-                description = "경로 값 또는 question 입력 검증 실패",
+                description = "경로 값, question 또는 knowledgeScope 입력 검증 실패",
                 content = [Content(schema = Schema(implementation = ProblemDetail::class))],
             ),
             ApiResponse(
@@ -83,7 +87,14 @@ class AgentQuestionController(
             content = [
                 Content(
                     schema = Schema(implementation = AgentQuestionRequest::class),
-                    examples = [ExampleObject(value = "{\"question\":\"최근 Ranked Solo에서 개선할 점은 무엇인가요?\"}")],
+                    examples = [
+                        ExampleObject(value = "{\"question\":\"최근 Ranked Solo에서 개선할 점은 무엇인가요?\"}"),
+                        ExampleObject(
+                            value =
+                                "{\"question\":\"25.10 패치에서 룰루 궁극기는 어떻게 바뀌었어?\",\"knowledgeScope\":" +
+                                    "{\"patchVersion\":\"25.10\",\"locale\":\"ko-KR\"}}",
+                        ),
+                    ],
                 ),
             ],
         )
@@ -96,6 +107,7 @@ class AgentQuestionController(
             tagLine = tagLine,
             question = request.question,
             clientIdentity = analysisRateLimitKeyResolver.resolve(httpRequest),
+            knowledgeScope = request.knowledgeScope?.let { AgentPatchNoteScope(it.patchVersion, it.locale) },
         )
 }
 
@@ -103,4 +115,15 @@ data class AgentQuestionRequest(
     @field:NotBlank
     @field:Size(max = 1_000)
     val question: String,
+    @field:Valid
+    val knowledgeScope: AgentKnowledgeScopeRequest? = null,
+)
+
+data class AgentKnowledgeScopeRequest(
+    @field:NotBlank
+    @field:Size(max = 10)
+    val patchVersion: String,
+    @field:NotBlank
+    @field:Size(max = 10)
+    val locale: String,
 )

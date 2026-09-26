@@ -17,6 +17,7 @@ import org.mockito.Mockito.mock
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.`when`
 import tools.jackson.databind.json.JsonMapper
+import java.time.Duration
 import java.time.Instant
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -139,6 +140,61 @@ class AgentToolDispatcherTest {
     fun `normalizes valid tool arguments for repeated call detection`() {
         val compact = dispatcher.callSignature(call("get_ranked_stats", "{\"groupBy\":\"POSITION\"}"))
         val spaced = dispatcher.callSignature(call("get_ranked_stats", "{ \"groupBy\" : \"POSITION\" }"))
+
+        assertEquals(compact, spaced)
+    }
+
+    @Test
+    fun `rejects patch-note Tool arguments outside its strict query schema before retrieval`() {
+        val context =
+            dispatcher.newContext(
+                "Hide on bush",
+                "KR1",
+                AgentPatchNoteScope("25.10", "ko-KR"),
+            )
+
+        val empty = dispatcher.dispatch(call(SEARCH_PATCH_NOTES, "{\"query\":\"  \"}"), context, Duration.ofSeconds(1))
+        val extra =
+            dispatcher.dispatch(
+                call(SEARCH_PATCH_NOTES, "{\"query\":\"룰루\",\"patchVersion\":\"other\"}"),
+                context,
+                Duration.ofSeconds(1),
+            )
+        val localeOverride =
+            dispatcher.dispatch(
+                call(SEARCH_PATCH_NOTES, "{\"query\":\"룰루\",\"locale\":\"en-US\"}"),
+                context,
+                Duration.ofSeconds(1),
+            )
+        val playerOverride =
+            dispatcher.dispatch(
+                call(SEARCH_PATCH_NOTES, "{\"query\":\"룰루\",\"gameName\":\"other\"}"),
+                context,
+                Duration.ofSeconds(1),
+            )
+        val noScope =
+            dispatcher.dispatch(
+                call(SEARCH_PATCH_NOTES, "{\"query\":\"룰루\"}"),
+                dispatcher.newContext("Hide on bush", "KR1"),
+                Duration.ofSeconds(1),
+            )
+
+        assertFalse(empty.success)
+        assertEquals("INVALID_TOOL_ARGUMENTS", (empty.payload as AgentToolErrorResult).code)
+        assertFalse(extra.success)
+        assertEquals("INVALID_TOOL_ARGUMENTS", (extra.payload as AgentToolErrorResult).code)
+        assertFalse(localeOverride.success)
+        assertEquals("INVALID_TOOL_ARGUMENTS", (localeOverride.payload as AgentToolErrorResult).code)
+        assertFalse(playerOverride.success)
+        assertEquals("INVALID_TOOL_ARGUMENTS", (playerOverride.payload as AgentToolErrorResult).code)
+        assertFalse(noScope.success)
+        assertEquals("UNSUPPORTED_TOOL", (noScope.payload as AgentToolErrorResult).code)
+    }
+
+    @Test
+    fun `normalizes valid patch-note query arguments for repeated call detection`() {
+        val compact = dispatcher.callSignature(call(SEARCH_PATCH_NOTES, "{\"query\":\"룰루 궁극기\"}"))
+        val spaced = dispatcher.callSignature(call(SEARCH_PATCH_NOTES, "{ \"query\" : \"룰루 궁극기\" }"))
 
         assertEquals(compact, spaced)
     }

@@ -92,6 +92,11 @@ agent:
   max-question-characters: ${AGENT_MAX_QUESTION_CHARACTERS:1000}
   max-tool-result-characters: ${AGENT_MAX_TOOL_RESULT_CHARACTERS:12000}
   max-output-tokens: ${AGENT_MAX_OUTPUT_TOKENS:600}
+  patch-notes:
+    # Agent가 retrieval Tool을 노출하는 별도 opt-in이다. rag.answer.enabled와는 독립적이다.
+    enabled: ${AGENT_PATCH_NOTES_ENABLED:false}
+    top-k: ${AGENT_PATCH_NOTES_TOP_K:5}
+    max-evidence-characters: ${AGENT_PATCH_NOTES_MAX_EVIDENCE_CHARACTERS:5000}
   smoke-observation:
     # 로컬 smoke에서만 허용된 Tool과 식별정보 없는 통계 요약을 기록한다.
     enabled: ${AGENT_SMOKE_OBSERVATION_ENABLED:false}

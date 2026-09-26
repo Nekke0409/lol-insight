@@ -6,7 +6,6 @@ import io.github.nekke0409.lolinsight.rag.infrastructure.RagAnswerProperties
 import io.github.nekke0409.lolinsight.rag.infrastructure.RagProperties
 import org.springframework.stereotype.Service
 import java.time.Duration
-import java.util.UUID
 
 @Service
 class PatchNoteQuestionService(
@@ -133,32 +132,8 @@ class PatchNoteQuestionService(
         if (!properties.enabled) throw PatchNoteAnswerConfigurationException("rag.answer.enabled requires rag.enabled=true")
     }
 
-    private fun buildEvidence(results: List<PatchNoteSearchResult>): List<PatchNoteEvidence> {
-        var remaining = properties.answer.maxEvidenceCharacters
-        val seen = mutableSetOf<UUID>()
-        val selected = mutableListOf<PatchNoteEvidence>()
-        results.forEach { row ->
-            if (!seen.add(row.chunkId)) return@forEach
-            val candidate =
-                PatchNoteEvidence(
-                    "E${selected.size + 1}",
-                    row.chunkId,
-                    row.documentId,
-                    row.title,
-                    row.sourceUrl,
-                    row.patchVersion,
-                    row.locale,
-                    row.revisionFingerprint,
-                    row.headingPath,
-                    row.evidenceText,
-                )
-            val size = candidate.promptCharacters()
-            if (size > remaining) return@forEach
-            remaining -= size
-            selected += candidate
-        }
-        return selected
-    }
+    private fun buildEvidence(results: List<PatchNoteSearchResult>): List<PatchNoteEvidence> =
+        PatchNoteEvidenceSelector.select(results, properties.answer.maxEvidenceCharacters, "E")
 
     private fun validateAndCompose(
         generated: PatchNoteGeneratedAnswer,
@@ -230,45 +205,6 @@ data class PatchNoteQuestionRequest(
 
 enum class PatchNoteAnswerStatus { ANSWERED, INSUFFICIENT_EVIDENCE }
 
-data class PatchNoteEvidence(
-    val evidenceId: String,
-    val chunkId: UUID,
-    val documentId: UUID,
-    val title: String,
-    val sourceUrl: String,
-    val patchVersion: String,
-    val locale: String,
-    val revisionFingerprint: String,
-    val headingPath: List<String>,
-    val evidenceText: String,
-) {
-    fun promptCharacters(): Int =
-        listOf(
-            evidenceId,
-            title,
-            sourceUrl,
-            patchVersion,
-            locale,
-            revisionFingerprint,
-            headingPath.joinToString(" > "),
-            evidenceText,
-        ).sumOf(String::length)
-
-    fun toCitation() =
-        PatchNoteCitation(
-            evidenceId,
-            sourceUrl,
-            title,
-            patchVersion,
-            locale,
-            headingPath,
-            chunkId,
-            documentId,
-            revisionFingerprint,
-            evidenceText,
-        )
-}
-
 data class PatchNoteAnswerGenerationRequest(
     val question: String,
     val evidence: List<PatchNoteEvidence>,
@@ -315,19 +251,6 @@ data class PatchNoteQuestionResponse(
     val statements: List<PatchNoteGeneratedStatement>,
     val citations: List<PatchNoteCitation>,
     val limitations: List<String>,
-)
-
-data class PatchNoteCitation(
-    val evidenceId: String,
-    val sourceUrl: String,
-    val title: String,
-    val patchVersion: String,
-    val locale: String,
-    val headingPath: List<String>,
-    val chunkId: UUID,
-    val documentId: UUID,
-    val revisionFingerprint: String,
-    val evidenceText: String,
 )
 
 class PatchNoteAnswerFeatureDisabledException : RuntimeException("RAG patch-note answer is disabled")

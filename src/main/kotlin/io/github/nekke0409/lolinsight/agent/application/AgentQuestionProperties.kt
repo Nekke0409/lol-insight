@@ -23,6 +23,7 @@ data class AgentQuestionProperties(
     val maxToolResultCharacters: Int = 12_000,
     @field:Min(1)
     val maxOutputTokens: Long = 600,
+    val patchNotes: AgentPatchNoteProperties = AgentPatchNoteProperties(),
 ) {
     init {
         require(!modelRequestTimeout.isZero && !modelRequestTimeout.isNegative) {
@@ -40,6 +41,34 @@ data class AgentQuestionProperties(
     }
 }
 
+data class AgentPatchNoteProperties(
+    val enabled: Boolean = false,
+    @field:Min(1)
+    val topK: Int = 5,
+    @field:Min(1)
+    val maxEvidenceCharacters: Int = 5_000,
+) {
+    fun requireEnabled() {
+        if (!enabled) throw AgentPatchNoteFeatureDisabledException()
+    }
+}
+
+data class AgentPatchNoteScope(
+    val patchVersion: String,
+    val locale: String,
+) {
+    fun validate() {
+        if (!PATCH_VERSION.matches(patchVersion) || locale != SUPPORTED_LOCALE) {
+            throw AgentPatchNoteScopeInvalidException()
+        }
+    }
+
+    private companion object {
+        val PATCH_VERSION = Regex("\\d{2}\\.\\d{1,2}")
+        const val SUPPORTED_LOCALE = "ko-KR"
+    }
+}
+
 @Configuration(proxyBeanMethods = false)
 @EnableConfigurationProperties(AgentQuestionProperties::class)
 class AgentQuestionConfiguration
@@ -47,6 +76,18 @@ class AgentQuestionConfiguration
 class AgentFeatureDisabledException : RuntimeException("Agent feature is disabled")
 
 class AgentQuestionTooLongException : RuntimeException("Agent question exceeds the configured limit")
+
+class AgentPatchNoteFeatureDisabledException : RuntimeException("Agent patch-note Tool is disabled")
+
+class AgentPatchNoteScopeInvalidException : RuntimeException("Agent patch-note scope is invalid")
+
+class AgentPatchNoteConfigurationException(
+    message: String,
+) : RuntimeException(message)
+
+class AgentPatchNoteRetrievalException(
+    cause: Throwable,
+) : RuntimeException("Agent patch-note retrieval failed", cause)
 
 class AgentModelInvalidResponseException : RuntimeException("Agent model response is invalid")
 

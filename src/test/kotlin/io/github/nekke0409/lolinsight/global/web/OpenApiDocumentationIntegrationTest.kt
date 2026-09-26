@@ -101,11 +101,11 @@ class OpenApiDocumentationIntegrationTest {
         assertResponseSchema(paths.path("/api/v1/players/{gameName}/{tagLine}/analysis").path("post"), "200", "PlayerAnalysisResponse")
         assertResponseSchema(paths.path("/api/v1/matches/{matchId}").path("get"), "200", "MatchResponse")
         assertResponseSchema(paths.path("/api/v1/analysis-jobs/{jobId}").path("get"), "200", "AnalysisJobView")
-        assertResponseSchema(
-            paths.path("/api/v1/players/{gameName}/{tagLine}/agent-questions").path("post"),
-            "200",
-            "AgentQuestionResponse",
-        )
+        val agentQuestionOperation = paths.path("/api/v1/players/{gameName}/{tagLine}/agent-questions").path("post")
+        assertResponseSchema(agentQuestionOperation, "200", "AgentQuestionResponse")
+        assertTrue(agentQuestionOperation.path("responses").has("400"))
+        assertTrue(agentQuestionOperation.path("responses").has("404"))
+        assertTrue(agentQuestionOperation.path("responses").has("503"))
 
         val recentMatchesOperation = paths.path("/api/v1/players/{gameName}/{tagLine}/matches").path("get")
         val tagLine = parameter(recentMatchesOperation, "tagLine")
@@ -144,6 +144,31 @@ class OpenApiDocumentationIntegrationTest {
         assertTrue(analysisJobSchema.has("createdAt"))
         assertTrue(analysisJobCreation.path("responses").has("429"))
         assertTrue(analysisJobCreation.path("responses").has("503"))
+
+        val agentRequestSchema = responseSchema(agentQuestionOperation.path("requestBody"))
+        assertEquals("#/components/schemas/AgentQuestionRequest", agentRequestSchema.path("\$ref").asText())
+        val agentRequestProperties =
+            document
+                .path("components")
+                .path("schemas")
+                .path("AgentQuestionRequest")
+                .path("properties")
+        assertTrue(agentRequestProperties.has("knowledgeScope"))
+        val agentScopeProperties =
+            document
+                .path("components")
+                .path("schemas")
+                .path("AgentKnowledgeScopeRequest")
+                .path("properties")
+        assertTrue(agentScopeProperties.has("patchVersion"))
+        assertTrue(agentScopeProperties.has("locale"))
+        val agentResponseProperties =
+            document
+                .path("components")
+                .path("schemas")
+                .path("AgentQuestionResponse")
+                .path("properties")
+        assertEquals("array", agentResponseProperties.path("citations").path("type").asText())
     }
 
     @Test

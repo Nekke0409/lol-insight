@@ -2,6 +2,7 @@ package io.github.nekke0409.lolinsight.agent.application
 
 import io.github.nekke0409.lolinsight.analysis.ratelimit.AnalysisGenerationRateLimiter
 import io.github.nekke0409.lolinsight.analysis.ratelimit.AnalysisRateLimitKey
+import io.github.nekke0409.lolinsight.rag.infrastructure.RagProperties
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.stereotype.Service
 import java.time.Duration
@@ -15,21 +16,24 @@ class AgentQuestionService(
     private val toolExecutionRunner: AgentToolExecutionRunner,
     private val observationRecorder: AgentQuestionObservationRecorder = NoOpAgentQuestionObservationRecorder,
     @Autowired(required = false) private val smokeObservationRecorder: AgentSmokeObservationRecorder? = null,
+    private val ragProperties: RagProperties = RagProperties(),
 ) {
     fun answer(
         gameName: String,
         tagLine: String,
         question: String,
         clientIdentity: AnalysisRateLimitKey,
+        knowledgeScope: AgentPatchNoteScope? = null,
     ): AgentQuestionResponse {
         properties.requireEnabled()
         requireQuestionWithinLimit(question)
+        requirePatchNoteScope(knowledgeScope)
         // This quota is intentionally consumed once per HTTP question, not once per loop turn.
         rateLimiter.check(clientIdentity)
 
         val executionStartedAt = System.nanoTime()
         val deadline = AgentExecutionDeadline.after(properties.executionDeadline)
-        val toolContext = toolDispatcher.newContext(gameName, tagLine)
+        val toolContext = toolDispatcher.newContext(gameName, tagLine, knowledgeScope)
         val usedTools = mutableListOf<AgentUsedTool>()
         val limitations = linkedSetOf<String>()
         val handledCallSignatures = mutableSetOf<String>()
@@ -38,6 +42,12 @@ class AgentQuestionService(
         var toolExecutions = 0
         var terminationReason: AgentTerminationReason? = null
         var incompleteReason: AgentModelIncompleteReason? = null
+        var patchNoteSearchAttempts = 0
+        var queryEmbeddingAttempts = 0
+        var queryEmbeddingInputTokens: Long? = null
+        var retrievalResultCount = 0
+        var deliveredEvidenceCount = 0
+        var citationCount = 0
         var continuation: AgentModelContinuation? = null
         var outputsForContinuation: List<AgentModelToolOutput> = emptyList()
 
@@ -57,11 +67,12 @@ class AgentQuestionService(
                 modelRequests++
                 val turn =
                     if (continuation == null) {
-                        modelGateway.start(question, allowToolCalls, modelTimeout)
+                        modelGateway.start(question, toolContext.allowedToolNames, allowToolCalls, modelTimeout)
                     } else {
                         modelGateway.continueWithToolOutputs(
                             continuation = checkNotNull(continuation),
                             outputs = outputsForContinuation,
+                            allowedToolNames = toolContext.allowedToolNames,
                             allowToolCalls = allowToolCalls,
                             timeout = modelTimeout,
                         )
@@ -74,20 +85,26 @@ class AgentQuestionService(
                 }
 
                 if (turn.toolCalls.isEmpty()) {
-                    val answer = turn.text?.trim().orEmpty()
-                    return if (answer.isNotBlank()) {
-                        finish(
+                    turn.finalAnswer?.let { finalAnswer ->
+                        val validated = AgentFinalAnswerValidator.validateAndCompose(finalAnswer, toolContext, usedTools)
+                        limitations += validated.limitations
+                        citationCount = validated.citations.size
+                        return finish(
                             AgentQuestionResponse(
-                                answer = answer,
+                                answer = validated.answer,
                                 usedTools = usedTools,
                                 dataLimitations = limitations.toList(),
                                 terminationReason = AgentTerminationReason.COMPLETED,
+                                citations = validated.citations,
                             ),
                         )
+                    }
+                    if (knowledgeScope != null) throw AgentModelInvalidResponseException()
+                    val answer = turn.text?.trim().orEmpty()
+                    return if (answer.isNotBlank()) {
+                        finish(AgentQuestionResponse(answer, usedTools, limitations.toList(), AgentTerminationReason.COMPLETED))
                     } else {
-                        finish(
-                            boundedResponse(usedTools, limitations, AgentTerminationReason.MODEL_RETURNED_NO_FINAL_ANSWER),
-                        )
+                        finish(boundedResponse(usedTools, limitations, AgentTerminationReason.MODEL_RETURNED_NO_FINAL_ANSWER))
                     }
                 }
 
@@ -106,6 +123,7 @@ class AgentQuestionService(
 
                 val call = turn.toolCalls.single()
                 toolExecutions++
+                if (call.name == SEARCH_PATCH_NOTES) patchNoteSearchAttempts++
                 val signature = toolDispatcher.callSignature(call)
                 val dispatched =
                     if (!handledCallSignatures.add(signature)) {
@@ -128,7 +146,7 @@ class AgentQuestionService(
                             )
                         }
                         try {
-                            toolExecutionRunner.execute(toolTimeout) { toolDispatcher.dispatch(call, toolContext) }
+                            toolExecutionRunner.execute(toolTimeout) { toolDispatcher.dispatch(call, toolContext, toolTimeout) }
                         } catch (_: AgentToolExecutionDeadlineExceededException) {
                             usedTools += AgentUsedTool(observedAgentToolName(call.name), success = false, invocation = toolExecutions)
                             limitations += "Tool 조회가 Agent 전체 실행 시간을 초과하여 중단되었습니다."
@@ -149,6 +167,10 @@ class AgentQuestionService(
                                     AgentTerminationReason.TOOL_EXECUTION_UNAVAILABLE,
                                 ),
                             )
+                        } catch (exception: AgentPatchNoteRetrievalException) {
+                            usedTools += AgentUsedTool(observedAgentToolName(call.name), success = false, invocation = toolExecutions)
+                            limitations += "패치 노트 검색을 완료하지 못했습니다."
+                            throw exception
                         }
                     }
                 smokeObservationRecorder.recordSafely(dispatched)
@@ -161,6 +183,15 @@ class AgentQuestionService(
                 }
                 val serializedOutput = toolDispatcher.serialize(dispatched)
                 val boundedOutput = serializedOutput.withinToolResultLimit(properties.maxToolResultCharacters)
+                if (boundedOutput.delivered) {
+                    toolContext.acceptDeliveredPatchNoteEvidence(dispatched)
+                    deliveredEvidenceCount += dispatched.patchNoteEvidence.size
+                }
+                dispatched.patchNoteSearchExecution?.let {
+                    if (it.queryEmbeddingAttempted) queryEmbeddingAttempts++
+                    queryEmbeddingInputTokens = it.queryEmbeddingInputTokens
+                    retrievalResultCount = it.resultCount
+                }
                 usedTools += AgentUsedTool(dispatched.toolName, dispatched.success, toolExecutions)
                 limitations += dispatched.limitations
                 limitations += boundedOutput.limitations
@@ -205,6 +236,12 @@ class AgentQuestionService(
                     incompleteReason = incompleteReason,
                     duration = Duration.ofNanos(System.nanoTime() - executionStartedAt),
                     usage = usage,
+                    patchNoteSearchAttempts = patchNoteSearchAttempts,
+                    queryEmbeddingAttempts = queryEmbeddingAttempts,
+                    queryEmbeddingInputTokens = queryEmbeddingInputTokens,
+                    retrievalResultCount = retrievalResultCount,
+                    deliveredEvidenceCount = deliveredEvidenceCount,
+                    citationCount = citationCount,
                 ),
             )
         }
@@ -213,6 +250,18 @@ class AgentQuestionService(
     private fun requireQuestionWithinLimit(question: String) {
         if (question.isBlank() || question.length > properties.maxQuestionCharacters) {
             throw AgentQuestionTooLongException()
+        }
+    }
+
+    private fun requirePatchNoteScope(scope: AgentPatchNoteScope?) {
+        if (scope == null) return
+        scope.validate()
+        properties.patchNotes.requireEnabled()
+        if (!ragProperties.enabled) {
+            throw AgentPatchNoteConfigurationException("agent.patch-notes.enabled requires rag.enabled=true")
+        }
+        if (properties.patchNotes.topK > ragProperties.retrieval.maxTopK) {
+            throw AgentPatchNoteConfigurationException("agent.patch-notes.top-k must not exceed rag.retrieval.max-top-k")
         }
     }
 
@@ -250,6 +299,7 @@ data class AgentQuestionResponse(
     val usedTools: List<AgentUsedTool>,
     val dataLimitations: List<String>,
     val terminationReason: AgentTerminationReason,
+    val citations: List<io.github.nekke0409.lolinsight.rag.application.PatchNoteCitation> = emptyList(),
 )
 
 data class AgentUsedTool(
@@ -296,14 +346,16 @@ private class AgentExecutionDeadline private constructor(
 private data class BoundedToolOutput(
     val output: String,
     val limitations: List<String>,
+    val delivered: Boolean,
 )
 
 private fun String.withinToolResultLimit(maximumCharacters: Int): BoundedToolOutput =
     if (length <= maximumCharacters) {
-        BoundedToolOutput(this, emptyList())
+        BoundedToolOutput(this, emptyList(), true)
     } else {
         BoundedToolOutput(
             output = """{"status":"RESULT_TOO_LARGE","message":"Tool result exceeded the configured response limit."}""",
             limitations = listOf("Tool 결과가 허용된 크기를 초과하여 상세 데이터가 제공되지 않았습니다."),
+            delivered = false,
         )
     }

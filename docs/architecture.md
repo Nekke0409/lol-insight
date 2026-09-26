@@ -7,9 +7,9 @@
 
 아직 구현되지 않은 세부사항은 필요 이상으로 미리 확정하지 않는다.
 
-이 문서에서 **현재 구현**은 code와 현재 contract 문서로 검증된 동작만 뜻한다. Tool-using Agent v0.1, Ranked Solo
-Match 기반 Automation v0.1, 그리고 기본 비활성화된 공식 패치 노트 retrieval v0.1과 공식 Korean 25.10 한 건의 실제
-embedding·검색 평가는 구현된 현재 기능이다. 최종 RAG 답변 생성·Agent 연결, 여러 문서에 일반화한 의미 검색 품질 검증,
+이 문서에서 **현재 구현**은 code와 현재 contract 문서로 검증된 동작만 뜻한다. Tool-using Agent v0.2, Ranked Solo
+Match 기반 Automation v0.1, 그리고 기본 비활성화된 공식 패치 노트 retrieval·answer 경계와 공식 Korean 25.10 한 건의 실제
+embedding·검색 평가, Agent의 명시 범위 patch-note retrieval Tool 연결은 구현된 현재 기능이다. 여러 문서에 일반화한 의미 검색 품질 검증,
 deployment 확장처럼 아직 구현되지 않은 항목은 미래
 방향과 경계로만 기록하며 현재 제공 기능처럼 표현하지 않는다.
 
@@ -856,7 +856,7 @@ Trigger
 계산된 결과를 자연어로 설명할 수 있지만 trigger condition을 임의로 결정하지 않는다. 실제 구현을 시작할 때에만
 `docs/automation/`에 세부 contract를 추가한다.
 
-### Tool-using Agent v0.1
+### Tool-using Agent v0.2
 
 `POST /api/v1/players/{gameName}/{tagLine}/agent-questions`는 path로 고정한 대상 플레이어의 질문만 받는다.
 기능은 기본 비활성화이며 `AGENT_ENABLED=true`인 개인 검증 경로에서만 실행한다. Agent는 `AgentModelGateway`
@@ -881,8 +881,15 @@ deadline은 provider 호출뿐 아니라 Tool dispatcher 대기에도 적용한�
 Responses adapter는 `store(false)` continuation에 reasoning/function-call item과 `call_id` output을 순서대로 보존하고,
 `completed`가 아닌 provider response·refusal·빈 최종 답변을 완료로 처리하지 않는다. incomplete의 알려진 사유도 safe
 code로 보존한다. 안전한 실행 요약은 호출 수,
-허용 Tool의 결과, 종료 사유, 지연 시간, 제공된 token usage만 남기며 질문·payload·식별자·raw response는 남기지 않는다. 자세한 계약은
-[`agent/tool-using-agent-v0.1.md`](agent/tool-using-agent-v0.1.md), 결정 근거는 [ADR-017](adr/017-use-bounded-tool-using-agent.md)을 따른다.
+허용 Tool의 결과, 종료 사유, 지연 시간, 제공된 token usage만 남기며 질문·payload·식별자·raw response는 남기지 않는다.
+
+`knowledgeScope`가 명시되고 `AGENT_PATCH_NOTES_ENABLED=true`, `RAG_ENABLED=true`인 요청에서만
+`search_patch_notes(query)`가 추가된다. 이 Tool은 `PatchNoteRetrievalService`를 재사용해 서버 고정 patch/`ko-KR`
+범위의 evidence만 반환하며, 독립 `PatchNoteQuestionService`나 answer generator를 호출하지 않는다. document evidence는
+request-local registry에만 보관하고 structured final statement의 citation ID를 Backend가 검증한다. 문서 Tool 단독 실행은
+player comparison context를 만들지 않으며, RAG answer flag는 Agent Tool 조건이 아니다. 자세한 계약은
+[`agent/tool-using-agent-v0.2.md`](agent/tool-using-agent-v0.2.md), 결정 근거는 [ADR-017](adr/017-use-bounded-tool-using-agent.md)과
+[ADR-022](adr/022-connect-agent-to-patch-note-retrieval.md)을 따른다.
 
 ### 향후 Tool-using Agent 확장 경계
 
@@ -908,7 +915,8 @@ champion/item 문서, 공식 gameplay knowledge 같은 비정형 지식 검색�
 아니다. 현재 v0.1은 소수의 local snapshot을 수동 indexing하고, 동일 embedding 계약 안에서 patch/locale을 먼저 SQL로
 제한한 pgvector exact cosine retrieval 결과만 반환한다. 기본 `RAG_ENABLED=false`에서는 RAG bean과 vector migration이
 없으며, 활성화할 때만 별도 Flyway history가 extension/schema를 적용한다. 문서 본문은 untrusted data이고 후속 답변 생성도
-문서 안의 명령 실행, URL 조회, SQL 실행, 환경변수 접근을 허용하지 않는다. 최종 answer generation, Agent 연결,
+문서 안의 명령 실행, URL 조회, SQL 실행, 환경변수 접근을 허용하지 않는다. 독립 answer generation과 Agent retrieval Tool은
+서로 별개 경계이며, Agent는 answer generator를 호출하지 않는다. 자동 수집,
 자동 수집·scheduler, HNSW/IVFFlat, 별도 Vector DB와 여러 실문서의 의미 검색 품질 검증은 아직 구현하지 않았다. 한 건의
 공식 Korean 25.10 수동 평가는 [평가 기록](rag/patch-note-retrieval-25-10-ko-kr-evaluation-2026-09-22.md)을 따른다. 상세 contract는
 [`rag/patch-note-retrieval-v0.1.md`](rag/patch-note-retrieval-v0.1.md), 결정 근거는
@@ -1086,7 +1094,7 @@ stale-job recovery는 여전히 single-instance v0.1 범위 밖이다. 운영 �
 4. explicit Backend rule을 기반으로 한 AI Automation
 5. Application Service boundary를 사용하는 Tool-using AI Agent
 6. 추가 공식 Korean patch snapshot의 수동 retrieval 평가와 provider 비용·latency 비교
-7. 누적 평가 근거가 있을 때만 RAG 답변 생성·Agent 연결과 비공개 배포 재개
+7. 추가 문서와 실제 Agent smoke 평가 근거가 있을 때만 검색 범위 확대와 비공개 배포 재개
 8. 인증, multi-instance 운영과 scaling 요구가 확인된 뒤의 구조 진화
 
 사용자 계정·인증은 community CRUD를 위한 선행 기능으로 두지 않는다. automation 설정, 분석 이력, 개인화,
@@ -1113,6 +1121,6 @@ patch-aware benchmark, deployment scaling은 아직 구현하지 않았다. 이�
 
 ## 패치 노트 답변 생성 경계
 
-`PatchNoteQuestionController`는 명시 patch/locale 질문을 `PatchNoteQuestionService`로 전달한다. Service는 기존 `PatchNoteRetrievalService`를 한 번만 호출하고 immutable evidence bundle을 구성한 뒤 `PatchNoteAnswerGenerator`를 최대 한 번 호출한다. provider adapter는 infrastructure에만 두며, Backend가 statement의 evidence ID를 검증하고 citation metadata를 조합한다. 이 경계는 Agent Tool, PlayerAnalysisService, 분석 cache/prompt/schema와 분리된다.
+`PatchNoteQuestionController`는 명시 patch/locale 질문을 `PatchNoteQuestionService`로 전달한다. Service는 기존 `PatchNoteRetrievalService`를 한 번만 호출하고 immutable evidence bundle을 구성한 뒤 `PatchNoteAnswerGenerator`를 최대 한 번 호출한다. provider adapter는 infrastructure에만 두며, Backend가 statement의 evidence ID를 검증하고 citation metadata를 조합한다. Agent v0.2도 retrieval과 evidence/citation 순수 로직만 재사용하지만, 독립 QuestionService나 generator를 호출하지 않는다.
 
 RAG와 answer는 기본 비활성화다. answer가 꺼졌거나 RAG가 꺼진 상태는 외부 호출 없이 endpoint 404로 처리한다. 관측에는 제한된 카운터와 지연 시간만 남기며 question, evidence, answer, vector, raw provider payload는 기록하지 않는다.

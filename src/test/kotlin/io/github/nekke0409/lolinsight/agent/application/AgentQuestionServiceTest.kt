@@ -3,6 +3,7 @@ package io.github.nekke0409.lolinsight.agent.application
 import io.github.nekke0409.lolinsight.analysis.ratelimit.AnalysisGenerationRateLimiter
 import io.github.nekke0409.lolinsight.analysis.ratelimit.AnalysisRateLimitKey
 import io.github.nekke0409.lolinsight.comparison.application.PlayerComparisonContextService
+import io.github.nekke0409.lolinsight.rag.infrastructure.RagProperties
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.verify
@@ -135,6 +136,75 @@ class AgentQuestionServiceTest {
     }
 
     @Test
+    fun `rejects a patch-note scope before quota when its Tool feature is disabled`() {
+        val model = ScriptedAgentModelGateway(turn(text = "should not happen"))
+        val service = service(model, RecordingToolExecutor(), AgentQuestionProperties(enabled = true))
+
+        assertFailsWith<AgentPatchNoteFeatureDisabledException> {
+            service.answer(
+                "Hide on bush",
+                "KR1",
+                "패치 질문",
+                clientKey(),
+                AgentPatchNoteScope("25.10", "ko-KR"),
+            )
+        }
+
+        org.mockito.Mockito.verifyNoInteractions(rateLimiter)
+        assertEquals(0, model.startCalls)
+    }
+
+    @Test
+    fun `rejects a patch-note configuration mismatch without changing the existing Agent path`() {
+        val model = ScriptedAgentModelGateway(turn(text = "should not happen"))
+        val service =
+            AgentQuestionService(
+                AgentQuestionProperties(enabled = true, patchNotes = AgentPatchNoteProperties(enabled = true)),
+                rateLimiter,
+                model,
+                RecordingToolExecutor(),
+                DirectToolExecutionRunner,
+                ragProperties = RagProperties(enabled = false),
+            )
+
+        assertFailsWith<AgentPatchNoteConfigurationException> {
+            service.answer(
+                "Hide on bush",
+                "KR1",
+                "패치 질문",
+                clientKey(),
+                AgentPatchNoteScope("25.10", "ko-KR"),
+            )
+        }
+        org.mockito.Mockito.verifyNoInteractions(rateLimiter)
+        assertEquals(0, model.startCalls)
+    }
+
+    @Test
+    fun `requires a structured final answer when patch-note scope is enabled`() {
+        val model = ScriptedAgentModelGateway(turn(text = "unstructured patch answer"))
+        val service =
+            AgentQuestionService(
+                AgentQuestionProperties(enabled = true, patchNotes = AgentPatchNoteProperties(enabled = true)),
+                rateLimiter,
+                model,
+                RecordingToolExecutor(),
+                DirectToolExecutionRunner,
+                ragProperties = RagProperties(enabled = true),
+            )
+
+        assertFailsWith<AgentModelInvalidResponseException> {
+            service.answer(
+                "Hide on bush",
+                "KR1",
+                "패치 질문",
+                clientKey(),
+                AgentPatchNoteScope("25.10", "ko-KR"),
+            )
+        }
+    }
+
+    @Test
     fun `records bounded execution metadata and only provider supplied token usage`() {
         val model = ScriptedAgentModelGateway(turn(text = "최근 통계입니다.", usage = AgentModelUsage(10, 20, 30)))
         val recorder = RecordingObservationRecorder()
@@ -263,6 +333,13 @@ class AgentQuestionServiceTest {
             gameName: String,
             tagLine: String,
         ): AgentToolExecutionContext = AgentToolExecutionContext(gameName, tagLine, mock(PlayerComparisonContextService::class.java))
+
+        override fun newContext(
+            gameName: String,
+            tagLine: String,
+            knowledgeScope: AgentPatchNoteScope?,
+        ): AgentToolExecutionContext =
+            AgentToolExecutionContext(gameName, tagLine, mock(PlayerComparisonContextService::class.java), knowledgeScope)
 
         override fun dispatch(
             call: AgentModelToolCall,

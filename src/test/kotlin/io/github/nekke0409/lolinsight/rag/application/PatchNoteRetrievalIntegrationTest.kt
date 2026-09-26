@@ -1,14 +1,40 @@
 package io.github.nekke0409.lolinsight.rag.application
 
+import io.github.nekke0409.lolinsight.agent.application.AgentModelContinuation
+import io.github.nekke0409.lolinsight.agent.application.AgentModelGateway
+import io.github.nekke0409.lolinsight.agent.application.AgentModelToolCall
+import io.github.nekke0409.lolinsight.agent.application.AgentModelToolOutput
+import io.github.nekke0409.lolinsight.agent.application.AgentModelTurn
+import io.github.nekke0409.lolinsight.agent.application.AgentPatchNoteProperties
+import io.github.nekke0409.lolinsight.agent.application.AgentPatchNoteRetrievalException
+import io.github.nekke0409.lolinsight.agent.application.AgentPatchNoteScope
+import io.github.nekke0409.lolinsight.agent.application.AgentQuestionProperties
+import io.github.nekke0409.lolinsight.agent.application.AgentQuestionService
+import io.github.nekke0409.lolinsight.agent.application.AgentStatementBasis
+import io.github.nekke0409.lolinsight.agent.application.AgentStructuredFinalAnswer
+import io.github.nekke0409.lolinsight.agent.application.AgentStructuredStatement
+import io.github.nekke0409.lolinsight.agent.application.AgentTerminationReason
+import io.github.nekke0409.lolinsight.agent.application.AgentToolDispatcher
+import io.github.nekke0409.lolinsight.agent.application.AgentToolExecutionRunner
 import io.github.nekke0409.lolinsight.analysis.infrastructure.openai.OpenAiConfiguration
 import io.github.nekke0409.lolinsight.analysis.ratelimit.AnalysisGenerationRateLimiter
 import io.github.nekke0409.lolinsight.analysis.ratelimit.AnalysisRateLimitKey
 import io.github.nekke0409.lolinsight.analysis.ratelimit.AnalysisRateLimitProperties
+import io.github.nekke0409.lolinsight.comparison.application.PlayerComparisonContext
+import io.github.nekke0409.lolinsight.comparison.application.PlayerComparisonContextPlayer
+import io.github.nekke0409.lolinsight.comparison.application.PlayerComparisonContextSample
+import io.github.nekke0409.lolinsight.comparison.application.PlayerComparisonContextService
+import io.github.nekke0409.lolinsight.comparison.application.PlayerComparisonFeatureService
+import io.github.nekke0409.lolinsight.comparison.application.PlayerPositionStatistics
 import io.github.nekke0409.lolinsight.rag.infrastructure.RagAnswerProperties
 import io.github.nekke0409.lolinsight.rag.infrastructure.RagConfiguration
 import io.github.nekke0409.lolinsight.rag.infrastructure.RagProperties
 import io.github.nekke0409.lolinsight.rag.infrastructure.RagPropertiesConfiguration
 import org.junit.jupiter.api.Test
+import org.mockito.Mockito.mock
+import org.mockito.Mockito.verify
+import org.mockito.Mockito.verifyNoInteractions
+import org.mockito.Mockito.`when`
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest
 import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase
@@ -22,6 +48,7 @@ import org.springframework.test.context.DynamicPropertySource
 import org.testcontainers.junit.jupiter.Container
 import org.testcontainers.junit.jupiter.Testcontainers
 import org.testcontainers.postgresql.PostgreSQLContainer
+import tools.jackson.databind.json.JsonMapper
 import java.time.Clock
 import java.time.Instant
 import java.time.ZoneOffset
@@ -235,6 +262,258 @@ class PatchNoteRetrievalIntegrationTest {
         assertEquals(1, calls)
     }
 
+    @Test
+    fun `connects the scripted Agent loop to actual pgvector retrieval and validates only delivered citations`() {
+        indexingService.index(snapshot(FIXTURE_HTML))
+        val comparisonContextService =
+            mock(io.github.nekke0409.lolinsight.comparison.application.PlayerComparisonContextService::class.java)
+        val properties =
+            AgentQuestionProperties(
+                enabled = true,
+                patchNotes = AgentPatchNoteProperties(enabled = true, topK = 3, maxEvidenceCharacters = 5_000),
+            )
+        val dispatcher =
+            AgentToolDispatcher(
+                JsonMapper.builder().build(),
+                comparisonContextService,
+                mock(io.github.nekke0409.lolinsight.comparison.application.PlayerComparisonFeatureService::class.java),
+                properties,
+                retrievalService,
+            )
+        val model =
+            ScriptedAgentModel(
+                toolTurn("call-patch", "search_patch_notes", "{\"query\":\"아리 Q 피해량 변경\"}"),
+                finalTurn(
+                    AgentStructuredFinalAnswer(
+                        statements =
+                            listOf(
+                                AgentStructuredStatement(
+                                    "아리 Q 피해량 변경 근거가 있습니다.",
+                                    AgentStatementBasis.PATCH_NOTE,
+                                    listOf("PATCH_E1"),
+                                    "search_patch_notes",
+                                ),
+                            ),
+                        limitations = emptyList(),
+                    ),
+                ),
+            )
+        val service =
+            AgentQuestionService(
+                properties,
+                mock(AnalysisGenerationRateLimiter::class.java),
+                model,
+                dispatcher,
+                DirectToolExecutionRunner,
+                ragProperties = RagProperties(enabled = true),
+            )
+
+        val response =
+            service.answer(
+                "ignored-player",
+                "KR1",
+                "패치 노트 질문",
+                AnalysisRateLimitKey("agent-patch"),
+                AgentPatchNoteScope("16.99", "ko-KR"),
+            )
+
+        assertEquals(AgentTerminationReason.COMPLETED, response.terminationReason)
+        assertEquals(listOf("search_patch_notes"), response.usedTools.map { it.name })
+        assertEquals(listOf("PATCH_E1"), response.citations.map { it.evidenceId })
+        assertTrue(
+            model.outputs
+                .single()
+                .single()
+                .output
+                .contains("PATCH_E1"),
+        )
+        assertTrue(
+            model.outputs
+                .single()
+                .single()
+                .output
+                .contains("아리"),
+        )
+        assertTrue(
+            model.outputs
+                .single()
+                .single()
+                .output
+                .contains("resultCount"),
+        )
+        verifyNoInteractions(comparisonContextService)
+    }
+
+    @Test
+    fun `runs statistics then patch-note retrieval within the Agent limits without mixing their provenance`() {
+        indexingService.index(snapshot(FIXTURE_HTML))
+        val comparisonContextService = mock(PlayerComparisonContextService::class.java)
+        `when`(comparisonContextService.buildContext("Example", "KR1", 0, 20)).thenReturn(statisticsContext())
+        val properties =
+            AgentQuestionProperties(
+                enabled = true,
+                patchNotes = AgentPatchNoteProperties(enabled = true, topK = 3, maxEvidenceCharacters = 5_000),
+            )
+        val dispatcher =
+            AgentToolDispatcher(
+                JsonMapper.builder().build(),
+                comparisonContextService,
+                mock(PlayerComparisonFeatureService::class.java),
+                properties,
+                retrievalService,
+            )
+        val model =
+            ScriptedAgentModel(
+                toolTurn("call-stats", "get_ranked_stats", "{\"groupBy\":\"POSITION\"}"),
+                toolTurn("call-patch", "search_patch_notes", "{\"query\":\"아리 Q 피해량 변경\"}"),
+                finalTurn(
+                    AgentStructuredFinalAnswer(
+                        statements =
+                            listOf(
+                                AgentStructuredStatement(
+                                    "최근 MID 통계입니다.",
+                                    AgentStatementBasis.TOOL,
+                                    emptyList(),
+                                    "get_ranked_stats",
+                                ),
+                                AgentStructuredStatement(
+                                    "아리 Q 피해량 변경 근거가 있습니다.",
+                                    AgentStatementBasis.PATCH_NOTE,
+                                    listOf("PATCH_E1"),
+                                    "search_patch_notes",
+                                ),
+                            ),
+                        limitations = emptyList(),
+                    ),
+                ),
+            )
+        val service =
+            AgentQuestionService(
+                properties,
+                mock(AnalysisGenerationRateLimiter::class.java),
+                model,
+                dispatcher,
+                DirectToolExecutionRunner,
+                ragProperties = RagProperties(enabled = true),
+            )
+        val embeddingCalls = embeddingGateway.calls
+
+        val response =
+            service.answer(
+                "Example",
+                "KR1",
+                "최근 MID 통계와 패치 변경을 알려줘",
+                AnalysisRateLimitKey("agent-mixed"),
+                AgentPatchNoteScope("16.99", "ko-KR"),
+            )
+
+        assertEquals(AgentTerminationReason.COMPLETED, response.terminationReason)
+        assertEquals(listOf("get_ranked_stats", "search_patch_notes"), response.usedTools.map { it.name })
+        assertEquals(listOf("PATCH_E1"), response.citations.map { it.evidenceId })
+        assertEquals(1, model.startCalls)
+        assertEquals(2, model.continueCalls)
+        assertEquals(2, model.outputs.size)
+        assertTrue(
+            model.outputs[0]
+                .single()
+                .output
+                .contains("\"scope\":\"POSITION\""),
+        )
+        assertTrue(
+            model.outputs[1]
+                .single()
+                .output
+                .contains("PATCH_E1"),
+        )
+        assertEquals(embeddingCalls + 1, embeddingGateway.calls)
+        verify(comparisonContextService).buildContext("Example", "KR1", 0, 20)
+    }
+
+    @Test
+    fun `returns structured no evidence without query embedding for an empty Agent scope`() {
+        val properties = AgentQuestionProperties(enabled = true, patchNotes = AgentPatchNoteProperties(enabled = true))
+        val dispatcher =
+            AgentToolDispatcher(
+                JsonMapper.builder().build(),
+                mock(io.github.nekke0409.lolinsight.comparison.application.PlayerComparisonContextService::class.java),
+                mock(io.github.nekke0409.lolinsight.comparison.application.PlayerComparisonFeatureService::class.java),
+                properties,
+                retrievalService,
+            )
+        val model =
+            ScriptedAgentModel(
+                toolTurn("call-empty", "search_patch_notes", "{\"query\":\"아리\"}"),
+                finalTurn(
+                    AgentStructuredFinalAnswer(
+                        listOf(AgentStructuredStatement("저장된 근거가 부족합니다.", AgentStatementBasis.LIMITATION, emptyList(), null)),
+                        listOf("요청 범위에 검색 가능한 corpus가 없습니다."),
+                    ),
+                ),
+            )
+        val service =
+            AgentQuestionService(
+                properties,
+                mock(AnalysisGenerationRateLimiter::class.java),
+                model,
+                dispatcher,
+                DirectToolExecutionRunner,
+                ragProperties = RagProperties(enabled = true),
+            )
+        val embeddingCalls = embeddingGateway.calls
+
+        val response =
+            service.answer(
+                "ignored-player",
+                "KR1",
+                "빈 corpus 질문",
+                AnalysisRateLimitKey("agent-empty"),
+                AgentPatchNoteScope("16.98", "ko-KR"),
+            )
+
+        assertEquals(embeddingCalls, embeddingGateway.calls)
+        assertTrue(response.citations.isEmpty())
+        assertTrue(
+            model.outputs
+                .single()
+                .single()
+                .output
+                .contains("NO_EVIDENCE"),
+        )
+    }
+
+    @Test
+    fun `does not turn a patch-note embedding failure into no evidence`() {
+        indexingService.index(snapshot(FIXTURE_HTML))
+        val properties = AgentQuestionProperties(enabled = true, patchNotes = AgentPatchNoteProperties(enabled = true))
+        val dispatcher =
+            AgentToolDispatcher(
+                JsonMapper.builder().build(),
+                mock(PlayerComparisonContextService::class.java),
+                mock(PlayerComparisonFeatureService::class.java),
+                properties,
+                retrievalService,
+            )
+        val service =
+            AgentQuestionService(
+                properties,
+                mock(AnalysisGenerationRateLimiter::class.java),
+                ScriptedAgentModel(toolTurn("call-error", "search_patch_notes", "{\"query\":\"provider-failure\"}")),
+                dispatcher,
+                DirectToolExecutionRunner,
+                ragProperties = RagProperties(enabled = true),
+            )
+
+        assertFailsWith<AgentPatchNoteRetrievalException> {
+            service.answer(
+                "Example",
+                "KR1",
+                "패치 노트 질문",
+                AnalysisRateLimitKey("agent-retrieval-error"),
+                AgentPatchNoteScope("16.99", "ko-KR"),
+            )
+        }
+    }
+
     private fun questionService(answer: (PatchNoteAnswerGenerationRequest) -> PatchNoteGeneratedAnswer): PatchNoteQuestionService =
         PatchNoteQuestionService(
             RagProperties(enabled = true, answer = RagAnswerProperties(enabled = true, topK = 3)),
@@ -246,6 +525,31 @@ class PatchNoteRetrievalIntegrationTest {
                     timeout: java.time.Duration,
                 ): PatchNoteAnswerGenerationResult = PatchNoteAnswerGenerationResult(answer(request))
             },
+        )
+
+    private fun statisticsContext(): PlayerComparisonContext =
+        PlayerComparisonContext(
+            player = PlayerComparisonContextPlayer("Example", "KR1"),
+            targetPuuid = "target-puuid",
+            rankContext = null,
+            sample = PlayerComparisonContextSample(requestedCount = 20, analyzedCount = 7),
+            positionStatistics =
+                listOf(
+                    PlayerPositionStatistics(
+                        position = "MID",
+                        games = 7,
+                        wins = 4,
+                        winRate = 4.0 / 7.0,
+                        averageKda = 3.2,
+                        averageCsPerMinute = 7.1,
+                        averageGoldPerMinute = 410.0,
+                        averageDamagePerMinute = 610.0,
+                        averageVisionPerMinute = 1.2,
+                        averageKillParticipation = 0.48,
+                        averageDamageShare = 0.24,
+                    ),
+                ),
+            championPositionStatistics = emptyList(),
         )
 
     private fun snapshot(html: String): PatchNoteSnapshot =
@@ -287,6 +591,55 @@ class PatchNoteRetrievalIntegrationTest {
                 input.contains("가렌") -> EmbeddingVector(listOf(0.0f, 1.0f, 0.0f))
                 else -> EmbeddingVector(listOf(0.0f, 0.0f, 1.0f))
             }
+    }
+
+    private class ScriptedAgentModel(
+        vararg turns: AgentModelTurn,
+    ) : AgentModelGateway {
+        private val turns = ArrayDeque(turns.toList())
+        val outputs = mutableListOf<List<AgentModelToolOutput>>()
+        var startCalls = 0
+            private set
+        var continueCalls = 0
+            private set
+
+        override fun start(
+            question: String,
+            allowToolCalls: Boolean,
+            timeout: java.time.Duration,
+        ): AgentModelTurn {
+            startCalls++
+            return turns.removeFirst()
+        }
+
+        override fun continueWithToolOutputs(
+            continuation: AgentModelContinuation,
+            outputs: List<AgentModelToolOutput>,
+            allowToolCalls: Boolean,
+            timeout: java.time.Duration,
+        ): AgentModelTurn {
+            continueCalls++
+            this.outputs += outputs
+            return turns.removeFirst()
+        }
+    }
+
+    private fun toolTurn(
+        callId: String,
+        name: String,
+        arguments: String,
+    ): AgentModelTurn = AgentModelTurn(null, listOf(AgentModelToolCall(callId, name, arguments)), TestContinuation)
+
+    private fun finalTurn(finalAnswer: AgentStructuredFinalAnswer): AgentModelTurn =
+        AgentModelTurn(null, emptyList(), TestContinuation, finalAnswer = finalAnswer)
+
+    private object TestContinuation : AgentModelContinuation
+
+    private object DirectToolExecutionRunner : AgentToolExecutionRunner {
+        override fun <T> execute(
+            timeout: java.time.Duration,
+            action: () -> T,
+        ): T = action()
     }
 
     private companion object {

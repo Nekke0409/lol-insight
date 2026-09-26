@@ -16,6 +16,12 @@ data class AgentQuestionExecutionSummary(
     val incompleteReason: AgentModelIncompleteReason?,
     val duration: Duration,
     val usage: List<AgentModelUsage>,
+    val patchNoteSearchAttempts: Int,
+    val queryEmbeddingAttempts: Int,
+    val queryEmbeddingInputTokens: Long?,
+    val retrievalResultCount: Int,
+    val deliveredEvidenceCount: Int,
+    val citationCount: Int,
 )
 
 @Component
@@ -24,9 +30,15 @@ class SafeLoggingAgentQuestionObservationRecorder : AgentQuestionObservationReco
 
     override fun record(summary: AgentQuestionExecutionSummary) {
         logger.info(
-            "agent_execution modelRequests={} toolAttempts={} tools={} terminationReason={} incompleteReason={} durationMs={} usage={}",
+            "agent_execution modelRequests={} toolAttempts={} patchNoteSearchAttempts={} queryEmbeddingAttempts={} queryEmbeddingInputTokens={} retrievalResultCount={} deliveredEvidenceCount={} citationCount={} tools={} terminationReason={} incompleteReason={} durationMs={} usage={}",
             summary.modelRequestAttempts,
             summary.toolExecutionAttempts,
+            summary.patchNoteSearchAttempts,
+            summary.queryEmbeddingAttempts,
+            summary.queryEmbeddingInputTokens,
+            summary.retrievalResultCount,
+            summary.deliveredEvidenceCount,
+            summary.citationCount,
             summary.usedTools.map { "${it.name}:${if (it.success) "success" else "failure"}" },
             summary.terminationReason?.name ?: "EXCEPTION",
             summary.incompleteReason?.name ?: "none",

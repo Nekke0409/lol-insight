@@ -34,8 +34,8 @@ single-instance v0.1의 범위와 절차를 기록할 뿐, 이번 우선순위�
 | AI 분석 | `PlayerAnalysisInput` fingerprint 기반 Redis completed-result cache, OpenAI Responses API Structured Outputs, sync·async 제공 | 결과 품질 평가, 인증 사용자 quota, provider 전략 |
 | 운영 경계 | Redis Match Detail·analysis result cache, PostgreSQL/Flyway, OpenAI usage·latency 계측, 분석 생성 rate limit, bounded async job과 in-flight dedupe | crash recovery, distributed 운영 정책, 배포·확장 구조 |
 | AI Automation | persisted Ranked Solo cursor·idempotent execution·bounded scheduler와 기존 analysis job 재사용, 429 이후 JVM-local Riot cooldown | distributed scheduler/claim, automation quota, notification |
-| Tool-using Agent | 기본 비활성화된 Agent v0.1, Responses API function calling, 최근 20개 Ranked Solo 통계/peer comparison Tool, 전체 deadline·최종 Tool 금지·bounded loop | 실제 model smoke와 질문 품질 검증 후 범위 확대 |
-| 공식 패치 노트 retrieval | 기본 비활성화된 local snapshot 정제·heading 보존 chunking·OpenAI embedding 경계·opt-in pgvector exact cosine 검색, 공식 Korean 25.10 한 건의 수동 retrieval 평가 | 추가 문서·질문 평가 근거 뒤 답변 생성·Agent 연결 검토 |
+| Tool-using Agent | 기본 비활성화된 Agent v0.2, Responses API function calling, 통계/peer comparison과 명시 patch·`ko-KR` scope의 patch-note retrieval Tool, 전체 deadline·최종 Tool 금지·citation 검증 | 실제 model smoke와 질문 품질 검증 후 범위 확대 |
+| 공식 패치 노트 retrieval | 기본 비활성화된 local snapshot 정제·heading 보존 chunking·OpenAI embedding 경계·opt-in pgvector exact cosine 검색, 독립 answer와 Agent retrieval Tool의 분리, 공식 Korean 25.10 한 건의 수동 retrieval 평가 | 추가 문서·질문 평가 근거 뒤 검색 범위 확대 검토 |
 
 completed-result cache는 `PlayerAnalysisInput`의 결정적인 JSON을 SHA-256 fingerprint로 만든 Redis key
 `analysis:result:{version}:{fingerprint}`에 성공한 `PlayerAnalysisResult`만 저장합니다. URL, Riot ID, PUUID, match ID는
@@ -98,9 +98,9 @@ LLM에 원본 Riot Match JSON을 전달해 핵심 통계를 다시 계산시키�
 
 Automation은 "최근 경기 성과가 유의하게 하락했다"와 같은 조건을 Backend의 기간 비교·통계 rule로 먼저 판단합니다. 조건이 충족되면 기존 AI analysis job을 재사용하고, LLM은 결과를 설명할 뿐 trigger를 임의로 결정하지 않습니다.
 
-Tool-using Agent는 사용자의 질문에 따라 LLM이 명시적인 Backend Tool을 선택하고, Tool이 기존 Application Service를 호출한 구조화된 결과를 반환하는 형태로 시작합니다. Agent가 Riot HTTP client, PostgreSQL repository, Redis, OpenAI SDK 같은 infrastructure를 직접 다루지 않습니다. `CHAMPION_POSITION` 결과는 분석용 `championId`로 서로 다른 챔피언을 구분하지만 PUUID·Riot ID·match ID는 전달하지 않습니다. Agent는 실제 모델 요청과 Tool 실행에 전체 deadline을 적용하며, 마지막 모델 요청에는 추가 Tool을 허용하지 않습니다. 실제 local smoke 1회에서 모델의 통계·비교 Tool 연속 선택과 비교 불가 최종 응답 생성을 확인했지만, 실행 당시 detailed comparison 로그 누락으로 Backend comparison 값과 답변의 직접 대조 또는 `AVAILABLE` 수치 정확성은 확인하지 못했습니다. `AGENT_SMOKE_OBSERVATION_ENABLED=true`의 상세 comparison 출력은 이후 외부 호출 없는 회귀 테스트로 검증하며, 질문·최종 답변·식별자·raw provider 응답은 로그에 남기지 않습니다.
+Tool-using Agent는 사용자의 질문에 따라 LLM이 명시적인 Backend Tool을 선택하고, Tool이 기존 Application Service를 호출한 구조화된 결과를 반환하는 형태로 시작합니다. Agent가 Riot HTTP client, PostgreSQL repository, Redis, OpenAI SDK 같은 infrastructure를 직접 다루지 않습니다. `CHAMPION_POSITION` 결과는 분석용 `championId`로 서로 다른 챔피언을 구분하지만 PUUID·Riot ID·match ID는 전달하지 않습니다. `knowledgeScope`에 명시한 patch와 `ko-KR`에는 `AGENT_PATCH_NOTES_ENABLED=true`와 `RAG_ENABLED=true`일 때만 `search_patch_notes(query)`를 노출합니다. 이 Tool은 retrieval 근거만 반환하고 독립 RAG answer generator를 호출하지 않으며, Backend는 실제 전달된 request-local evidence ID만 citation으로 조합합니다. Agent는 실제 모델 요청과 Tool 실행에 전체 deadline을 적용하며, 마지막 모델 요청에는 추가 Tool을 허용하지 않습니다. 질문·Tool payload·최종 답변·식별자·raw provider 응답은 로그에 남기지 않습니다.
 
-구조화된 플레이어·경기 데이터는 Backend Tool로 조회합니다. RAG는 patch note, 챔피언·아이템 문서 같은 비정형 지식이 필요할 때의 선택지이며 Agent의 선행 조건이 아닙니다. 현재는 공식 패치 노트 local snapshot을 대상으로 한 기본 비활성화 retrieval 기반과 공식 Korean 25.10 한 건의 실제 embedding·검색 평가를 구현했습니다. 기존 PostgreSQL/Flyway 이력과 분리한 opt-in pgvector migration을 사용하며, 최종 답변 생성·Agent 연결과 여러 문서에 일반화한 의미 검색 품질 검증은 아직 구현하지 않았습니다.
+구조화된 플레이어·경기 데이터는 Backend Tool로 조회합니다. RAG는 patch note, 챔피언·아이템 문서 같은 비정형 지식이 필요할 때의 선택지이며 Agent의 선행 조건이 아닙니다. 현재는 공식 패치 노트 local snapshot을 대상으로 한 기본 비활성화 retrieval 기반, 독립 answer 생성, 그리고 명시 scope의 Agent retrieval Tool 연결을 구현했습니다. 기존 PostgreSQL/Flyway 이력과 분리한 opt-in pgvector migration을 사용하며, 여러 문서에 일반화한 의미 검색 품질과 실제 Agent Tool 선택·답변 품질은 아직 검증하지 않았습니다.
 
 즉, 정형 경기 데이터 Tool은 기존 Application Service의 결정적 계산 결과를 제공하고, 문서 검색은 비정형 patch note의
 근거 절과 출처를 제공하는 별도 책임입니다. RAG 도입으로 Benchmark availability·비교 안전장치를 완화하거나 대체하지 않습니다.
@@ -111,7 +111,7 @@ LangChain, LangGraph, 별도 Vector DB 같은 framework는 실제 복잡도를 �
 
 현재 사용 중인 기술은 Kotlin, Spring Boot, JDK 21, Spring MVC `RestClient`, PostgreSQL, Spring Data JPA, Flyway, Redis, Caffeine, Bucket4j, Docker, OpenAI Java SDK, springdoc-openapi입니다.
 
-Spring Security, AWS, 인증 사용자 기준 quota, 다중 LLM Provider, 최종 RAG 질의응답은 현재 구현 범위가 아닙니다.
+Spring Security, AWS, 인증 사용자 기준 quota, 다중 LLM Provider, 여러 문서에 일반화한 RAG 품질 검증은 현재 구현 범위가 아닙니다.
 
 ## 문서
 
@@ -124,11 +124,12 @@ Spring Security, AWS, 인증 사용자 기준 quota, 다중 LLM Provider, 최종
 - [ADR-014](docs/adr/014-use-game-start-validity-window-for-peer-benchmark.md): Peer Benchmark 유효 표본 기간 결정
 - [ADR-015](docs/adr/015-use-coverage-driven-benchmark-replenishment.md): bounded benchmark coverage replenishment 결정
 - [ADR-018](docs/adr/018-prioritize-benchmark-collection-candidates-by-valid-sample-count.md): 유효 표본 수 기반 bounded 수집 후보 선택 결정
-- [Tool-using AI Agent v0.1](docs/agent/tool-using-agent-v0.1.md): Tool 범위, 실행 제한, 보안 경계
+- [Tool-using AI Agent v0.2](docs/agent/tool-using-agent-v0.2.md): 패치 노트 Tool, citation, 실행 제한, 보안 경계
 - [ADR-017](docs/adr/017-use-bounded-tool-using-agent.md): bounded Tool-using Agent 경계 결정
 - [공식 패치 노트 retrieval v0.1](docs/rag/patch-note-retrieval-v0.1.md): local snapshot·pgvector 검색 계약과 검증 한계
 - [공식 Korean 25.10 retrieval 평가](docs/rag/patch-note-retrieval-25-10-ko-kr-evaluation-2026-09-22.md): 실제 embedding 사용량·검색 결과와 한계
 - [ADR-020](docs/adr/020-use-opt-in-pgvector-patch-note-retrieval.md): opt-in pgvector retrieval 결정
+- [ADR-022](docs/adr/022-connect-agent-to-patch-note-retrieval.md): Agent 패치 노트 retrieval Tool 결정
 - [단일 인스턴스 비공개 배포 v0.1](docs/deployment/single-instance-private-v0.1.md): Docker Compose, SSM 접근, 운영·복구 절차와 현재 보류·재개 조건
 
 현재 구현과 설정의 source of truth는 code, `README.md`, `docs/architecture.md`, `docs/adr/`입니다. Project Memory나 AI assistant context는 저장소의 실제 상태를 대체하지 않습니다.
