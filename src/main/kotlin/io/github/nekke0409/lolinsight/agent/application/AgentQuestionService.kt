@@ -17,6 +17,7 @@ class AgentQuestionService(
     private val observationRecorder: AgentQuestionObservationRecorder = NoOpAgentQuestionObservationRecorder,
     @Autowired(required = false) private val smokeObservationRecorder: AgentSmokeObservationRecorder? = null,
     private val ragProperties: RagProperties = RagProperties(),
+    @Autowired(required = false) private val manualSmokeObserver: AgentManualSmokeObserver? = null,
 ) {
     fun answer(
         gameName: String,
@@ -24,10 +25,15 @@ class AgentQuestionService(
         question: String,
         clientIdentity: AnalysisRateLimitKey,
         knowledgeScope: AgentPatchNoteScope? = null,
+        manualQuestionId: String? = null,
     ): AgentQuestionResponse {
         properties.requireEnabled()
         requireQuestionWithinLimit(question)
         requirePatchNoteScope(knowledgeScope)
+        val manualSmokeSession =
+            manualSmokeObserver?.admit(
+                AgentManualSmokeRequest(manualQuestionId, gameName, tagLine, question, knowledgeScope),
+            )
         // This quota is intentionally consumed once per HTTP question, not once per loop turn.
         rateLimiter.check(clientIdentity)
 
@@ -53,6 +59,7 @@ class AgentQuestionService(
 
         fun finish(response: AgentQuestionResponse): AgentQuestionResponse {
             terminationReason = response.terminationReason
+            manualSmokeSession?.completed(response)
             return response
         }
 
@@ -65,18 +72,25 @@ class AgentQuestionService(
                         )
                 val allowToolCalls = modelRequests + 1 < properties.maxModelRequests && toolExecutions < properties.maxToolExecutions
                 modelRequests++
+                manualSmokeSession?.modelAttempt(modelRequests, continuation != null)
                 val turn =
-                    if (continuation == null) {
-                        modelGateway.start(question, toolContext.allowedToolNames, allowToolCalls, modelTimeout)
-                    } else {
-                        modelGateway.continueWithToolOutputs(
-                            continuation = checkNotNull(continuation),
-                            outputs = outputsForContinuation,
-                            allowedToolNames = toolContext.allowedToolNames,
-                            allowToolCalls = allowToolCalls,
-                            timeout = modelTimeout,
-                        )
+                    try {
+                        if (continuation == null) {
+                            modelGateway.start(question, toolContext.allowedToolNames, allowToolCalls, modelTimeout)
+                        } else {
+                            modelGateway.continueWithToolOutputs(
+                                continuation = checkNotNull(continuation),
+                                outputs = outputsForContinuation,
+                                allowedToolNames = toolContext.allowedToolNames,
+                                allowToolCalls = allowToolCalls,
+                                timeout = modelTimeout,
+                            )
+                        }
+                    } catch (exception: RuntimeException) {
+                        manualSmokeSession?.modelFailure(modelRequests, exception)
+                        throw exception
                     }
+                manualSmokeSession?.modelTurn(modelRequests, turn)
                 turn.usage?.let(usage::add)
                 if (deadline.isExpired()) {
                     return finish(
@@ -123,6 +137,7 @@ class AgentQuestionService(
 
                 val call = turn.toolCalls.single()
                 toolExecutions++
+                manualSmokeSession?.beforeToolDispatch(toolExecutions, call)
                 if (call.name == SEARCH_PATCH_NOTES) patchNoteSearchAttempts++
                 val signature = toolDispatcher.callSignature(call)
                 val dispatched =
@@ -147,7 +162,8 @@ class AgentQuestionService(
                         }
                         try {
                             toolExecutionRunner.execute(toolTimeout) { toolDispatcher.dispatch(call, toolContext, toolTimeout) }
-                        } catch (_: AgentToolExecutionDeadlineExceededException) {
+                        } catch (exception: AgentToolExecutionDeadlineExceededException) {
+                            manualSmokeSession?.toolFailure(toolExecutions, call, exception)
                             usedTools += AgentUsedTool(observedAgentToolName(call.name), success = false, invocation = toolExecutions)
                             limitations += "Tool 조회가 Agent 전체 실행 시간을 초과하여 중단되었습니다."
                             return finish(
@@ -157,7 +173,8 @@ class AgentQuestionService(
                                     AgentTerminationReason.TOOL_EXECUTION_DEADLINE_EXCEEDED,
                                 ),
                             )
-                        } catch (_: AgentToolExecutionUnavailableException) {
+                        } catch (exception: AgentToolExecutionUnavailableException) {
+                            manualSmokeSession?.toolFailure(toolExecutions, call, exception)
                             usedTools += AgentUsedTool(observedAgentToolName(call.name), success = false, invocation = toolExecutions)
                             limitations += "현재 Agent Tool 실행을 시작할 수 없습니다."
                             return finish(
@@ -168,6 +185,7 @@ class AgentQuestionService(
                                 ),
                             )
                         } catch (exception: AgentPatchNoteRetrievalException) {
+                            manualSmokeSession?.toolFailure(toolExecutions, call, exception)
                             usedTools += AgentUsedTool(observedAgentToolName(call.name), success = false, invocation = toolExecutions)
                             limitations += "패치 노트 검색을 완료하지 못했습니다."
                             throw exception
@@ -183,6 +201,14 @@ class AgentQuestionService(
                 }
                 val serializedOutput = toolDispatcher.serialize(dispatched)
                 val boundedOutput = serializedOutput.withinToolResultLimit(properties.maxToolResultCharacters)
+                manualSmokeSession?.toolOutput(
+                    toolExecutions,
+                    call,
+                    dispatched,
+                    serializedOutput,
+                    boundedOutput.output,
+                    boundedOutput.delivered,
+                )
                 if (boundedOutput.delivered) {
                     toolContext.acceptDeliveredPatchNoteEvidence(dispatched)
                     deliveredEvidenceCount += dispatched.patchNoteEvidence.size
@@ -225,9 +251,10 @@ class AgentQuestionService(
                     is AgentToolExecutionInterruptedException -> AgentTerminationReason.TOOL_EXECUTION_INTERRUPTED
                     else -> AgentTerminationReason.EXECUTION_FAILED
                 }
+            manualSmokeSession?.failed(exception, terminationReason)
             throw exception
         } finally {
-            observationRecorder.recordSafely(
+            val summary =
                 AgentQuestionExecutionSummary(
                     modelRequestAttempts = modelRequests,
                     toolExecutionAttempts = toolExecutions,
@@ -242,8 +269,9 @@ class AgentQuestionService(
                     retrievalResultCount = retrievalResultCount,
                     deliveredEvidenceCount = deliveredEvidenceCount,
                     citationCount = citationCount,
-                ),
-            )
+                )
+            observationRecorder.recordSafely(summary)
+            manualSmokeSession?.summary(summary)
         }
     }
 

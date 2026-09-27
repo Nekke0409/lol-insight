@@ -2,6 +2,10 @@ package io.github.nekke0409.lolinsight.global.web
 
 import io.github.nekke0409.lolinsight.agent.application.AgentFeatureDisabledException
 import io.github.nekke0409.lolinsight.agent.application.AgentModelAuthenticationException
+import io.github.nekke0409.lolinsight.agent.application.AgentManualSmokeBudgetExceededException
+import io.github.nekke0409.lolinsight.agent.application.AgentManualSmokeExecutionPlanException
+import io.github.nekke0409.lolinsight.agent.application.AgentManualSmokeInputMismatchException
+import io.github.nekke0409.lolinsight.agent.application.AgentManualSmokeUnexpectedToolException
 import io.github.nekke0409.lolinsight.agent.application.AgentModelConfigurationException
 import io.github.nekke0409.lolinsight.agent.application.AgentModelIncompleteResponseException
 import io.github.nekke0409.lolinsight.agent.application.AgentModelInvalidResponseException
@@ -117,6 +121,18 @@ class GlobalExceptionHandler {
     @ExceptionHandler(AgentFeatureDisabledException::class)
     fun handleAgentFeatureDisabledException(): ProblemDetail =
         ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, "AI agent is not enabled.")
+
+    @ExceptionHandler(AgentManualSmokeBudgetExceededException::class)
+    fun handleAgentManualSmokeBudgetExceeded(): ProblemDetail =
+        ProblemDetail.forStatusAndDetail(HttpStatus.TOO_MANY_REQUESTS, "Agent manual smoke budget is exhausted.")
+
+    @ExceptionHandler(AgentManualSmokeInputMismatchException::class, AgentManualSmokeExecutionPlanException::class)
+    fun handleAgentManualSmokePlanRejected(): ProblemDetail =
+        ProblemDetail.forStatusAndDetail(HttpStatus.UNPROCESSABLE_CONTENT, "Agent manual smoke plan rejected this request.")
+
+    @ExceptionHandler(AgentManualSmokeUnexpectedToolException::class)
+    fun handleAgentManualSmokeUnexpectedTool(): ProblemDetail =
+        ProblemDetail.forStatusAndDetail(HttpStatus.UNPROCESSABLE_CONTENT, "Agent manual smoke blocked a non patch-note Tool.")
 
     @ExceptionHandler(AgentPatchNoteFeatureDisabledException::class)
     fun handleAgentPatchNoteFeatureDisabled(): ProblemDetail =

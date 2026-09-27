@@ -24,6 +24,7 @@ data class AgentQuestionProperties(
     @field:Min(1)
     val maxOutputTokens: Long = 600,
     val patchNotes: AgentPatchNoteProperties = AgentPatchNoteProperties(),
+    val manualSmoke: AgentManualSmokeProperties = AgentManualSmokeProperties(),
 ) {
     init {
         require(!modelRequestTimeout.isZero && !modelRequestTimeout.isNegative) {
@@ -52,6 +53,15 @@ data class AgentPatchNoteProperties(
         if (!enabled) throw AgentPatchNoteFeatureDisabledException()
     }
 }
+
+/** Local-only, single-request guard for an explicitly approved Agent smoke run. */
+data class AgentManualSmokeProperties(
+    val enabled: Boolean = false,
+    val planPath: String = "",
+    val planSha256: String = "",
+    val evaluationRunId: String = "",
+    val captureDirectory: String = ".local/agent-smoke",
+)
 
 data class AgentPatchNoteScope(
     val patchVersion: String,
@@ -88,6 +98,14 @@ class AgentPatchNoteConfigurationException(
 class AgentPatchNoteRetrievalException(
     cause: Throwable,
 ) : RuntimeException("Agent patch-note retrieval failed", cause)
+
+class AgentManualSmokeBudgetExceededException : RuntimeException("Agent manual smoke budget is exhausted")
+
+class AgentManualSmokeInputMismatchException : RuntimeException("Agent manual smoke input does not match the approved plan")
+
+class AgentManualSmokeExecutionPlanException : RuntimeException("Agent manual smoke execution plan rejected this request")
+
+class AgentManualSmokeUnexpectedToolException : RuntimeException("Agent manual smoke blocked a non patch-note Tool")
 
 class AgentModelInvalidResponseException : RuntimeException("Agent model response is invalid")
 

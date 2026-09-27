@@ -100,6 +100,13 @@ agent:
   smoke-observation:
     # 로컬 smoke에서만 허용된 Tool과 식별정보 없는 통계 요약을 기록한다.
     enabled: ${AGENT_SMOKE_OBSERVATION_ENABLED:false}
+  manual-smoke:
+    # 단일 실호출 검증에서만 승인된 입력·예산을 서버 경계에서 강제한다.
+    enabled: ${AGENT_MANUAL_SMOKE_ENABLED:false}
+    plan-path: ${AGENT_MANUAL_SMOKE_PLAN_PATH:}
+    plan-sha256: ${AGENT_MANUAL_SMOKE_PLAN_SHA256:}
+    evaluation-run-id: ${AGENT_MANUAL_SMOKE_EVALUATION_RUN_ID:}
+    capture-directory: ${AGENT_MANUAL_SMOKE_CAPTURE_DIRECTORY:.local/agent-smoke}
 
 analysis:
   result-cache:

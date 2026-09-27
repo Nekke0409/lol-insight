@@ -48,3 +48,6 @@ deploy.secrets.env
 
 # Manual RAG evaluation snapshots, metadata, and isolated pgvector exports.
 .local/rag/
+.local/agent-smoke/
+.local/agent-smoke-plans/
+.local/agent-smoke-client/

@@ -21,6 +21,7 @@ import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
+import org.springframework.web.bind.annotation.RequestHeader
 import org.springframework.web.bind.annotation.RestController
 import io.swagger.v3.oas.annotations.parameters.RequestBody as OpenApiRequestBody
 
@@ -101,6 +102,7 @@ class AgentQuestionController(
         @org.springframework.web.bind.annotation.RequestBody
         @Valid request: AgentQuestionRequest,
         httpRequest: HttpServletRequest,
+        @RequestHeader("X-Agent-Manual-Question-Id", required = false) manualQuestionId: String? = null,
     ): AgentQuestionResponse =
         agentQuestionService.answer(
             gameName = gameName,
@@ -108,6 +110,7 @@ class AgentQuestionController(
             question = request.question,
             clientIdentity = analysisRateLimitKeyResolver.resolve(httpRequest),
             knowledgeScope = request.knowledgeScope?.let { AgentPatchNoteScope(it.patchVersion, it.locale) },
+            manualQuestionId = manualQuestionId,
         )
 }
 
