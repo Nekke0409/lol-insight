@@ -148,14 +148,14 @@ RIOT_API_KEY=your-riot-api-key
 docker compose up -d
 ```
 
-`.env.example`을 `.env`로 복사한 뒤 `RIOT_API_KEY`를 채운다. `.env`는 Git에서 제외되며 `bootRun` 실행 시에만 자동으로 주입된다. shell에 이미 설정된 환경변수는 `.env`보다 우선한다.
+`.env.example`을 `.env`로 복사한 뒤 `RIOT_API_KEY`를 채웁니다. `.env`는 Git에서 제외되며 `bootRun` 실행 시에만 자동으로 주입됩니다. shell에 이미 설정된 환경변수는 `.env`보다 우선합니다.
 
 ```powershell
 Copy-Item .env.example .env
 .\gradlew.bat bootRun
 ```
 
-IDE 실행 구성과 일반 `java -jar` 실행은 `.env`를 자동으로 읽지 않으므로, 해당 실행 환경에는 필요한 변수를 별도로 설정한다.
+IDE 실행 구성과 일반 `java -jar` 실행은 `.env`를 자동으로 읽지 않으므로, 해당 실행 환경에는 필요한 변수를 별도로 설정합니다.
 
 `local` profile은 PostgreSQL의 로컬 기본값(`localhost:5432`, database/user `lol_insight`)을 사용합니다. `POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`로 값을 덮어쓸 수 있으며 production에서는 모든 값을 환경변수로 제공해야 합니다.
 
@@ -170,25 +170,25 @@ IDE 실행 구성과 일반 `java -jar` 실행은 `.env`를 자동으로 읽지 
 - Swagger UI: [http://localhost:8080/swagger-ui.html](http://localhost:8080/swagger-ui.html)
 - OpenAPI JSON: [http://localhost:8080/v3/api-docs](http://localhost:8080/v3/api-docs)
 
-예를 들어 Swagger UI에서 `GET /api/v1/players/{gameName}/{tagLine}`의 `gameName`에 `ExamplePlayer`, `tagLine`에 `KR1`을 입력한다. `tagLine`에는 Riot ID 구분자인 `#`를 포함하지 않는다.
+예를 들어 Swagger UI에서 `GET /api/v1/players/{gameName}/{tagLine}`의 `gameName`에 `ExamplePlayer`, `tagLine`에 `KR1`을 입력한다. `tagLine`에는 Riot ID 구분자인 `#`를 포함하지 않습니다.
 
-문서를 열거나 명세를 조회하는 것만으로 Riot/OpenAI 요청은 실행되지 않는다. 다만 Swagger UI에서 플레이어·경기·분석·Agent API를 실제로 호출하면 외부 API 호출과 비용이 발생할 수 있고, 기존 rate limit과 Agent 활성화 정책이 그대로 적용된다. API key는 서버 환경변수로만 설정하며 Swagger UI에 입력하거나 노출하지 않는다.
+문서를 열거나 명세를 조회하는 것만으로 Riot/OpenAI 요청은 실행되지 않습니다. 다만 Swagger UI에서 플레이어·경기·분석·Agent API를 실제로 호출하면 외부 API 호출과 비용이 발생할 수 있고, 기존 rate limit과 Agent 활성화 정책이 그대로 적용됩니다. API key는 서버 환경변수로만 설정하며 Swagger UI에 입력하거나 노출하지 않습니다.
 
 구체적인 OpenAI runtime·관측성 설정, Benchmark seed 절차, 성능 측정 방법은 해당 [아키텍처 문서](docs/architecture.md), [ADR](docs/adr/README.md), [성능 문서](docs/performance/)를 참고합니다.
 
 ## 단일 인스턴스 비공개 배포 v0.1
 
-개발용 `docker-compose.yml`은 그대로 둔다. 비공개 검증 또는 한 대의 EC2에는 별도 `compose.deploy.yaml`만 사용한다. 이 구성은
-PostgreSQL·Redis 포트를 host에 게시하지 않고, 애플리케이션만 기본 `127.0.0.1:18080`으로 bind한다.
+개발용 `docker-compose.yml`은 그대로 둡니다. 비공개 검증 또는 한 대의 EC2에는 별도 `compose.deploy.yaml`만 사용합니다. 이 구성은
+PostgreSQL·Redis 포트를 host에 게시하지 않고, 애플리케이션만 기본 `127.0.0.1:18080`으로 bind합니다.
 
-`deploy.env.example`과 `deploy.secrets.env.example`을 각각 Git이 무시하는 `deploy.env`, `deploy.secrets.env`로 복사해 값을 채운다.
-배포용 이미지는 versioned tag로 먼저 만들고, Compose는 build를 수행하지 않는다.
+`deploy.env.example`과 `deploy.secrets.env.example`을 각각 Git이 무시하는 `deploy.env`, `deploy.secrets.env`로 복사해 값을 채웁니다.
+배포용 이미지는 versioned tag로 먼저 만들고, Compose는 build를 수행하지 않습니다.
 
 ```text
 docker build --tag lol-insight:0.1.0 .
 docker compose --env-file deploy.env --env-file deploy.secrets.env -f compose.deploy.yaml up -d
 ```
 
-시작·SSM 접근·backup/restore·재배포 절차와 현재 한계는 [단일 인스턴스 비공개 배포 runbook](docs/deployment/single-instance-private-v0.1.md)을 따른다.
+시작·SSM 접근·backup/restore·재배포 절차와 현재 한계는 [단일 인스턴스 비공개 배포 runbook](docs/deployment/single-instance-private-v0.1.md)을 따릅니다.
 
-패치 노트 답변 생성은 `RAG_ENABLED=true`와 `RAG_ANSWER_ENABLED=true`가 모두 필요한 local opt-in이다. 서버는 전달한 evidence ID만 검증해 citation을 조합하며, 기본 설정에서는 endpoint가 404이고 외부 호출이 없다. [답변 생성 v0.1](docs/rag/patch-note-answer-v0.1.md)과 [ADR-021](docs/adr/021-validate-rag-answer-citations-at-backend.md)을 참고한다.
+패치 노트 답변 생성은 `RAG_ENABLED=true`와 `RAG_ANSWER_ENABLED=true`가 모두 필요한 local opt-in입니다. 서버는 전달한 evidence ID만 검증해 citation을 조합하며, 기본 설정에서는 endpoint가 404이고 외부 호출이 없습니다. [답변 생성 v0.1](docs/rag/patch-note-answer-v0.1.md)과 [ADR-021](docs/adr/021-validate-rag-answer-citations-at-backend.md)을 참고합니다.
