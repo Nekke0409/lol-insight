@@ -91,13 +91,19 @@ private class CaptureSession(
     private var toolAttempts = 0
     private var patchSearchAttempts = 0
 
-    override fun modelAttempt(number: Int, continuation: Boolean) {
+    override fun modelAttempt(
+        number: Int,
+        continuation: Boolean,
+    ) {
         if (number > MAX_RESPONSES_REQUESTS) throw AgentManualSmokeBudgetExceededException()
         modelAttempts++
         write("responses_attempt_started", mapOf("number" to number, "continuation" to continuation))
     }
 
-    override fun modelTurn(number: Int, turn: AgentModelTurn) {
+    override fun modelTurn(
+        number: Int,
+        turn: AgentModelTurn,
+    ) {
         write(
             "responses_attempt_completed",
             mapOf(
@@ -107,14 +113,15 @@ private class CaptureSession(
                 "structuredFinal" to
                     turn.finalAnswer?.let { final ->
                         mapOf(
-                            "statements" to final.statements.map { statement ->
-                                mapOf(
-                                    "text" to statement.text,
-                                    "basis" to statement.basis.name,
-                                    "evidenceIds" to statement.evidenceIds,
-                                    "toolName" to statement.toolName,
-                                )
-                            },
+                            "statements" to
+                                final.statements.map { statement ->
+                                    mapOf(
+                                        "text" to statement.text,
+                                        "basis" to statement.basis.name,
+                                        "evidenceIds" to statement.evidenceIds,
+                                        "toolName" to statement.toolName,
+                                    )
+                                },
                             "limitations" to final.limitations,
                         )
                     },
@@ -122,11 +129,17 @@ private class CaptureSession(
         )
     }
 
-    override fun modelFailure(number: Int, exception: RuntimeException) {
+    override fun modelFailure(
+        number: Int,
+        exception: RuntimeException,
+    ) {
         write("responses_attempt_failed", mapOf("number" to number, "failure" to exception.javaClass.simpleName))
     }
 
-    override fun beforeToolDispatch(invocation: Int, call: AgentModelToolCall) {
+    override fun beforeToolDispatch(
+        invocation: Int,
+        call: AgentModelToolCall,
+    ) {
         if (call.name != SEARCH_PATCH_NOTES) {
             write("tool_blocked_before_dispatch", mapOf("invocation" to invocation, "tool" to call.name))
             throw AgentManualSmokeUnexpectedToolException()
@@ -171,7 +184,11 @@ private class CaptureSession(
         )
     }
 
-    override fun toolFailure(invocation: Int, call: AgentModelToolCall, exception: RuntimeException) {
+    override fun toolFailure(
+        invocation: Int,
+        call: AgentModelToolCall,
+        exception: RuntimeException,
+    ) {
         write(
             "patch_note_tool_failed",
             mapOf(
@@ -195,7 +212,10 @@ private class CaptureSession(
         )
     }
 
-    override fun failed(exception: RuntimeException, terminationReason: AgentTerminationReason?) {
+    override fun failed(
+        exception: RuntimeException,
+        terminationReason: AgentTerminationReason?,
+    ) {
         write(
             "agent_response_failed",
             mapOf("failure" to exception.javaClass.simpleName, "terminationReason" to terminationReason?.name),
@@ -215,7 +235,10 @@ private class CaptureSession(
         )
     }
 
-    fun write(event: String, details: Any) {
+    fun write(
+        event: String,
+        details: Any,
+    ) {
         val line = objectMapper.writeValueAsString(mapOf("at" to Instant.now().toString(), "event" to event, "details" to details))
         Files.writeString(transcript, "$line\n", StandardCharsets.UTF_8, StandardOpenOption.CREATE, StandardOpenOption.APPEND)
     }
@@ -240,7 +263,12 @@ private data class ManualAgentSmokeSettings(
                 throw AgentManualSmokeExecutionPlanException()
             }
             if (!SHA_256.matches(manual.planSha256)) throw AgentManualSmokeExecutionPlanException()
-            return ManualAgentSmokeSettings(Path.of(manual.planPath), manual.planSha256.lowercase(), manual.evaluationRunId, Path.of(manual.captureDirectory))
+            return ManualAgentSmokeSettings(
+                Path.of(manual.planPath),
+                manual.planSha256.lowercase(),
+                manual.evaluationRunId,
+                Path.of(manual.captureDirectory),
+            )
         }
 
         private val SHA_256 = Regex("[0-9a-fA-F]{64}")
@@ -260,11 +288,12 @@ private data class ManualAgentSmokePlan(
 ) {
     companion object {
         fun load(settings: ManualAgentSmokeSettings): ManualAgentSmokePlan {
-            val bytes = try {
-                Files.readAllBytes(settings.planPath)
-            } catch (_: Exception) {
-                throw AgentManualSmokeExecutionPlanException()
-            }
+            val bytes =
+                try {
+                    Files.readAllBytes(settings.planPath)
+                } catch (_: Exception) {
+                    throw AgentManualSmokeExecutionPlanException()
+                }
             if (bytes.startsWithUtf8Bom() || sha256(bytes) != settings.approvedPlanSha256) throw AgentManualSmokeExecutionPlanException()
             val properties = Properties()
             try {
@@ -292,7 +321,10 @@ private data class ManualAgentSmokePlan(
                             "totalOpenAiAttempts" to properties.requiredPositive("maxOpenAiAttempts"),
                         ),
                 )
-            if (plan.runId != settings.runId || plan.limits != REQUIRED_LIMITS || plan.path != "/api/v1/players/${plan.gameName}/${plan.tagLine}/agent-questions") {
+            if (plan.runId != settings.runId ||
+                plan.limits != REQUIRED_LIMITS ||
+                plan.path != "/api/v1/players/${plan.gameName}/${plan.tagLine}/agent-questions"
+            ) {
                 throw AgentManualSmokeExecutionPlanException()
             }
             return plan
@@ -310,13 +342,16 @@ private data class ManualAgentSmokePlan(
     }
 }
 
-private fun Properties.required(key: String): String = getProperty(key)?.takeIf(String::isNotBlank) ?: throw AgentManualSmokeExecutionPlanException()
+private fun Properties.required(key: String): String =
+    getProperty(key)?.takeIf(String::isNotBlank) ?: throw AgentManualSmokeExecutionPlanException()
 
 private fun Properties.requiredSha256(key: String): String =
     required(key).lowercase().takeIf { Regex("[0-9a-f]{64}").matches(it) } ?: throw AgentManualSmokeExecutionPlanException()
 
-private fun Properties.requiredPositive(key: String): Int = required(key).toIntOrNull()?.takeIf { it > 0 } ?: throw AgentManualSmokeExecutionPlanException()
+private fun Properties.requiredPositive(key: String): Int =
+    required(key).toIntOrNull()?.takeIf { it > 0 } ?: throw AgentManualSmokeExecutionPlanException()
 
-private fun ByteArray.startsWithUtf8Bom(): Boolean = size >= 3 && this[0] == 0xEF.toByte() && this[1] == 0xBB.toByte() && this[2] == 0xBF.toByte()
+private fun ByteArray.startsWithUtf8Bom(): Boolean =
+    size >= 3 && this[0] == 0xEF.toByte() && this[1] == 0xBB.toByte() && this[2] == 0xBF.toByte()
 
 private fun sha256(bytes: ByteArray): String = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }

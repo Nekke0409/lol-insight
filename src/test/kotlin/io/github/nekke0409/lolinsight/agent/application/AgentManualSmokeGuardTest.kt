@@ -21,9 +21,10 @@ class AgentManualSmokeGuardTest {
                 modelGateway = ToolSelectingModel(),
                 toolDispatcher = dispatcher,
                 toolExecutionRunner = DirectRunner,
-                manualSmokeObserver = object : AgentManualSmokeObserver {
-                    override fun admit(request: AgentManualSmokeRequest): AgentManualSmokeSession = session
-                },
+                manualSmokeObserver =
+                    object : AgentManualSmokeObserver {
+                        override fun admit(request: AgentManualSmokeRequest): AgentManualSmokeSession = session
+                    },
             )
 
         assertFailsWith<AgentManualSmokeUnexpectedToolException> {
@@ -54,15 +55,25 @@ class AgentManualSmokeGuardTest {
     }
 
     private class RecordingSession : AgentManualSmokeSession {
-        override fun modelAttempt(number: Int, continuation: Boolean) = Unit
+        override fun modelAttempt(
+            number: Int,
+            continuation: Boolean,
+        ) = Unit
 
-        override fun modelTurn(number: Int, turn: AgentModelTurn) = Unit
+        override fun modelTurn(
+            number: Int,
+            turn: AgentModelTurn,
+        ) = Unit
 
-        override fun modelFailure(number: Int, exception: RuntimeException) = Unit
+        override fun modelFailure(
+            number: Int,
+            exception: RuntimeException,
+        ) = Unit
 
-        override fun beforeToolDispatch(invocation: Int, call: AgentModelToolCall) {
-            throw AgentManualSmokeUnexpectedToolException()
-        }
+        override fun beforeToolDispatch(
+            invocation: Int,
+            call: AgentModelToolCall,
+        ): Unit = throw AgentManualSmokeUnexpectedToolException()
 
         override fun toolOutput(
             invocation: Int,
@@ -73,11 +84,18 @@ class AgentManualSmokeGuardTest {
             delivered: Boolean,
         ) = Unit
 
-        override fun toolFailure(invocation: Int, call: AgentModelToolCall, exception: RuntimeException) = Unit
+        override fun toolFailure(
+            invocation: Int,
+            call: AgentModelToolCall,
+            exception: RuntimeException,
+        ) = Unit
 
         override fun completed(response: AgentQuestionResponse) = Unit
 
-        override fun failed(exception: RuntimeException, terminationReason: AgentTerminationReason?) = Unit
+        override fun failed(
+            exception: RuntimeException,
+            terminationReason: AgentTerminationReason?,
+        ) = Unit
 
         override fun summary(summary: AgentQuestionExecutionSummary) = Unit
     }
@@ -87,10 +105,15 @@ class AgentManualSmokeGuardTest {
     private class NeverDispatcher : AgentToolExecutor {
         var dispatchEntered = false
 
-        override fun newContext(gameName: String, tagLine: String): AgentToolExecutionContext =
-            AgentToolExecutionContext(gameName, tagLine, mock(PlayerComparisonContextService::class.java))
+        override fun newContext(
+            gameName: String,
+            tagLine: String,
+        ): AgentToolExecutionContext = AgentToolExecutionContext(gameName, tagLine, mock(PlayerComparisonContextService::class.java))
 
-        override fun dispatch(call: AgentModelToolCall, context: AgentToolExecutionContext): AgentToolDispatchResult {
+        override fun dispatch(
+            call: AgentModelToolCall,
+            context: AgentToolExecutionContext,
+        ): AgentToolDispatchResult {
             dispatchEntered = true
             error("manual guard must block before dispatch")
         }
@@ -101,6 +124,9 @@ class AgentManualSmokeGuardTest {
     }
 
     private object DirectRunner : AgentToolExecutionRunner {
-        override fun <T> execute(timeout: Duration, action: () -> T): T = action()
+        override fun <T> execute(
+            timeout: Duration,
+            action: () -> T,
+        ): T = action()
     }
 }

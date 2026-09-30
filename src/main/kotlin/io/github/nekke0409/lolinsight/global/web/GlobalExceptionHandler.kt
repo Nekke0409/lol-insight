@@ -1,11 +1,11 @@
 package io.github.nekke0409.lolinsight.global.web
 
 import io.github.nekke0409.lolinsight.agent.application.AgentFeatureDisabledException
-import io.github.nekke0409.lolinsight.agent.application.AgentModelAuthenticationException
 import io.github.nekke0409.lolinsight.agent.application.AgentManualSmokeBudgetExceededException
 import io.github.nekke0409.lolinsight.agent.application.AgentManualSmokeExecutionPlanException
 import io.github.nekke0409.lolinsight.agent.application.AgentManualSmokeInputMismatchException
 import io.github.nekke0409.lolinsight.agent.application.AgentManualSmokeUnexpectedToolException
+import io.github.nekke0409.lolinsight.agent.application.AgentModelAuthenticationException
 import io.github.nekke0409.lolinsight.agent.application.AgentModelConfigurationException
 import io.github.nekke0409.lolinsight.agent.application.AgentModelIncompleteResponseException
 import io.github.nekke0409.lolinsight.agent.application.AgentModelInvalidResponseException

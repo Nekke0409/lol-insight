@@ -19,14 +19,26 @@ data class AgentManualSmokeRequest(
 }
 
 interface AgentManualSmokeSession {
-    fun modelAttempt(number: Int, continuation: Boolean)
+    fun modelAttempt(
+        number: Int,
+        continuation: Boolean,
+    )
 
-    fun modelTurn(number: Int, turn: AgentModelTurn)
+    fun modelTurn(
+        number: Int,
+        turn: AgentModelTurn,
+    )
 
-    fun modelFailure(number: Int, exception: RuntimeException)
+    fun modelFailure(
+        number: Int,
+        exception: RuntimeException,
+    )
 
     /** Called before callSignature/dispatcher so player-backed Tools cannot run in this smoke path. */
-    fun beforeToolDispatch(invocation: Int, call: AgentModelToolCall)
+    fun beforeToolDispatch(
+        invocation: Int,
+        call: AgentModelToolCall,
+    )
 
     /** The exact serialized value passed to the continuation, not a reconstructed payload. */
     fun toolOutput(
@@ -38,11 +50,18 @@ interface AgentManualSmokeSession {
         delivered: Boolean,
     )
 
-    fun toolFailure(invocation: Int, call: AgentModelToolCall, exception: RuntimeException)
+    fun toolFailure(
+        invocation: Int,
+        call: AgentModelToolCall,
+        exception: RuntimeException,
+    )
 
     fun completed(response: AgentQuestionResponse)
 
-    fun failed(exception: RuntimeException, terminationReason: AgentTerminationReason?)
+    fun failed(
+        exception: RuntimeException,
+        terminationReason: AgentTerminationReason?,
+    )
 
     fun summary(summary: AgentQuestionExecutionSummary)
 }
