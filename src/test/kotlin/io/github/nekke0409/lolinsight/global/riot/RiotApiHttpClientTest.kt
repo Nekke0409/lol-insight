@@ -50,6 +50,32 @@ class RiotApiHttpClientTest {
     }
 
     @Test
+    fun `configured RestClient sends the configured token to localhost`() {
+        val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        var receivedToken: String? = null
+        server.createContext("/token-check") { exchange ->
+            receivedToken = exchange.requestHeaders.getFirst("X-Riot-Token")
+            exchange.sendResponseHeaders(HttpStatus.OK.value(), -1)
+            exchange.close()
+        }
+        server.start()
+
+        try {
+            val properties = RiotApiProperties(key = "dummy-localhost-only-key")
+            RiotApiConfiguration()
+                .riotApiRestClient(properties)
+                .get()
+                .uri("http://127.0.0.1:${server.address.port}/token-check")
+                .retrieve()
+                .toBodilessEntity()
+
+            assertEquals("dummy-localhost-only-key", receivedToken)
+        } finally {
+            server.stop(0)
+        }
+    }
+
+    @Test
     fun `regional request resolves encoded path and applies Riot token header`() {
         server
             .expect(requestTo("https://regional.test/riot/account/v1/accounts/by-riot-id/Hide%20on%20bush/KR1?queue=420"))
