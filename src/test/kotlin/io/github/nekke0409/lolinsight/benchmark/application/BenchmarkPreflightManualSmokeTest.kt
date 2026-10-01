@@ -4,6 +4,7 @@ import io.github.nekke0409.lolinsight.benchmark.domain.BenchmarkCohort
 import io.github.nekke0409.lolinsight.comparison.application.PlayerComparisonAvailabilityPolicy
 import io.github.nekke0409.lolinsight.comparison.application.PlayerComparisonContextService
 import io.github.nekke0409.lolinsight.match.domain.RankedSoloQueue
+import io.micrometer.core.instrument.MeterRegistry
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable
 import org.springframework.beans.factory.annotation.Autowired
@@ -43,10 +44,19 @@ class BenchmarkPreflightManualSmokeTest {
     @Autowired
     private lateinit var jdbcTemplate: NamedParameterJdbcTemplate
 
+    @Autowired
+    private lateinit var meterRegistry: MeterRegistry
+
     @Test
     fun `reports configured cohort readiness and the self-excluded benchmark without creating work`() {
+        BenchmarkPreflightRiotObservation(meterRegistry).run(::runPreflight)
+    }
+
+    private fun runPreflight(stage: (String) -> Unit) {
         val settings = BenchmarkPreflightSettings.fromEnvironment()
+        stage("comparison_context")
         val context = playerComparisonContextService.buildContext(settings.gameName, settings.tagLine, START, COUNT)
+        stage("benchmark_query")
         val userPositionGames = context.positionStatistics.singleOrNull { it.position == settings.position }?.games ?: 0
         val window = peerBenchmarkQueryService.currentWindow()
         val cohort =
@@ -66,6 +76,7 @@ class BenchmarkPreflightManualSmokeTest {
                 window.fromInclusive.toEpochMilli(),
                 window.toExclusive.toEpochMilli(),
             )
+        stage("assessment")
         val assessment =
             BenchmarkPreflightAssessment.assess(
                 actualRank = context.rankContext,
@@ -100,6 +111,7 @@ class BenchmarkPreflightManualSmokeTest {
         val readiness = if (assessment.ready) "READY" else "NOT_READY"
         println("Readiness: $readiness (${assessment.reason})")
         println("Analysis job: not created")
+        stage("complete")
     }
 
     private fun findTargetSampleCount(

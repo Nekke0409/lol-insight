@@ -16,7 +16,11 @@ interface RiotApiObservationRecorder {
 
     fun recordPacingWait(duration: Duration)
 
-    fun recordAdmissionTimeout()
+    fun recordPacingLockWait(duration: Duration)
+
+    fun recordPacingAdmissionElapsed(duration: Duration)
+
+    fun recordAdmissionTimeout(branch: String)
 
     fun recordAdmissionInterrupted()
 
@@ -40,7 +44,11 @@ object NoOpRiotApiObservationRecorder : RiotApiObservationRecorder {
 
     override fun recordPacingWait(duration: Duration) = Unit
 
-    override fun recordAdmissionTimeout() = Unit
+    override fun recordPacingLockWait(duration: Duration) = Unit
+
+    override fun recordPacingAdmissionElapsed(duration: Duration) = Unit
+
+    override fun recordAdmissionTimeout(branch: String) = Unit
 
     override fun recordAdmissionInterrupted() = Unit
 
@@ -75,7 +83,16 @@ class MicrometerRiotApiObservationRecorder(
         safe { meterRegistry.timer("riot.api.pacing.waits").record(duration) }
     }
 
-    override fun recordAdmissionTimeout() = safe { meterRegistry.counter("riot.api.pacing.admissions", "outcome", "timeout").increment() }
+    override fun recordPacingLockWait(duration: Duration) = safe { meterRegistry.timer("riot.api.pacing.lock_waits").record(duration) }
+
+    override fun recordPacingAdmissionElapsed(duration: Duration) =
+        safe { meterRegistry.timer("riot.api.pacing.admission_elapsed").record(duration) }
+
+    override fun recordAdmissionTimeout(branch: String) =
+        safe {
+            meterRegistry.counter("riot.api.pacing.admissions", "outcome", "timeout").increment()
+            meterRegistry.counter("riot.api.pacing.timeouts", "branch", branch).increment()
+        }
 
     override fun recordAdmissionInterrupted() =
         safe {

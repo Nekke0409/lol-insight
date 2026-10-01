@@ -27,3 +27,9 @@
 시작·종료 시 `tracked_player_automation` 1행, `automation_execution` 1행, 기존 `analysis_job` 2행(FAILED 1, SUCCEEDED 1)의 전체 상태 해시가 각각 일치했다. GOLD I 표본 146건과 cursor 1행, EMERALD IV 외 표본 전체의 상태 해시도 일치했다. 신규 표본, cursor 전진, Job 결과는 없었다. 시작한 개발 DB·Redis 컨테이너는 종료해 원래 중지 상태로 되돌렸고 volume은 보존했다.
 
 현재 rank와 사용자 TOP 경기 수를 확인하지 못했으므로 수집·분석 준비 여부는 판정하지 않는다. 이번 실행에서 실제 피드백, provider usage·latency, 동일 입력과 결과의 수치 대조는 수행되지 않았다. 별도 재시도나 설정 변경 없이 여기서 중단했다.
+
+## 후속 코드 재현·수정 (live 재실행 없음)
+
+후속 작업에서 기존 pacer의 최초 허가 sentinel 산술이 **양수** `nanoTime`에서 오버플로하는 결함을 자동 테스트로 확인했다. 공정 timed lock과 실제 전체 admission 경과 시간 검사를 포함한 수정도 localhost mock HTTP와 자동 테스트로 검증했다. 그러나 위 live 실패가 발생한 정확한 timeout 분기나 실제 대기 시간은 과거 JVM의 지표가 남아 있지 않아 확인할 수 없다. 위의 “10초 한도”는 설정된 `maxWait`를 뜻하며 실제로 10초를 기다렸다는 측정값이 아니다. Match Detail 단계라는 기존 stack trace 근거는 유지한다.
+
+공통 preflight에는 앞으로 성공·예외 종료 시 HTTP와 pacing 지표를 JVM 종료 전에 출력하는 요약을 추가했다. 직전 실행의 HTTP 횟수·429 여부를 후속 테스트 수치로 소급하지 않는다. 이 절의 검증은 Riot/OpenAI 호출이나 개발 DB 접속 없이 수행했으며, 수집·분석 검증을 재개한 결과가 아니다.

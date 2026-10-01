@@ -33,5 +33,12 @@ data class RiotApiOutboundPacingProperties(
     init {
         require(!minInterval.isNegative && !minInterval.isZero) { "outboundPacing.minInterval must be positive." }
         require(!maxWait.isNegative && !maxWait.isZero) { "outboundPacing.maxWait must be positive." }
+        require(minInterval <= MAX_PACING_DURATION && maxWait <= MAX_PACING_DURATION) {
+            "outboundPacing durations must not exceed one hour."
+        }
+    }
+
+    private companion object {
+        val MAX_PACING_DURATION: Duration = Duration.ofHours(1)
     }
 }

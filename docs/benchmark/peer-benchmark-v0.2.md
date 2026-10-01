@@ -156,3 +156,9 @@ $env:BENCHMARK_PREFLIGHT_POSITION = 'TOP'
 사용자 최소 경기 수와 benchmark availability policy를 그대로 사용한다. 과거
 `RUN_EMERALD_TOP_BENCHMARK_PREFLIGHT` flag는 더 이상 어떤 test도 활성화하지 않는다. preflight Spring context에서는
 Automation/bootstrap, replenishment scheduler/run-once, Agent를 명시적으로 false로 고정한다.
+
+공통 preflight는 성공과 예외 종료 모두에서 `benchmark_preflight_riot_observation` 요약을 JVM 종료 전에 남긴다.
+HTTP 시도/응답 상태, 429, local admission timeout 분기, cooldown/interrupt, lock·interval·전체 admission 경과 시간을
+구분한다. 이는 종료 시점 snapshot이며 취소된 in-flight 요청의 완전 종료 집계는 확인되지 않는다. 지표 label에는
+Riot ID, PUUID, match ID, URL이나 API key를 포함하지 않는다. 설정된 admission `maxWait`는 HTTP connect/read timeout과
+별개이며 전체 20경기 처리 시간의 상한도 아니다.
