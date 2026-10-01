@@ -11,10 +11,123 @@ job의 재시작 복구, stale job 정리, 사용자 ownership, distributed sche
 
 ## 현재 진행 상태와 재개 조건
 
-2026-09-19 기준으로 AWS 비공개 배포와 Free Tier 확인은 **보류**한다. 배포 설계를 취소한 것이 아니라, 먼저 기존 AI
-Automation의 로컬 실행·결과 확인 경험을 완성하고 Tool 기반 AI Agent를 학습·구현한 뒤에 이 절차를 재개한다. 이 절은 이전
-검증과 현재 미결정 사항을 보존하기 위한 기록이며, 이번 작업에서 AWS CLI/Session Manager plugin 설치, 로그인, 계정·권한·region
+### 2026-10-01 최신 코드의 로컬 검증
+
+Git commit `21a91314de06aea356078b2ac8b5fdabd35c8614`의 app source와 현재 working tree의 배포 설정·`.dockerignore`를
+사용해 `lol-insight:local-private-20261001` image를 빌드했다. app source 파일 자체는 이 검증에서 변경하지 않았다. 최종
+image ID는 `sha256:df1415ec0fc174f2b2a7623c73970d5b5ce77e98f74b6b7fe38add37ede4a7e1` (`linux/amd64`)다. Windows Docker
+Desktop에서 기본 실행과 선택적 pgvector 저장 구성을 각각 새 project·volume으로 검증했다. 아래 “이전 작업” 결과와 구분되는
+이번 실행 결과다.
+
+- A 기본 실행은 `postgres:17-alpine`, RAG=false로 시작했다. 기본 Flyway V1–V4와 JPA validation, app/PostgreSQL/Redis
+  health가 통과했고, RAG history/table은 생성되지 않았다. Agent/RAG endpoint는 유효한 작은 JSON 요청에 404였고,
+  Swagger와 actuator env는 404, health는 detail 없이 `UP`을 반환했다. 다섯 업무 테이블의 row는 모두 0이었다.
+- B는 새 `pgvector/pgvector:0.8.0-pg17` volume으로 시작했다. application V1–V4와 별도 RAG V0 baseline/V1 migration,
+  vector extension이 성공했다. `RAG_ENABLED=true`, answer/Agent/automation/bootstrap/replenishment/manual smoke는 false였다.
+- `.local/rag/patch-25-10-ko-kr-rag-data.sql`의 SHA-256은 승인된
+  `c75ae10e8b45c72eaf40e01ebcb4be6662a8d518908f59a0b00fd0586328a8d4`와 일치했다. migration에 실제 정의된 두 table이
+  비어 있는지 확인한 뒤 파일을 bytes 그대로 `docker cp`하고 container 안 `psql -v ON_ERROR_STOP=1 -f`로 복원했다.
+  활성 corpus는 25.10/ko-KR, `text-embedding-3-small`/1536, revision fingerprint
+  `3e847db68bf0cef8e8e96677b3bb8f4dc758e9f8d273cba5d533764a7fd2f0b7`, content hash
+  `b454670fa7131175a6a6b59a2169dd81ffbacbc4d17887a16fda9965f3eeb54d`, 활성 chunk 53개였고 저장 vector dimension은 모두
+  1536이었다. 질문 embedding이나 답변 생성은 하지 않았다.
+- app은 non-root `app` user로 실행했고 host port는 `127.0.0.1`에만 bind했다. PostgreSQL/Redis host port는 게시하지
+  않았다. Docker Desktop에서 egress 없는 `internal` network는 loopback port forwarding도 차단해 사용할 수 없어서 일반
+  bridge를 사용했다. 따라서 앱 기능 호출을 하지 않았고 유료 호출 기능은 모두 끈 상태지만, 패킷 수준 외부 egress 차단은
+  검증·보장하지 않았다. Docker image pull/build 다운로드는 provider API 요청과 별개다.
+- AWS, 실제 Riot/OpenAI 호출, 통계 조회·생성, Automation·Agent 실행은 하지 않았다. 혼합 Agent 호출은 계속 보류한다.
+
+반복 명령은 아래 [로컬에서 실행](#로컬에서-실행) 절을 따른다. A의 project/container/network와 전용
+`lol-insight-private-local-postgres-data` volume은 정리했다. B의 app/PostgreSQL/Redis container와 network는 정상 종료·제거했고,
+`lol-insight-private-local-rag-postgres-data` volume 및 위 image는 보존했다. 개발 `lol-insight_postgres-data` volume은 남아 있다.
+기존 개발·배포 volume은 작업하지 않았다.
+
+요청한 자동 검증은 `ktlintCheck test build` 성공, 최신 XML 92 suite·353 tests·0 failures·0 errors·7 skipped,
+`git diff --check` 통과다. Docker image build는 `bootJar -x test`를 수행했으며 전체 test suite 결과와 별도 근거다.
+
+2026-10-01 기준 AWS 비공개 배포와 Free Tier 확인은 **계속 보류**한다. 이번 작업은 로컬 실행 재현성을 검증했으며 AWS 배포를
+진행하지 않았다. AWS CLI/Session Manager plugin 설치, 로그인, 계정·권한·region
 확인, resource 생성·변경·삭제, image push, secret 등록, 비용 산정은 수행하지 않았다.
+
+## 로컬에서 실행
+
+Windows PowerShell 5.1 기준이다. local env example을 Git-ignored 디렉터리에 복사한다. secret example의 password/key는
+실제 provider credential이 아닌 비어 있지 않은 placeholder다. 이 절의 기동·health 명령은 provider endpoint를 호출하지
+않지만 Compose network 자체는 outbound egress를 막지 않는다.
+
+### 기본 실행 A
+
+```powershell
+New-Item -ItemType Directory -Force .local/compose-private | Out-Null
+Copy-Item deploy.private-local.env.example .local/compose-private/deploy.env
+Copy-Item deploy.private-local.secrets.env.example .local/compose-private/deploy.secrets.env
+$base = @('-p','lol-insight-private-local','--env-file','.local/compose-private/deploy.env','--env-file','.local/compose-private/deploy.secrets.env','-f','compose.deploy.yaml','-f','compose.local.yaml')
+docker build --tag lol-insight:local-private-20261001 .
+docker compose @base config --quiet
+docker compose @base up -d
+docker compose @base ps
+Invoke-RestMethod http://127.0.0.1:12789/actuator/health
+```
+
+`deploy.env`는 app image tag, loopback port, DB 이름·user·volume 이름을 정한다. `deploy.secrets.env`는 DB password와
+API key 설정값을 제공한다. 실제 key는 필요하지 않다. `compose.local.yaml`은 Docker Desktop port publishing과 호환되는
+bridge network를 쓴다. Compose host interpolation이 이 환경 파일 값을 덮지 않게 `DEPLOY_APP_IMAGE`, `APP_HOST_PORT`,
+`POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_VOLUME_NAME`의 동명 process environment variable을 설정하지 않은 PowerShell
+세션에서 실행한다. `RAG_ENABLED` host variable은 base에서는 무시되고, 선택 overlay를 명시한 경우에만 true가 된다.
+
+### 선택적 RAG 저장 B
+
+별도 port와 volume을 위해 `deploy.private-local-rag.env.example`을 복사한다. `compose.rag.yaml`이 pgvector image와 RAG
+migration만 선택한다. answer 생성·Agent patch tool은 base compose에서 false다. corpus 복원은 최초 새 volume에서만 아래
+import 명령을 사용자가 직접 실행할 때 일어난다.
+
+```powershell
+New-Item -ItemType Directory -Force .local/compose-private | Out-Null
+Copy-Item deploy.private-local-rag.env.example .local/compose-private/deploy-rag.env
+$rag = @('-p','lol-insight-private-local-rag','--env-file','.local/compose-private/deploy-rag.env','--env-file','.local/compose-private/deploy.secrets.env','-f','compose.deploy.yaml','-f','compose.local.yaml','-f','compose.rag.yaml')
+docker compose @rag config --quiet
+docker compose @rag up -d
+docker compose @rag ps
+Invoke-RestMethod http://127.0.0.1:12790/actuator/health
+```
+
+새 빈 volume인지 먼저 확인하고 export hash를 검증한다. hash가 다르거나 두 RAG table 중 하나라도 비어 있지 않으면 복원하지
+않는다. `docker cp`는 원본 file bytes를 전달하며 PowerShell 텍스트 pipeline으로 SQL을 읽지 않는다.
+
+```powershell
+$export = '.local/rag/patch-25-10-ko-kr-rag-data.sql'
+$expected = 'c75ae10e8b45c72eaf40e01ebcb4be6662a8d518908f59a0b00fd0586328a8d4'
+if ((Get-FileHash -LiteralPath $export -Algorithm SHA256).Hash.ToLowerInvariant() -ne $expected) { throw 'RAG export hash mismatch' }
+docker compose @rag exec -T postgres psql -U lol_insight_private_local -d lol_insight_private_local -Atc 'select count(*) from rag_patch_note_document_revision; select count(*) from rag_patch_note_chunk;'
+docker cp $export lol-insight-private-local-rag-postgres-1:/tmp/rag-export.sql
+docker compose @rag exec -T postgres psql -v ON_ERROR_STOP=1 -U lol_insight_private_local -d lol_insight_private_local -f /tmp/rag-export.sql
+```
+
+두 count가 모두 `0`인지 복원 전에 확인한다. import는 일반 start/stop에 포함하지 않는다. 복원 뒤 active revision, chunk 수와
+embedding dimension은 PostgreSQL에서 읽기 전용으로 확인한다. 질의·embedding·답변 생성은 필요하지 않다.
+
+### 중지와 재기동
+
+다음 명령은 container/network를 제거해도 named PostgreSQL volume을 남긴다. 재기동은 같은 env-file·project·Compose 파일 목록을
+사용한다. `down -v`는 사용하지 않는다.
+
+```powershell
+docker compose @base stop
+docker compose @base start
+docker compose @base down
+docker compose @base up -d
+docker compose @rag down
+docker compose @rag up -d
+docker compose @rag ps
+Invoke-RestMethod http://127.0.0.1:12790/actuator/health
+```
+
+A의 project/volume은 일회성 검증 뒤 정리할 수 있지만 B의 `lol-insight-private-local-rag-postgres-data`는 보존 대상이다.
+image는 로컬에 남는다. Redis는 named volume이 없어 container 재생성 시 cache가 비며, PostgreSQL 데이터는 named volume에
+남는다. export 원본과 `.local/compose-private` 설정 파일은 `compose down`으로 삭제되지 않는다.
+
+기동·재기동은 benchmark 수집, Automation poll, AnalysisJob 생성, RAG indexing·embedding, Agent/RAG 질문을 실행하지 않는다.
+통계와 패치 질의는 별도 사용자 요청으로만 실행한다.
 
 ### 이전 작업에서 확인·준비한 범위
 
@@ -27,9 +140,7 @@ Automation의 로컬 실행·결과 확인 경험을 완성하고 Tool 기반 AI
 - `config --quiet` 사용과 secret 전체 출력 방지, 운영 DB를 덮어쓰지 않는 격리 restore 시험 절차, SSM port forwarding 안내
 - linux/amd64 image preflight build
 
-이전 검증에 사용한 임시 image·container·volume은 정리 대상이었으며, 그 상태를 현재 배포 가능 여부의 근거로 사용하지 않는다.
-반면 `Dockerfile`, `compose.deploy.yaml`, profile 및 env example, 이 runbook 같은 배포 source는 저장소에 보존되어 있다.
-현재 로컬에 image가 없다는 이유로 이번 작업에서 다시 build하지 않는다.
+이전 검증 기록은 당시 작업 범위를 나타낸다. 최신 검증 결과는 위의 2026-10-01 절을 기준으로 한다.
 
 ### 아직 검증하지 않은 범위와 비용 제약
 

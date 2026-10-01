@@ -1,0 +1,4 @@
+# Local overlay: retain the default bridge so Docker Desktop can publish the loopback health port.
+networks:
+  default:
+    driver: bridge

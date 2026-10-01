@@ -1,5 +1,3 @@
-name: lol-insight-deploy
-
 services:
   app:
     image: ${DEPLOY_APP_IMAGE:?Set DEPLOY_APP_IMAGE in deploy.env to a versioned application image tag.}
@@ -20,6 +18,14 @@ services:
       REDIS_PORT: "6379"
       RIOT_API_KEY: ${RIOT_API_KEY:?Set RIOT_API_KEY in deploy.secrets.env.}
       OPENAI_API_KEY: ${OPENAI_API_KEY:?Set OPENAI_API_KEY in deploy.secrets.env.}
+      AGENT_ENABLED: "false"
+      AGENT_PATCH_NOTES_ENABLED: "false"
+      AGENT_SMOKE_OBSERVATION_ENABLED: "false"
+      AGENT_MANUAL_SMOKE_ENABLED: "false"
+      RAG_ENABLED: "false"
+      RAG_ANSWER_ENABLED: "false"
+      RAG_ANSWER_MANUAL_CAPTURE_ENABLED: "false"
+      RIOT_OUTBOUND_PACING_ENABLED: "false"
       ANALYSIS_AUTOMATION_ENABLED: "false"
       ANALYSIS_AUTOMATION_BOOTSTRAP_ENABLED: "false"
       ANALYSIS_AUTOMATION_BOOTSTRAP_PLAYERS: ""
@@ -79,4 +85,4 @@ services:
 
 volumes:
   postgres-data:
-    name: lol-insight-deploy-postgres-data
+    name: ${POSTGRES_VOLUME_NAME:-lol-insight-deploy-postgres-data}

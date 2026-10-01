@@ -51,3 +51,4 @@ deploy.secrets.env
 .local/agent-smoke/
 .local/agent-smoke-plans/
 .local/agent-smoke-client/
+.local/compose-private/

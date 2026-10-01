@@ -21,8 +21,10 @@ LOL Insight는 Riot Games 데이터를 Backend에서 결정적으로 정규화·
 
 Riot의 공식 Ranked Ladder를 대체하는 MMR, ELO 또는 자체 Skill Rating은 만들지 않습니다.
 
-EMERALD IV 실제 수집·본인 계정 분석, 로컬 비공개 배포와 AWS 작업은 보류합니다. 기존 배포 문서는 준비된
-single-instance v0.1의 범위와 절차를 기록할 뿐, 이번 우선순위에서 실제 배포를 진행한다는 뜻이 아닙니다.
+첫 사용자 기능은 플레이어 전적·통계와 가능한 범위의 상대 분석, 명시적으로 선택한 패치의 문서 질의응답입니다.
+개인용 Automation은 기본 비활성화하며, 통계와 패치 질문을 한 Agent 요청으로 섞는 흐름은 필수 기능에서 보류합니다.
+EMERALD IV 실제 수집·본인 계정 분석과 AWS 작업은 보류합니다. 격리된 로컬 실행 절차는
+[비공개 배포 runbook](docs/deployment/single-instance-private-v0.1.md)에서 확인할 수 있습니다.
 
 ## 현재 구현과 향후 방향
 

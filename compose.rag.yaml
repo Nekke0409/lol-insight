@@ -1,0 +1,7 @@
+# Optional local retrieval storage. Answer generation and Agent remain disabled in the base file.
+services:
+  app:
+    environment:
+      RAG_ENABLED: "true"
+  postgres:
+    image: pgvector/pgvector:0.8.0-pg17
