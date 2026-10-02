@@ -87,3 +87,30 @@ HTTP 관측은 상태를 본문 DTO 변환 전에 한 번 기록한다. 알려�
 완료 시점의 `benchmark_preflight_riot_observation` 요약은 HTTP 실행 시도 `account_by_riot_id=1`, `match_ids=1`, `match_detail=20`, `league_by_puuid=1`; 수신 상태 `200=23`이었다. `decodeFailuresByEndpoint={}`, upstream 429 `0`, local pacing timeout `0`(분기 없음), cooldown 차단 `0`, admission interrupt `0`이다. transport failure는 기존 요약에 별도 출력되지 않아 계수로 미관측이다. lock 대기 timer는 **count 23 / total 103533.8476 ms**, interval 대기는 **count 22 / total 42892.6196 ms**, 전체 admission 경과는 **count 23 / total 146431.4309 ms**이다. 이 timer는 병렬 admission을 포함한 누적 통계이며 한 요청의 대기 시간이 아니다. `inFlightCompletion=not_verified`는 요약의 고정된 표기다. 정상 완료 경로상 Match Detail batch가 결과를 반환했지만 별도 in-flight 계측으로 worker 종료를 증명한 값은 아니다. HTTP 시도 23회도 Riot 서버 내부 처리 횟수의 증명은 아니다.
 
 이번 조회는 Match Detail 20건의 성공 응답을 관측했지만 각 응답의 `atakhan` 필드 유무는 따로 수집하지 않았다. 과거 실패한 바로 그 경기의 응답이 다시 검증됐는지도 확인할 수 없다. 누락 필드 호환성 자체는 앞 절의 정제 fixture 자동 테스트 근거와 구분한다. 기존 cache는 지우지 않았고 cache 상태 변화는 별도 측정하지 않았다. 실행 전후 `benchmark_sample`, cursor, tracking, Automation execution, AnalysisJob의 각 행 수와 전체 상태 해시가 모두 일치했다. 업무 데이터 변경은 없었다. 시작한 개발 PostgreSQL·Redis 컨테이너는 다시 중지하고 기존 volume을 보존했으며, 이번에 시작한 Docker Desktop도 종료했다. RAG B volume/image와 과거 `.local` 자료는 건드리지 않았다. 이번 **preflight 1회, 수집 tick 0회, 분석 POST 0회, 신규 Job 0건, OpenAI 호출 0회**이다.
+
+## 2026-10-02 EMERALD IV TOP 제한 수집
+
+직전 공통 preflight의 정상 완료를 근거로 수집만 재개했다. 이번에는 preflight, 분석 POST, AnalysisJob 생성, OpenAI, Agent/RAG/Automation, 문서 수집을 실행하지 않았다. 기존 개발 DB lol_insight의 lol-insight_postgres-data mount와 Flyway 적용 4건을 읽기 전용으로 확인했다. 시작 상태는 전체 표본 163행, EMERALD IV 17행/4명, TOP 유효 0행/0명, EMERALD IV cursor 2페이지, GOLD I cursor 3페이지, 기존 AnalysisJob 2행이었다. TOP 조회 범위는 KR / Ranked Solo / EMERALD / IV / POSITION / TOP, gameStartTimestamp 기준 최근 30일이다.
+
+기존 startup run-once 진입점으로 한 프로세스에 한 tick만 실행하고 완료 요약을 확인한 뒤 다음 프로세스를 시작했다. scheduler는 비활성화했다. 프로세스 설정은 cohort EMERALD:IV, tick당 cohort 1개, discovery page 1개, 선수 최대 10명, 선수당 Match 후보 최대 5개, Riot outbound pacing 2초 간격/최대 대기 10초였다. 각 프로세스에는 .env에서 필요한 DB·Redis·Riot 설정만 읽어 전달했고 OpenAI key는 전달하지 않았다. 실행 중인 다른 사용자의 프로세스는 종료하지 않았다.
+
+| tick | 요청 page → 다음 page | 발견/후보/선택 선수 | 신규/중복/무효 표본 | TOP 유효 표본/고유 선수 | TOP 상태 |
+| --- | --- | --- | --- | --- | --- |
+| 시작 | 2 | - | - | 0 / 0 | NO_DATA |
+| 1 | 2 → 3 | 205 / 205 / 10 | 50 / 0 / 0 | 5 / 2 | INSUFFICIENT_SAMPLE |
+| 2 | 3 → 4 | 205 / 205 / 10 | 50 / 0 / 0 | 10 / 3 | INSUFFICIENT_SAMPLE |
+| 3 | 4 → 5 | 205 / 205 / 10 | 50 / 0 / 0 | 19 / 6 | INSUFFICIENT_SAMPLE |
+| 4 | 5 → 6 | 205 / 205 / 10 | 50 / 0 / 0 | 24 / 8 | INSUFFICIENT_SAMPLE |
+| 5 | 6 → 7 | 205 / 205 / 10 | 50 / 0 / 0 | 37 / 13 | AVAILABLE |
+
+각 tick에서 선택된 10명은 모두 해당 window의 유효 표본 0건 후보였다. discovery와 collection은 5회 모두 COMPLETED, rateLimitStopped는 false였다. TOP 목표 30건/10명에 5번째 tick에서 도달해 6번째 tick은 실행하지 않았다. 다른 position 표본도 함께 늘었지만 다른 position의 기준 충족을 위해 계속 수집하지 않았다. 이 표는 선수당 최대 5개 후보를 처리한 결과이며, 신규 고유 선수 50명 또는 TOP 유효 표본 250건을 뜻하지 않는다.
+
+각 JVM의 Micrometer HTTP 시도와 200 응답은 각각 61회였다. 5회 합계는 HTTP 시도 305회, 관측된 200 응답 305회다. 401/403/429 응답은 관측되지 않았다. tick 1·3·4·5에서 확보한 Riot pacing 지표는 각 JVM에서 lock wait 61회, interval wait 60회, admission 61회였다. 이들 tick의 누적 interval wait는 약 117.6~118.3초, lock wait는 약 276.0~278.2초, admission elapsed는 약 393.8~396.6초였다. 이는 병렬 요청의 누적 timer 값이며 tick wall-clock 시간이 아니다. tick 2의 HTTP 횟수와 상태는 확인했으나 pacing timer 상세는 프로세스 종료 전에 보존하지 못해 미계측으로 남긴다. decode failure와 local pacing timeout/interrupt/cooldown 차단은 수집 프로세스의 가용 지표에 기록되지 않았고, 완료 요약에는 예외나 rate limit 중단이 없었다. 미계측 지표를 수치 0으로 간주하지 않는다.
+
+종료 시 DB는 전체 표본 413행, EMERALD IV 저장 표본 267행/고유 선수 54명, 그중 TOP 전체 저장 row 56행/20명이었다. 마지막 30일 유효 window(2026-09-02 08:14:48 UTC 이상, 2026-10-02 08:14:48 UTC 미만)의 TOP은 37행/13명으로 AVAILABLE이었다. cursor는 EMERALD IV 7페이지, GOLD I 3페이지였다. GOLD I 표본, Automation tracking/execution, 기존 AnalysisJob의 전체 행 해시가 실행 전후 동일했고 AnalysisJob은 계속 2행이었다. Flyway 4건도 그대로였다. 이번 업무 데이터 변경은 EMERALD IV 신규 표본 250행과 정상 cursor 전진이다. 기존 Redis cache 상태 변화는 따로 측정하지 않았다.
+
+본인 제외 질의에 필요한 PUUID와 이번 표본의 대응을 저장 자료에서 확정하지 못했다. 그러므로 일반 TOP coverage AVAILABLE을 본인 제외 READY로 바꾸어 보고하지 않는다. 실제 분석 직전에 현재 rank·최근 사용 position·본인 제외 comparison 결과를 다시 확인해야 한다. 이번에는 분석을 실행하지 않았다.
+
+시작할 때 중지 상태였던 개발 PostgreSQL·Redis만 기동했고 작업 후 다시 중지했다. 기존 volume, RAG B image/volume 및 .local 자료는 보존했다. Docker Desktop은 공유 자원으로 그대로 두었다. 소스와 실행 jar는 Gradle bootJar 결과를 확인했고 production 코드는 변경하지 않았다. 자동 검증은 직전 94 suites, 379 tests, failures 0, errors 0, skipped 7 기록을 재사용했다. 이번 live 실행에서 전체 test/build/clean은 다시 실행하지 않았다. 문서 변경은 git diff --check로 확인했다.
+
+\r\n
