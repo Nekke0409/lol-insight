@@ -59,3 +59,19 @@
 예외 `finally` 시점 요약의 HTTP 실행 시도는 `account_by_riot_id=1`, `match_ids=1`, `match_detail=1`이고, 상태 계수는 `200=2`였다. 순차 호출 코드상 앞의 두 200은 Account와 Match ID 조회이며, Match Detail 상태는 미확인이다. upstream 429 `0`, local pacing timeout `0`(분기 없음), cooldown 차단 `0`, admission interrupt `3`이었다. lock 대기는 **count 6 / total 4964.0793 ms**, interval 대기는 **count 3 / total 3281.0548 ms**, 전체 admission 경과는 **count 6 / total 8246.3236 ms**이다. 모두 snapshot 시점의 누적 통계이며 특정 한 요청의 시간으로 해석하지 않는다. `inFlightCompletion=not_verified`이므로 남은 Match Detail worker의 최종 상태와 전체 서버 처리 횟수는 확인되지 않았다. 추가 대기나 호출로 지표를 보정하지 않았다.
 
 rank 조회와 공식 Benchmark 비교까지 이르지 못했다. 실제 rank·TOP 사용자 경기 수, 유효 Benchmark window, 전체/본인 제외 TOP 표본과 READY/NOT_READY는 **미확인**이다. 시작 시 저장된 EMERALD IV 전체 표본 17건/고유 플레이어 4명, TOP 표본 0건, cursor page 2는 현재 비교 결과를 대체하지 않는다. 개발 DB `lol_insight`와 기존 `lol-insight_postgres-data` volume을 사용했고 Flyway 적용 4건이 source와 일치했다. 시작·종료의 `benchmark_sample` 163행, cursor 2행, tracking 1행, Automation execution 1행, AnalysisJob 2행의 전체 상태 해시가 각각 일치했다. cache 상태 변화는 별도 측정하지 않았으며 업무 데이터 변경은 없었다. 시작했던 개발 PostgreSQL·Redis는 다시 중지했고 기존 volume, RAG B 자원과 `.local` 자료는 건드리지 않았다. 이번 preflight 1회, 수집 tick 0회, 분석 POST 0회, 신규 Job 0건, OpenAI 호출 0회이다.
+
+## 2026-10-02 Match `atakhan` 선택적 응답 호환성 수정 (live 재실행 없음)
+
+직전 실검증은 첫 Account 인증과 Match ID 조회를 통과한 뒤 Match Detail의 `info.teams[*].objectives.atakhan` 누락으로 DTO 변환에 실패했다. 그 실행의 Match Detail HTTP 상태, 전체 Detail 처리, rank 및 비교 준비 상태는 여전히 미확인이다. 직전 401의 정확한 원인도 확정하지 않는다. 이번 작업에서는 Riot/OpenAI 호출, preflight, 수집 tick, 분석 POST를 실행하지 않았다.
+
+기존 비식별 Match fixture에서 두 팀의 `atakhan`만 제거한 변형으로 production과 같은 Jackson/Kotlin 역직렬화 실패를 먼저 재현했다. 기존 코드는 `RiotMatchObjectivesDto.atakhan` 필수 생성자 값 누락으로 대상 테스트가 실패했다. 이 변형은 실패 구조의 자동 재현 자료이며 당시 Riot 응답 전체를 확보한 자료가 아니다. [공식 26.1 패치 노트](https://www.leagueoflegends.com/en-us/news/game-updates/patch-26-1-notes/)의 아타칸 삭제 사실과 직전 API JSON의 필드 누락 관측은 구분한다.
+
+이후 Riot DTO, 내부 `MatchObjectives`, 공개 `MatchObjectivesResponse`에서 `atakhan`의 부재를 `null`로 보존하도록 수정했다. 객체가 있고 `kills=0`인 값과 과거 양수 값은 유지한다. 잘못된 타입·빈 객체·중첩 필드 누락·다른 필수 objective 누락은 정상 값으로 대체하지 않고 실패시킨다. 미래의 미사용 objective 필드는 기존 설정대로 무시한다. 참가자 데이터와 KDA·CS/min·승패 등의 통계 계산은 변경하지 않았으며, 두 fixture에서 참가자와 계산 결과가 일치함을 확인했다. localhost Match HTTP를 실제 `RiotApiHttpClient → RiotMatchClient → Match` 경로로 통과시켜 두 형식을 검증했다.
+
+실제 Match Detail cache는 Redis의 `JacksonJsonRedisSerializer<Match>`를 사용한다. 해당 serializer로 기존 `atakhan` 포함 payload를 읽고, 새 null payload를 왕복하며, 필드 생략 payload를 읽었다. 참가자와 다른 objective 값도 보존됐다. cache prefix·TTL·version, Redis 데이터는 변경하지 않았다. 공개 응답은 부재 시 JSON `null`이고, OpenAPI는 `atakhan`을 필수 목록에서 제외하고 객체 또는 `null`로 표현한다.
+
+HTTP 관측은 상태를 본문 DTO 변환 전에 한 번 기록한다. 알려진 Jackson 메시지 변환 오류는 새 `riot.api.http.decode_failures` 계수로 분리하고 transport failure로 집계하지 않는다. 응답 이전의 연결·읽기 오류는 상태 없이 transport failure로 집계한다. localhost/mock 테스트에서 정상 200, malformed JSON의 200+decode failure, 429의 단일 상태·rate limit 기록과 cooldown, 응답 전 timeout을 각각 확인했다. 직전 실검증의 Match Detail 상태를 이번 자동 테스트의 200으로 소급하지 않는다. 향후 preflight 요약에는 endpoint별 decode failure가 포함된다.
+
+개발 DB·Redis, Benchmark corpus/cursor, Automation/execution, AnalysisJob, RAG B 자원과 `.local` 자료에는 접근하지 않았다. 전체 자동 검증 결과는 아래 최종 검증 절에 따로 기록한다.
+
+최종 자동 검증은 live flags를 끈 상태에서 `ktlintCheck`, `test`, `build` 모두 종료 코드 0이었다. JUnit XML 집계는 **94 suites, 379 tests, failures 0, errors 0, skipped 7**이다. 변경 문서에 대한 `git diff --check`도 통과했다. 기존 개발 DB·Redis 컨테이너는 실행 전후 모두 중지 상태였다. 이 결과는 선택적 응답 호환성과 로컬 관측 코드에 대한 검증이며, 실제 Riot Match Detail 전체 처리나 Benchmark 비교 성공을 뜻하지 않는다.

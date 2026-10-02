@@ -1,6 +1,6 @@
 package io.github.nekke0409.lolinsight.global.riot
 
-import org.springframework.http.HttpStatusCode
+import org.springframework.http.converter.HttpMessageConversionException
 import org.springframework.stereotype.Component
 import org.springframework.web.client.ResourceAccessException
 import org.springframework.web.client.RestClient
@@ -37,6 +37,7 @@ class RiotApiHttpClient(
                 .toUri()
 
         val endpoint = endpointKind(path)
+        var responseReceived = false
         return try {
             checkCooldownAdmission()
             outboundPacing.awaitAdmission()
@@ -46,10 +47,12 @@ class RiotApiHttpClient(
                     .get()
                     .uri(uri)
                     .retrieve()
-                    .onStatus(HttpStatusCode::isError) { _, response ->
+                    .onStatus({ true }) { _, response ->
+                        responseReceived = true
+                        observationRecorder.recordHttpResponse(endpoint, response.statusCode.value())
+                        if (!response.statusCode.isError) return@onStatus
                         val retryAfterSeconds = parseRetryAfterSeconds(response.headers.getFirst("Retry-After"))
                         val rateLimitType = parseRateLimitType(response.headers.getFirst("X-Rate-Limit-Type"))
-                        observationRecorder.recordHttpResponse(endpoint, response.statusCode.value())
                         if (response.statusCode.value() == TOO_MANY_REQUESTS) {
                             cooldown.registerRateLimit(retryAfterSeconds)
                             observationRecorder.recordUpstreamRateLimit(retryAfterSeconds, rateLimitType)
@@ -61,7 +64,6 @@ class RiotApiHttpClient(
                             rateLimitType = rateLimitType,
                         )
                     }.toEntity(responseType)
-            observationRecorder.recordHttpResponse(endpoint, entity.statusCode.value())
             entity.body ?: throw RiotApiEmptyResponseException()
         } catch (exception: RiotApiException) {
             throw exception
@@ -69,10 +71,17 @@ class RiotApiHttpClient(
             observationRecorder.recordTransportFailure(endpoint)
             throw RiotApiTransportException(exception)
         } catch (exception: RestClientException) {
-            observationRecorder.recordTransportFailure(endpoint)
+            if (exception.causesHttpMessageConversionFailure()) {
+                observationRecorder.recordDecodeFailure(endpoint)
+            } else if (!responseReceived) {
+                observationRecorder.recordTransportFailure(endpoint)
+            }
             throw RiotApiInvalidResponseException(exception)
         }
     }
+
+    private fun Throwable.causesHttpMessageConversionFailure(): Boolean =
+        generateSequence(this) { it.cause }.any { it is HttpMessageConversionException }
 
     private fun checkCooldownAdmission() {
         try {

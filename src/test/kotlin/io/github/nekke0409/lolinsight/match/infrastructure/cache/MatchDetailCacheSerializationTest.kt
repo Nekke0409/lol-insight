@@ -9,8 +9,10 @@ import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.context.annotation.Import
 import tools.jackson.databind.ObjectMapper
 import tools.jackson.databind.json.JsonMapper
+import tools.jackson.databind.node.ObjectNode
 import tools.jackson.module.kotlin.KotlinModule
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 @SpringBootTest(
@@ -42,6 +44,54 @@ class MatchDetailCacheSerializationTest {
         )
         assertTrue(serialized.decodeToString().startsWith("{"))
         assertEquals(match, serializer.deserialize(serialized))
+    }
+
+    @Test
+    fun `reads legacy objective payload and round trips absent atakhan with the configured Redis serializer`() {
+        val serializer = cacheConfiguration.matchDetailValueSerializer(objectMapper)
+        val legacy = RiotMatchMapper.toMatch(matchResponse())
+        val legacyPayload = serializer.serialize(legacy)
+        assertEquals(
+            1,
+            serializer
+                .deserialize(legacyPayload)
+                ?.teams
+                ?.first()
+                ?.objectives
+                ?.atakhan
+                ?.killCount,
+        )
+
+        val withoutAtakhan =
+            RiotMatchMapper.toMatch(
+                JsonMapper.builder().addModule(KotlinModule.Builder().build()).build().readValue(
+                    requireNotNull(javaClass.classLoader.getResource("riot/match/match-detail-without-atakhan.json")).readText(),
+                    RiotMatchResponseDto::class.java,
+                ),
+            )
+        val restored = serializer.deserialize(serializer.serialize(withoutAtakhan))
+        assertEquals(withoutAtakhan, restored)
+        assertNull(
+            restored
+                ?.teams
+                ?.first()
+                ?.objectives
+                ?.atakhan,
+        )
+        assertEquals(8, restored?.participants?.first()?.kills)
+        assertEquals(
+            8,
+            restored
+                ?.teams
+                ?.first()
+                ?.objectives
+                ?.tower
+                ?.killCount,
+        )
+
+        val omitted = objectMapper.readTree(serializer.serialize(withoutAtakhan))
+        (omitted.path("teams").path(0).path("objectives") as ObjectNode).remove("atakhan")
+        assertEquals(withoutAtakhan, serializer.deserialize(objectMapper.writeValueAsBytes(omitted)))
     }
 
     private fun matchResponse(): RiotMatchResponseDto =

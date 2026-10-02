@@ -14,6 +14,8 @@ interface RiotApiObservationRecorder {
 
     fun recordTransportFailure(endpoint: String)
 
+    fun recordDecodeFailure(endpoint: String)
+
     fun recordPacingWait(duration: Duration)
 
     fun recordPacingLockWait(duration: Duration)
@@ -41,6 +43,8 @@ object NoOpRiotApiObservationRecorder : RiotApiObservationRecorder {
     ) = Unit
 
     override fun recordTransportFailure(endpoint: String) = Unit
+
+    override fun recordDecodeFailure(endpoint: String) = Unit
 
     override fun recordPacingWait(duration: Duration) = Unit
 
@@ -77,6 +81,11 @@ class MicrometerRiotApiObservationRecorder(
     override fun recordTransportFailure(endpoint: String) =
         safe {
             meterRegistry.counter("riot.api.http.transport_failures", "endpoint", endpoint).increment()
+        }
+
+    override fun recordDecodeFailure(endpoint: String) =
+        safe {
+            meterRegistry.counter("riot.api.http.decode_failures", "endpoint", endpoint).increment()
         }
 
     override fun recordPacingWait(duration: Duration) {

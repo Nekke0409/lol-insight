@@ -854,7 +854,7 @@ championId > 0
 
 ```text
 objectives
-├── atakhan
+├── atakhan (응답에 없을 수 있음)
 ├── baron
 ├── champion
 ├── dragon
@@ -875,7 +875,7 @@ kills: Int
 
 | Objective | 분류 | DB 저장 |
 |---|---|---|
-| `atakhan` | CORE | O |
+| `atakhan` | 사용 필드·선택적 존재 | 별도 DB 저장 없음 |
 | `baron` | CORE | O |
 | `champion` | CORE | O |
 | `dragon` | CORE | O |
@@ -883,6 +883,17 @@ kills: Int
 | `inhibitor` | CORE | O |
 | `riftHerald` | CORE | O |
 | `tower` | CORE | O |
+
+`atakhan`이 없는 Match Detail 응답에서는 서비스의 `MatchObjectives.atakhan`과 공개 Match 응답의
+`objectives.atakhan`이 `null`이다. 객체가 제공되고 `kills=0`인 경우에는 실제 0을 보존한다.
+과거 응답에 있는 객체와 `first`·`kills` 값은 그대로 유지한다. 필드 누락만으로 해당 경기에서
+아타칸이 생성되지 않았다고 단정하지 않는다. 객체가 있지만 내부 필드가 빠졌거나 타입이 잘못된
+응답은 정상 값으로 대체하지 않는다. 공개 응답의 `atakhan`은 OpenAPI에서 필수 목록에 없으며
+객체 또는 `null`로 표현된다.
+
+[공식 26.1 패치 노트](https://www.leagueoflegends.com/en-us/news/game-updates/patch-26-1-notes/)는
+게임에서 아타칸이 삭제됐음을 설명한다. 실제 API JSON에서 `atakhan` 누락을 관측한 근거는
+별도의 2026-10-01 preflight 예외이며, 이 두 사실을 같은 증거로 취급하지 않는다.
 
 ## 23.3 Team Kill 정책
 

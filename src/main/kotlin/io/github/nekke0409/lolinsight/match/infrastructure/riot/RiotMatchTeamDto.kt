@@ -17,7 +17,7 @@ data class RiotMatchBanDto(
 
 @JsonIgnoreProperties(ignoreUnknown = true)
 data class RiotMatchObjectivesDto(
-    val atakhan: RiotMatchObjectiveDto,
+    val atakhan: RiotMatchObjectiveDto? = null,
     val baron: RiotMatchObjectiveDto,
     val champion: RiotMatchObjectiveDto,
     val dragon: RiotMatchObjectiveDto,

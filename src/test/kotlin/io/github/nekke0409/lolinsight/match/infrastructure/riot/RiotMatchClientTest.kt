@@ -1,11 +1,14 @@
 package io.github.nekke0409.lolinsight.match.infrastructure.riot
 
+import com.sun.net.httpserver.HttpServer
+import io.github.nekke0409.lolinsight.global.riot.RiotApiConfiguration
 import io.github.nekke0409.lolinsight.global.riot.RiotApiCooldown
 import io.github.nekke0409.lolinsight.global.riot.RiotApiHttpClient
 import io.github.nekke0409.lolinsight.global.riot.RiotApiProperties
 import io.github.nekke0409.lolinsight.global.riot.RiotApiResponseException
 import io.github.nekke0409.lolinsight.match.application.MatchNotFoundException
 import io.github.nekke0409.lolinsight.match.domain.RankedSoloQueue
+import io.github.nekke0409.lolinsight.player.application.PlayerMatchStatisticsCalculator
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.springframework.http.HttpStatus
@@ -14,6 +17,7 @@ import org.springframework.test.web.client.MockRestServiceServer
 import org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo
 import org.springframework.test.web.client.response.MockRestResponseCreators.withStatus
 import org.springframework.web.client.RestClient
+import java.net.InetSocketAddress
 import java.net.URI
 import java.time.Clock
 import kotlin.test.assertEquals
@@ -21,6 +25,63 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
 
 class RiotMatchClientTest {
+    @Test
+    fun `localhost Match HTTP maps legacy and absent atakhan through the real client and statistics`() {
+        val localServer = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        localServer.createContext("/lol/match/v5/matches/legacy") { exchange ->
+            val body = loadFixture("riot/match/match-detail.json").toByteArray()
+            exchange.responseHeaders.add("Content-Type", "application/json")
+            exchange.sendResponseHeaders(200, body.size.toLong())
+            exchange.responseBody.use { it.write(body) }
+        }
+        localServer.createContext("/lol/match/v5/matches/without") { exchange ->
+            val body = loadFixture("riot/match/match-detail-without-atakhan.json").toByteArray()
+            exchange.responseHeaders.add("Content-Type", "application/json")
+            exchange.sendResponseHeaders(200, body.size.toLong())
+            exchange.responseBody.use { it.write(body) }
+        }
+        localServer.start()
+
+        try {
+            val properties =
+                RiotApiProperties(
+                    key = "dummy-localhost-only-key",
+                    regionalBaseUrl = URI.create("http://127.0.0.1:${localServer.address.port}"),
+                )
+            val localClient =
+                RiotMatchClient(
+                    RiotApiHttpClient(
+                        RiotApiConfiguration().riotApiRestClient(properties),
+                        properties,
+                        RiotApiCooldown(properties, Clock.systemUTC()),
+                    ),
+                )
+            val legacy = localClient.findMatchById("legacy")
+            val without = localClient.findMatchById("without")
+
+            assertEquals(
+                1,
+                legacy.teams
+                    .first()
+                    .objectives.atakhan
+                    ?.killCount,
+            )
+            assertEquals(
+                null,
+                without.teams
+                    .first()
+                    .objectives.atakhan,
+            )
+            assertEquals(legacy.participants, without.participants)
+            assertEquals(
+                PlayerMatchStatisticsCalculator().calculate("test-puuid-blue-top", listOf(legacy)),
+                PlayerMatchStatisticsCalculator().calculate("test-puuid-blue-top", listOf(without)),
+            )
+        } finally {
+            localServer.stop(0)
+        }
+    }
+
     private lateinit var server: MockRestServiceServer
     private lateinit var client: RiotMatchClient
 

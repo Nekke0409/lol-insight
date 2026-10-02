@@ -75,6 +75,16 @@ class OpenApiDocumentationIntegrationTest {
 
         val document = JsonMapper.builder().build().readTree(response.contentAsString)
         val paths = document.path("paths")
+        val objectiveSchema = document.path("components").path("schemas").path("MatchObjectivesResponse")
+        assertTrue(objectiveSchema.path("properties").has("atakhan"))
+        assertFalse(objectiveSchema.path("required").any { it.asText() == "atakhan" })
+        assertTrue(
+            objectiveSchema
+                .path("properties")
+                .path("atakhan")
+                .path("oneOf")
+                .any { it.path("type").asText() == "null" },
+        )
 
         assertEquals("LOL Insight API", document.path("info").path("title").asText())
         assertEquals("v1", document.path("info").path("version").asText())

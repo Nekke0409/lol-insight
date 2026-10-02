@@ -127,7 +127,7 @@ data class MatchTeamResponse(
 }
 
 data class MatchObjectivesResponse(
-    val atakhan: ObjectiveResultResponse,
+    val atakhan: ObjectiveResultResponse?,
     val baron: ObjectiveResultResponse,
     val champion: ObjectiveResultResponse,
     val dragon: ObjectiveResultResponse,
@@ -137,7 +137,7 @@ data class MatchObjectivesResponse(
     val tower: ObjectiveResultResponse,
 ) {
     constructor(objectives: MatchObjectives) : this(
-        atakhan = ObjectiveResultResponse(objectives.atakhan),
+        atakhan = objectives.atakhan?.let(::ObjectiveResultResponse),
         baron = ObjectiveResultResponse(objectives.baron),
         champion = ObjectiveResultResponse(objectives.champion),
         dragon = ObjectiveResultResponse(objectives.dragon),

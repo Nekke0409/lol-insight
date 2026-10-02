@@ -86,7 +86,7 @@ data class MatchTeam(
 )
 
 data class MatchObjectives(
-    val atakhan: ObjectiveResult,
+    val atakhan: ObjectiveResult?,
     val baron: ObjectiveResult,
     val champion: ObjectiveResult,
     val dragon: ObjectiveResult,

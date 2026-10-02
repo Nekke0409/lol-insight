@@ -92,7 +92,7 @@ object RiotMatchMapper {
 
     private fun RiotMatchObjectivesDto.toMatchObjectives(): MatchObjectives =
         MatchObjectives(
-            atakhan = atakhan.toObjectiveResult(),
+            atakhan = atakhan?.toObjectiveResult(),
             baron = baron.toObjectiveResult(),
             champion = champion.toObjectiveResult(),
             dragon = dragon.toObjectiveResult(),

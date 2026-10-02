@@ -31,7 +31,9 @@ import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPat
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 import org.springframework.test.web.servlet.setup.MockMvcBuilders
 import org.springframework.web.client.RestClientException
+import tools.jackson.databind.json.JsonMapper
 import java.time.Instant
+import kotlin.test.assertTrue
 
 class MatchControllerTest {
     private val matchService = mock(MatchService::class.java)
@@ -57,6 +59,31 @@ class MatchControllerTest {
             .andExpect(jsonPath("$.teams[0].objectives.tower.killCount").value(8))
             .andExpect(jsonPath("$.gameVersion").doesNotExist())
             .andExpect(jsonPath("$.participants[0].reportedChallenges").doesNotExist())
+    }
+
+    @Test
+    fun `serializes absent atakhan as null while preserving a supplied zero`() {
+        val base = matchResponse()
+        val missing = base.copy(teams = base.teams.map { it.copy(objectives = it.objectives.copy(atakhan = null)) })
+        `when`(matchService.findByMatchId("KR_1234567890")).thenReturn(missing)
+
+        val body =
+            mockMvc
+                .perform(get("/api/v1/matches/{matchId}", "KR_1234567890"))
+                .andExpect(status().isOk)
+                .andReturn()
+                .response.contentAsString
+        val objective =
+            JsonMapper
+                .builder()
+                .build()
+                .readTree(body)
+                .path("teams")
+                .path(0)
+                .path("objectives")
+
+        assertTrue(objective.path("atakhan").isNull)
+        assertTrue(objective.path("baron").path("killCount").asInt() == 0)
     }
 
     @Test

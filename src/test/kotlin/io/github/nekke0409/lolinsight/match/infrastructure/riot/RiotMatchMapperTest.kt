@@ -1,18 +1,130 @@
 package io.github.nekke0409.lolinsight.match.infrastructure.riot
 
+import io.github.nekke0409.lolinsight.match.application.MatchResponse
 import io.github.nekke0409.lolinsight.match.domain.Match
+import io.github.nekke0409.lolinsight.player.application.PlayerMatchStatisticsCalculator
 import org.junit.jupiter.api.Test
 import tools.jackson.databind.json.JsonMapper
+import tools.jackson.databind.node.ObjectNode
 import tools.jackson.module.kotlin.KotlinModule
 import java.time.Duration
 import java.time.Instant
 import kotlin.reflect.full.memberProperties
 import kotlin.test.assertEquals
+import kotlin.test.assertFails
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class RiotMatchMapperTest {
+    @Test
+    fun `maps synthetic Match fixture with absent atakhan`() {
+        val response =
+            JsonMapper.builder().addModule(KotlinModule.Builder().build()).build().readValue(
+                requireNotNull(javaClass.classLoader.getResource("riot/match/match-detail-without-atakhan.json")).readText(),
+                RiotMatchResponseDto::class.java,
+            )
+
+        val match = RiotMatchMapper.toMatch(response)
+        assertTrue(match.teams.all { it.objectives.atakhan == null })
+        assertEquals(8, match.participants.first().kills)
+        assertEquals(
+            8,
+            match.teams
+                .first()
+                .objectives.tower.killCount,
+        )
+    }
+
+    @Test
+    fun `distinguishes null and zero atakhan from absent atakhan`() {
+        val nullObjective = modifiedFixture { it.putNull("atakhan") }
+        val zeroObjective = modifiedFixture { it.putObject("atakhan").put("first", false).put("kills", 0) }
+
+        assertNull(
+            nullObjective.teams
+                .first()
+                .objectives.atakhan,
+        )
+        assertEquals(
+            0,
+            zeroObjective.teams
+                .first()
+                .objectives.atakhan
+                ?.killCount,
+        )
+        assertFalse(
+            assertNotNull(
+                zeroObjective.teams
+                    .first()
+                    .objectives.atakhan,
+            ).wasFirst,
+        )
+    }
+
+    @Test
+    fun `rejects malformed atakhan and missing required objective data`() {
+        assertFails { modifiedFixture { it.put("atakhan", "invalid") } }
+        assertFails { modifiedFixture { it.putObject("atakhan") } }
+        assertFails { modifiedFixture { it.putObject("atakhan").put("first", true) } }
+        assertFails { modifiedFixture { it.remove("tower") } }
+    }
+
+    @Test
+    fun `ignores future unused objective while retaining known objective values`() {
+        val match = modifiedFixture { it.putObject("futureObjective").put("first", true).put("kills", 7) }
+
+        assertEquals(
+            1,
+            match.teams
+                .first()
+                .objectives.atakhan
+                ?.killCount,
+        )
+        assertEquals(
+            8,
+            match.teams
+                .first()
+                .objectives.tower.killCount,
+        )
+    }
+
+    @Test
+    fun `participant statistics do not depend on optional atakhan`() {
+        val oldMatch = RiotMatchMapper.toMatch(loadFixture())
+        val newMatch =
+            RiotMatchMapper.toMatch(
+                JsonMapper.builder().addModule(KotlinModule.Builder().build()).build().readValue(
+                    requireNotNull(javaClass.classLoader.getResource("riot/match/match-detail-without-atakhan.json")).readText(),
+                    RiotMatchResponseDto::class.java,
+                ),
+            )
+        val calculator = PlayerMatchStatisticsCalculator()
+
+        assertEquals(
+            calculator.calculate("test-puuid-blue-top", listOf(oldMatch)),
+            calculator.calculate("test-puuid-blue-top", listOf(newMatch)),
+        )
+        assertEquals(oldMatch.participants, newMatch.participants)
+        assertNull(
+            MatchResponse
+                .from(newMatch)
+                .teams
+                .first()
+                .objectives.atakhan,
+        )
+        assertEquals(
+            1,
+            MatchResponse
+                .from(oldMatch)
+                .teams
+                .first()
+                .objectives.atakhan
+                ?.killCount,
+        )
+    }
+
     @Test
     fun `maps Match metadata and game information into normalized Match`() {
         val match = RiotMatchMapper.toMatch(loadFixture())
@@ -87,8 +199,8 @@ class RiotMatchMapperTest {
         assertEquals(100, winningTeam.teamId)
         assertTrue(winningTeam.won)
         assertEquals(listOf(238), winningTeam.bannedChampionIds)
-        assertTrue(winningTeam.objectives.atakhan.wasFirst)
-        assertEquals(1, winningTeam.objectives.atakhan.killCount)
+        assertTrue(assertNotNull(winningTeam.objectives.atakhan).wasFirst)
+        assertEquals(1, winningTeam.objectives.atakhan?.killCount)
         assertEquals(20, winningTeam.objectives.champion.killCount)
         assertEquals(8, winningTeam.objectives.tower.killCount)
         assertFalse(losingTeam.won)
@@ -110,4 +222,17 @@ class RiotMatchMapperTest {
             requireNotNull(javaClass.classLoader.getResource("riot/match/match-detail.json")).readText(),
             RiotMatchResponseDto::class.java,
         )
+
+    private fun modifiedFixture(change: (ObjectNode) -> Unit): Match {
+        val mapper = JsonMapper.builder().addModule(KotlinModule.Builder().build()).build()
+        val root = mapper.readTree(requireNotNull(javaClass.classLoader.getResource("riot/match/match-detail.json")).readText())
+        change(
+            root
+                .path("info")
+                .path("teams")
+                .path(0)
+                .path("objectives") as ObjectNode,
+        )
+        return RiotMatchMapper.toMatch(mapper.readValue(mapper.writeValueAsString(root), RiotMatchResponseDto::class.java))
+    }
 }

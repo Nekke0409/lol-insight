@@ -1,6 +1,7 @@
 package io.github.nekke0409.lolinsight.global.riot
 
 import com.sun.net.httpserver.HttpServer
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.springframework.http.HttpHeaders
@@ -22,6 +23,56 @@ import kotlin.test.assertIs
 import kotlin.test.assertNull
 
 class RiotApiHttpClientTest {
+    @Test
+    fun `records a successful HTTP status once before DTO conversion`() {
+        val (observedClient, observedServer, registry) = observedClient()
+        observedServer
+            .expect(requestTo("https://regional.test/valid"))
+            .andRespond(withStatus(HttpStatus.OK).contentType(MediaType.APPLICATION_JSON).body("{\"value\":1}"))
+
+        observedClient.get(RiotApiRouting.REGIONAL, "/valid", responseType = Map::class.java)
+
+        assertEquals(1.0, registry.counterValue("riot.api.http.responses", "status", "200"))
+        assertEquals(0.0, registry.counterValue("riot.api.http.decode_failures"))
+        observedServer.verify()
+    }
+
+    @Test
+    fun `records HTTP 200 and decode failure separately for malformed JSON`() {
+        val (observedClient, observedServer, registry) = observedClient()
+        observedServer
+            .expect(requestTo("https://regional.test/invalid"))
+            .andRespond(withStatus(HttpStatus.OK).contentType(MediaType.APPLICATION_JSON).body("{"))
+
+        assertFailsWith<RiotApiInvalidResponseException> {
+            observedClient.get(RiotApiRouting.REGIONAL, "/invalid", responseType = Map::class.java)
+        }
+        assertEquals(1.0, registry.counterValue("riot.api.http.attempts"))
+        assertEquals(1.0, registry.counterValue("riot.api.http.responses", "status", "200"))
+        assertEquals(1.0, registry.counterValue("riot.api.http.decode_failures"))
+        assertEquals(0.0, registry.counterValue("riot.api.http.transport_failures"))
+        observedServer.verify()
+    }
+
+    @Test
+    fun `records 429 once and preserves cooldown`() {
+        val (observedClient, observedServer, registry) = observedClient()
+        observedServer
+            .expect(requestTo("https://regional.test/limited"))
+            .andRespond(withStatus(HttpStatus.TOO_MANY_REQUESTS).header(HttpHeaders.RETRY_AFTER, "7"))
+
+        assertFailsWith<RiotApiResponseException> {
+            observedClient.get(RiotApiRouting.REGIONAL, "/limited", responseType = String::class.java)
+        }
+        assertFailsWith<RiotApiCooldownException> {
+            observedClient.get(RiotApiRouting.REGIONAL, "/blocked", responseType = String::class.java)
+        }
+        assertEquals(1.0, registry.counterValue("riot.api.http.responses", "status", "429"))
+        assertEquals(1.0, registry.counterValue("riot.api.http.rate_limits"))
+        assertEquals(0.0, registry.counterValue("riot.api.http.decode_failures"))
+        observedServer.verify()
+    }
+
     private lateinit var server: MockRestServiceServer
     private lateinit var client: RiotApiHttpClient
 
@@ -235,13 +286,14 @@ class RiotApiHttpClientTest {
                     connectTimeout = Duration.ofMillis(100),
                     readTimeout = Duration.ofMillis(100),
                 )
+            val registry = SimpleMeterRegistry()
             val timeoutClient =
                 RiotApiHttpClient(
                     restClient = RiotApiConfiguration().riotApiRestClient(properties),
                     properties = properties,
                     cooldown = RiotApiCooldown(properties, Clock.systemUTC()),
                     outboundPacing = noPacing(),
-                    observationRecorder = NoOpRiotApiObservationRecorder,
+                    observationRecorder = MicrometerRiotApiObservationRecorder(registry),
                 )
 
             val exception =
@@ -254,10 +306,34 @@ class RiotApiHttpClientTest {
                 }
 
             assertIs<RestClientException>(exception.cause)
+            assertEquals(0.0, registry.counterValue("riot.api.http.responses"))
+            assertEquals(1.0, registry.counterValue("riot.api.http.transport_failures"))
+            assertEquals(0.0, registry.counterValue("riot.api.http.decode_failures"))
         } finally {
             server.stop(0)
         }
     }
 
     private fun noPacing(): RiotApiOutboundPacing = RiotApiOutboundPacing { }
+
+    private fun observedClient(): Triple<RiotApiHttpClient, MockRestServiceServer, SimpleMeterRegistry> {
+        val builder = RestClient.builder()
+        val observedServer = MockRestServiceServer.bindTo(builder).build()
+        val properties = RiotApiProperties(key = "dummy-test-key", regionalBaseUrl = URI.create("https://regional.test"))
+        val registry = SimpleMeterRegistry()
+        val observedClient =
+            RiotApiHttpClient(
+                builder.build(),
+                properties,
+                RiotApiCooldown(properties, Clock.systemUTC()),
+                noPacing(),
+                MicrometerRiotApiObservationRecorder(registry),
+            )
+        return Triple(observedClient, observedServer, registry)
+    }
+
+    private fun SimpleMeterRegistry.counterValue(
+        name: String,
+        vararg tags: String,
+    ): Double = find(name).tags(*tags).counters().sumOf { it.count() }
 }
