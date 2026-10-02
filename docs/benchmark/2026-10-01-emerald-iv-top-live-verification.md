@@ -114,3 +114,20 @@ HTTP 관측은 상태를 본문 DTO 변환 전에 한 번 기록한다. 알려�
 시작할 때 중지 상태였던 개발 PostgreSQL·Redis만 기동했고 작업 후 다시 중지했다. 기존 volume, RAG B image/volume 및 .local 자료는 보존했다. Docker Desktop은 공유 자원으로 그대로 두었다. 소스와 실행 jar는 Gradle bootJar 결과를 확인했고 production 코드는 변경하지 않았다. 자동 검증은 직전 94 suites, 379 tests, failures 0, errors 0, skipped 7 기록을 재사용했다. 이번 live 실행에서 전체 test/build/clean은 다시 실행하지 않았다. 문서 변경은 git diff --check로 확인했다.
 
 \r\n
+## 2026-10-02 본인 제외 비교 및 비동기 AI 분석 1건
+
+이번 실행의 source는 ba48962였고 시작 시 working tree는 clean이었다. production/test 코드 변경은 없었다. 직전 자동 검증 94 suites, 379 tests, failures 0, errors 0, skipped 7을 재사용했다. 실행 jar는 bootJar만 확인했고 Gradle은 UP-TO-DATE, 종료 코드 0이었다. 개발 PostgreSQL의 연결 DB는 lol_insight, mount는 기존 lol-insight_postgres-data였으며 Flyway 적용 4건이 정상이다. 시작 시 표본 413행, TOP 최근 30일 유효 37건/13명, EMERALD IV cursor 7, GOLD I cursor 3, 기존 Job 2건(FAILED 1, SUCCEEDED 1), Automation tracking/execution 각 1건이었다. 기존 PENDING/RUNNING Job은 없었다.
+
+공통 BenchmarkPreflightManualSmokeTest만 opt-in으로 실제 1회 실행했다. JUnit XML은 tests 1, skipped 0, failures 0, errors 0이며 Gradle 출력은 BUILD SUCCESSFUL이었다. native Start-Process -Wait helper는 빌드 성공 후 Kotlin compile daemon 후손 프로세스를 기다리며 반환하지 않아 helper의 별도 종료 코드 수집은 완료하지 못했다. 이미 기록된 JUnit·Gradle 성공을 확인하고 helper 대기만 중단했으며 preflight는 재실행하지 않았다. preflight의 조회 범위는 KR Ranked Solo start=0, count=20이었다. 현재 Solo rank는 EMERALD IV, TOP 경기 16건, 유효 window는 2026-09-02T09:00:57.485649Z 이상 2026-10-02T09:00:57.485649Z 미만이었다. 전체 TOP Benchmark 37건/13명 AVAILABLE, 본인 제외 37건/13명 AVAILABLE, 대상 본인의 해당 cohort TOP 저장 표본 0건으로 확인되어 READY였다. PUUID는 출력·기록하지 않았다. preflight JVM에서 Riot HTTP 시도는 Account, Match ID, rank 각 1회, 모두 200이었다. Match Detail은 기존 cache 경로를 사용했다. decode failure, 429, local pacing timeout, cooldown 차단, interrupt는 preflight 관측값 0이었고, admission 대기 timer 3회/누적 약 2.573초였다. 이 누적 timer는 전체 wall-clock 시간이 아니다.
+
+preflight가 끝난 뒤 수집·Automation·Agent/RAG를 끈 localhost 앱을 구동하고, 기존 분석 endpoint에 HTTP POST를 정확히 1회 전송했다. 그 전에 PowerShell의 지원하지 않는 옵션이 로컬 인자 바인딩에서 거절된 명령은 HTTP 전송 전 실패해 POST 횟수에 포함하지 않는다. 실제 POST는 202와 새 Job의 Location을 반환했다. Job은 PENDING으로 생성되어 GET polling 3회에서 RUNNING → SUCCEEDED로 확인됐다. 생성 2026-10-02T09:05:46.789643Z, 실행 시작 09:05:46.943323Z, 완료 09:06:07.079464Z였다. 생성부터 완료까지 20.290초, RUNNING 기간은 20.136초다. DB에는 신규 Job 정확히 1건이 SUCCEEDED로 저장되고 result JSONB가 존재하며 failureCode는 없다.
+
+이번 앱 JVM의 analysis.result.cache.requests는 miss 1회였다. ai.generation.requests는 OpenAI 성공 1회, model tag는 gpt-5-mini-2025-08-07, provider timer는 15.490초였다. token usage는 input 1,705, output 1,762, total 3,467, 이 중 reasoning 192였다. 이 값은 실제 Micrometer 측정값이며 모델 설정을 변경하지 않았다. 앱 JVM의 Riot HTTP 시도 3회와 응답 3회는 모두 200(Account, Match ID, rank 각 1회)이고, pacing admission 3회/누적 3.272초였다. Match Detail의 추가 HTTP 요청은 관측되지 않았다. 앱에서 429·decode·pacing 오류 계측은 보이지 않았지만 등록되지 않은 counter를 임의로 수치 0으로 채우지 않는다.
+
+저장된 한국어 feedback은 POSITION(톱) 한 범위만 인용한다. summary는 KDA, 분당 골드, 분당 피해량, 킬 관여, 피해 비중, CS/분이 벤치마크 평균·중앙값보다 높고 시야 점수가 낮다고 설명한다. observation은 userGames 16, 벤치마크 표본 37건/고유 선수 13명을 명시한다. strengths는 KDA 3.905 대 평균 2.735, 분당 골드 457.63 대 394.99, 분당 피해 870.90 대 754.92, 킬 관여율 44.32% 대 30.47%, 팀 피해 비중 26.03% 대 19.92%, CS/분 7.020 대 6.942를 든다. focusArea는 시야 점수/분 0.666 대 0.816이다. 7개 항목의 플레이어 값-평균·중앙값과 differenceFromMean·differenceFromMedian 산술은 모두 일치했다. 결과에는 근거 없는 개인 percentile, 특정 전술 장면, 성적 원인 단정이 없다. caveats는 경기 단위 벤치마크, 혼합 gameVersion 가능성, Backend 집계 재평가를 하지 않는다는 한계를 적는다. 구체적인 개선 행동 제안은 부족하고 관측치 설명 중심이다.
+
+preflight와 저장 feedback의 TOP 경기 수 16, 표본 37건/13명은 일치한다. 다만 worker의 실제 구조화 입력 전체를 별도로 보존한 관측은 없어 두 시점의 입력이 완전히 동일했다고 단정하지 않는다. Job이 성공하고 결과가 저장된 것은 실행 성공이며 feedback 모든 문장의 정확성 보장은 아니다. 수치·단위·비교 방향은 저장 결과 내 근거와 대조했으며 실제 개별 경기 장면은 검증하지 않았다.
+
+종료 시 benchmark_sample 413행 전체 해시, 수집 cursor 2행 전체 해시, Automation tracking/execution 각 1행 전체 해시, 기존 Job 2행 해시가 모두 시작 전과 일치했다. TOP 최근 30일 유효 표본도 37건/13명이었다. 신규 Job 1건과 정상 결과·cache만 이번 산출물로 보존했다. Job terminal 상태 확인 후 이번에 시작한 앱과 개발 PostgreSQL·Redis를 중지했다. 기존 volume, RAG B 자원과 .local 자료는 건드리지 않았고 공유 Docker Desktop은 유지했다. 문서 변경만 git diff --check로 검증했다.
+
+\r\n
